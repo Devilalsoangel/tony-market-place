@@ -1,0 +1,108 @@
+{
+  "screen": "Home Feed",
+  "nodeId": "1:3640",
+  "dimensions": {"width": 526, "height": 2116},
+  "backgroundColor": "#010101",
+  "layout": "NONE",
+  "sections": {
+    "header": {
+      "name": "Header - TopAppBar Shell",
+      "nodeId": "1:3641",
+      "dimensions": {"width": 526, "height": 52},
+      "background": "#fcfcfd/#f8f8f901 at 80% opacity",
+      "padding": {"left": 20, "right": 20, "top": 12, "bottom": 12},
+      "layout": "HORIZONTAL",
+      "gap": 200,
+      "children": [
+        {
+          "name": "Container (Left)",
+          "dimensions": {"width": 80, "height": 28},
+          "layout": "HORIZONTAL",
+          "gap": 12,
+          "children": [
+            {"name": "Button (logo icon)", "dimensions": {"width": 18, "height": 18}},
+            {"name": "Heading 1", "dimensions": {"width": 50, "height": 28}, "text": "susej", "fontSize": 20, "fontFamily": "Geist", "fontStyle": "Regular", "color": "#434343/#434343/#d5d5d6"}
+          ]
+        },
+        {
+          "name": "Container (Right)",
+          "dimensions": {"width": 52, "height": 26},
+          "layout": "HORIZONTAL",
+          "gap": 16,
+          "children": [
+            {"name": "Button (notification)", "dimensions": {"width": 20, "height": 24}},
+            {"name": "Button (menu)", "dimensions": {"width": 16, "height": 26}}
+          ]
+        }
+      ]
+    },
+    "main": {
+      "name": "Main",
+      "nodeId": "1:3655",
+      "dimensions": {"width": 526, "height": 1747},
+      "padding": {"bottom": 128},
+      "layout": "VERTICAL",
+      "gap": 16,
+      "children": [
+        {
+          "name": "Section - Story Horizontal Feed",
+          "nodeId": "1:3656",
+          "dimensions": {"width": 526, "height": 128},
+          "layout": "NONE",
+          "stories": [
+            {"name": "Your Story", "nodeId": "1:3657", "dimensions": {"width": 72, "height": 94}, "avatarSize": 72, "borderRadius": 9999, "padding": 2},
+            {"name": "Seller Stories", "nodeId": "1:3664", "dimensions": {"width": 74, "height": 96}, "avatarSize": 74, "borderRadius": 9999, "padding": 3},
+            {"name": "Story 3", "nodeId": "1:3670", "dimensions": {"width": 74, "height": 96}},
+            {"name": "Story 4", "nodeId": "1:3676", "dimensions": {"width": 74, "height": 96}},
+            {"name": "Story 5", "nodeId": "1:3682", "dimensions": {"width": 74, "height": 96}}
+          ]
+        },
+        {
+          "name": "Section - Vertical Feed",
+          "nodeId": "1:3688",
+          "dimensions": {"width": 526, "height": 1475},
+          "padding": {"left": 20, "right": 20},
+          "layout": "VERTICAL",
+          "gap": 24,
+          "posts": [
+            {
+              "name": "Article - Post Card 1",
+              "nodeId": "1:3689",
+              "dimensions": {"width": 486, "height": 726},
+              "background": "#fcfcfd/#f8f8f901",
+              "borderRadius": 24,
+              "layout": "NONE",
+              "children": [
+                {"name": "Seller Header", "nodeId": "1:3690", "dimensions": {"width": 486, "height": 72}, "padding": 16, "layout": "HORIZONTAL", "gap": 167},
+                {"name": "Product Image Container", "nodeId": "1:3733", "dimensions": {"width": 486, "height": 438}, "layout": "VERTICAL"},
+                {"name": "Interaction Bar", "nodeId": "1:3701", "dimensions": {"width": 486, "height": 207}, "padding": 16, "layout": "VERTICAL", "gap": 16}
+              ]
+            },
+            {
+              "name": "Article - Post Card 2",
+              "nodeId": "1:3738",
+              "dimensions": {"width": 486, "height": 726},
+              "same structure as Post Card 1"
+            }
+          ]
+        }
+      ]
+    },
+    "bottomNav": {
+      "name": "BottomNavBar Shell",
+      "nodeId": "1:3787",
+      "dimensions": {"width": 390, "height": 74},
+      "background": "#fcfcfd/#f8f8f901 at 80% opacity",
+      "padding": {"left": 16, "right": 16, "top": 4, "bottom": 4},
+      "layout": "HORIZONTAL",
+      "gap": 15,
+      "tabs": [
+        {"name": "Feed", "nodeId": "1:3788", "dimensions": {"width": 53, "height": 56}, "borderRadius": 12, "active": true, "iconSize": {"width": 16, "height": 18}, "labelFontSize": 12, "labelFont": "Geist Regular", "activeColor": "#434343/#434343/#d5d5d6"},
+        {"name": "Explore", "nodeId": "1:3793", "dimensions": {"width": 68, "height": 58}, "borderRadius": 12, "active": false, "iconSize": {"width": 20, "height": 20}, "inactiveColor": "#464646/#454545/#5555558 at 40% opacity"},
+        {"name": "Create", "nodeId": "1:3798", "dimensions": {"width": 63, "height": 65}, "borderRadius": 12, "iconSize": {"width": 27, "height": 27}},
+        {"name": "Chat", "nodeId": "1:3803", "dimensions": {"width": 52, "height": 58}, "borderRadius": 12, "iconSize": {"width": 20, "height": 20}},
+        {"name": "Profile", "nodeId": "1:3808", "dimensions": {"width": 62, "height": 54}, "borderRadius": 12, "iconSize": {"width": 16, "height": 16}}
+      ]
+    }
+  }
+}

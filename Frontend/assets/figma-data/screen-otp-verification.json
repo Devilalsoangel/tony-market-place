@@ -1,0 +1,97 @@
+{
+  "id": "1:1547",
+  "name": "OTP Verification",
+  "width": 390,
+  "height": 884,
+  "children": [
+    {
+      "id": "1:1584",
+      "name": "Header - Top Navigation",
+      "type": "FRAME",
+      "width": 390,
+      "height": 72,
+      "padding": { "left": 20, "right": 20, "top": 16, "bottom": 16 },
+      "layoutMode": "HORIZONTAL",
+      "children": [
+        { "id": "1:1586", "name": "Button", "type": "FRAME", "width": 40, "height": 40, "cornerRadius": 9999 },
+        { "id": "1:1590", "name": "Text", "type": "TEXT", "characters": "susej", "fontSize": 20, "fontWeight": 700 }
+      ]
+    },
+    {
+      "id": "1:1548",
+      "name": "Main",
+      "type": "FRAME",
+      "width": 390,
+      "height": 730,
+      "padding": { "left": 20, "right": 20, "top": 32, "bottom": 314 },
+      "layoutMode": "VERTICAL",
+      "children": [
+        {
+          "id": "1:1550",
+          "name": "Icon/Brand Section",
+          "type": "FRAME",
+          "width": 350,
+          "height": 56,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1551", "name": "Overlay", "type": "FRAME", "width": 56, "height": 56, "cornerRadius": 16 }
+          ]
+        },
+        {
+          "id": "1:1554",
+          "name": "Section - STEP 1: Phone Entry",
+          "type": "FRAME",
+          "width": 350,
+          "height": 304,
+          "layoutMode": "VERTICAL",
+          "children": [
+            {
+              "id": "1:1556",
+              "name": "Heading 1",
+              "type": "FRAME",
+              "width": 350,
+              "height": 80,
+              "layoutMode": "VERTICAL",
+              "childCount": 1
+            },
+            {
+              "id": "1:1559",
+              "name": "Container - Phone Input",
+              "type": "FRAME",
+              "width": 350,
+              "height": 48,
+              "childCount": 1
+            },
+            {
+              "id": "1:1561",
+              "name": "Container - OTP",
+              "type": "FRAME",
+              "width": 350,
+              "height": 136,
+              "itemSpacing": 24,
+              "layoutMode": "VERTICAL",
+              "children": [
+                { "id": "1:1562", "name": "Container - OTP Boxes", "type": "FRAME", "width": 350, "height": 56, "itemSpacing": 12, "layoutMode": "HORIZONTAL", "childCount": 2 },
+                { "id": "1:1572", "name": "Button", "type": "FRAME", "width": 350, "height": 56, "cornerRadius": 16, "itemSpacing": 8, "layoutMode": "HORIZONTAL", "childCount": 2 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1:1576",
+      "name": "Footer",
+      "type": "FRAME",
+      "width": 390,
+      "height": 80,
+      "padding": { "left": 20, "right": 20, "top": 24, "bottom": 24 },
+      "itemSpacing": 8,
+      "layoutMode": "VERTICAL",
+      "children": [
+        { "id": "1:1581", "name": "Text", "type": "TEXT", "characters": "SECURED BY AES-256 ENCRYPTION", "fontSize": 12, "fontWeight": 500 },
+        { "id": "1:1583", "name": "Overlay - Progress Bar", "type": "RECTANGLE", "width": 128, "height": 6, "cornerRadius": 9999 }
+      ]
+    }
+  ]
+}

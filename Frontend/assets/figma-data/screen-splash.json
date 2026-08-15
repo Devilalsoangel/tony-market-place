@@ -1,0 +1,125 @@
+{
+  "id": "1:1862",
+  "name": "Splash Screen",
+  "width": 390,
+  "height": 1061,
+  "layoutMode": "VERTICAL",
+  "paddingTop": 396,
+  "itemSpacing": 373,
+  "children": [
+    {
+      "id": "1:1863",
+      "name": "Decorative Ambient Layer",
+      "type": "FRAME",
+      "width": 390,
+      "height": 1061,
+      "note": "Two blob overlays (234x637, borderRadius 9999, opacity 0.2) + radial gradient",
+      "children": [
+        { "id": "1:1864", "name": "Soft Tactility Overlays", "type": "RECTANGLE", "width": 234, "height": 637, "x": -39, "y": -212, "cornerRadius": 9999, "opacity": 0.2 },
+        { "id": "1:1865", "name": "Background+Blur", "type": "RECTANGLE", "width": 234, "height": 637, "x": 195, "y": 637, "cornerRadius": 9999, "opacity": 0.2 },
+        { "id": "1:1866", "name": "Gradient", "type": "RECTANGLE", "width": 390, "height": 1061, "fill": "GRADIENT_RADIAL" }
+      ]
+    },
+    {
+      "id": "1:1867",
+      "name": "Center Content: Brand Logo & Identity",
+      "type": "FRAME",
+      "width": 390,
+      "height": 152,
+      "layoutMode": "VERTICAL",
+      "children": [
+        {
+          "id": "1:1869",
+          "name": "Center Content: Brand Logo & Identity",
+          "type": "FRAME",
+          "width": 96,
+          "height": 152,
+          "layoutMode": "VERTICAL",
+          "children": [
+            {
+              "id": "1:1870",
+              "name": "Modern Shopping Bag Icon Container",
+              "type": "FRAME",
+              "width": 96,
+              "height": 96,
+              "cornerRadius": 32,
+              "layoutMode": "HORIZONTAL",
+              "children": [
+                { "id": "1:1870", "name": "Shadow", "type": "RECTANGLE", "width": 96, "height": 96, "cornerRadius": 32 },
+                { "id": "1:1871", "name": "Container - Icon", "type": "FRAME", "width": 32, "height": 40, "x": 32, "y": 28 }
+              ]
+            },
+            {
+              "id": "1:1873",
+              "name": "Heading 1 - Brand Text: susej",
+              "type": "FRAME",
+              "width": 76,
+              "height": 56,
+              "paddingTop": 16,
+              "layoutMode": "VERTICAL",
+              "children": [
+                { "id": "1:1874", "name": "Text", "type": "TEXT", "characters": "susej", "fontSize": 32, "fontWeight": 700 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1:1875",
+      "name": "Bottom Content: Tagline & Loading Indicator",
+      "type": "FRAME",
+      "width": 390,
+      "height": 140,
+      "padding": { "left": 20, "right": 20, "bottom": 32 },
+      "layoutMode": "VERTICAL",
+      "children": [
+        {
+          "id": "1:1876",
+          "name": "Tagline: Buy. Sell. Connect",
+          "type": "FRAME",
+          "width": 198,
+          "height": 26,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1878", "name": "Text", "type": "TEXT", "characters": "BUY. SELL. CONNECT.", "fontSize": 14, "fontWeight": 600 },
+            {
+              "id": "1:1879",
+              "name": "Decorative Progress Bar",
+              "type": "FRAME",
+              "width": 48,
+              "height": 10,
+              "paddingTop": 8,
+              "layoutMode": "VERTICAL",
+              "children": [
+                { "id": "1:1880", "name": "Decorative Progress Bar", "type": "FRAME", "width": 48, "height": 2, "cornerRadius": 9999 }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "1:1882",
+          "name": "Contextual Social Proof Card",
+          "type": "FRAME",
+          "width": 320,
+          "height": 82,
+          "paddingTop": 24,
+          "layoutMode": "VERTICAL",
+          "children": [
+            {
+              "id": "1:1883",
+              "name": "Subtle Floating Card",
+              "type": "FRAME",
+              "width": 320,
+              "height": 58,
+              "cornerRadius": 12,
+              "padding": 4,
+              "layoutMode": "HORIZONTAL",
+              "note": "Small avatar (48x48 r8), text area, price badge"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

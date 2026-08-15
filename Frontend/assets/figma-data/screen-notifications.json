@@ -1,0 +1,70 @@
+﻿{
+  "id": "1:993",
+  "name": "Notifications",
+  "type": "FRAME",
+  "width": 390,
+  "height": 931,
+  "fill": "#ffffff",
+  "layoutMode": "VERTICAL",
+  "paddingBottom": 96,
+  "children": [
+    {
+      "name": "Header - Top App Bar",
+      "width": 390,
+      "height": 52,
+      "fill": "#fcf8ff",
+      "layoutMode": "HORIZONTAL",
+      "itemSpacing": 166,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "paddingTop": 12,
+      "paddingBottom": 12,
+      "children": [
+        {"name": "Back Button", "width": 16, "height": 16, "type": "FRAME"},
+        {"name": "Heading 1", "width": 120, "height": 28, "type": "TEXT"},
+        {"name": "Settings Button", "width": 20, "height": 20, "fill": "#4343d5", "type": "VECTOR"}
+      ]
+    },
+    {
+      "name": "Main",
+      "width": 390,
+      "height": 783,
+      "layoutMode": "VERTICAL",
+      "itemSpacing": 24,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "children": [
+        {
+          "name": "Tabs Section",
+          "width": 350,
+          "height": 49,
+          "layoutMode": "HORIZONTAL",
+          "itemSpacing": 24,
+          "tabs": ["All", "Orders", "Social"]
+        },
+        {
+          "name": "Notification List",
+          "width": 350,
+          "height": 710,
+          "layoutMode": "VERTICAL",
+          "itemSpacing": 12,
+          "items": [
+            {"name": "Order Item", "width": 350, "height": 192, "fill": "#ffffff", "borderRadius": 12},
+            {"name": "Social Item", "width": 350, "height": 154, "fill": "#ffffff", "borderRadius": 12},
+            {"name": "Alert Item", "width": 350, "height": 92, "fill": "#ffffff", "borderRadius": 12},
+            {"name": "Social Item 2", "width": 350, "height": 112, "fill": "#ffffff", "borderRadius": 12},
+            {"name": "Order Item 2", "width": 350, "height": 112, "fill": "#ffffff", "borderRadius": 12}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bottom Navigation Bar",
+      "width": 390,
+      "height": 43,
+      "fill": "#fcf8ff",
+      "layoutMode": "HORIZONTAL",
+      "tabs": ["Feed", "Explore", "Create", "Chat", "Profile"]
+    }
+  ]
+}

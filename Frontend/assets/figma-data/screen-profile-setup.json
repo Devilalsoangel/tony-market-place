@@ -1,0 +1,96 @@
+{
+  "id": "1:1680",
+  "name": "Profile Setup",
+  "width": 390,
+  "height": 906,
+  "children": [
+    {
+      "id": "1:1746",
+      "name": "Header - Top Navigation",
+      "type": "FRAME",
+      "width": 390,
+      "height": 62,
+      "padding": { "left": 20, "right": 170, "top": 12, "bottom": 12 },
+      "layoutMode": "HORIZONTAL",
+      "children": [
+        { "id": "1:1747", "name": "Button - Go back", "type": "FRAME", "width": 32, "height": 38, "padding": { "left": 8, "right": 8, "top": 8, "bottom": 14 } },
+        { "id": "1:1751", "name": "Text", "type": "TEXT", "characters": "susej", "fontSize": 20, "fontWeight": 700 }
+      ]
+    },
+    {
+      "id": "1:1681",
+      "name": "Main",
+      "type": "FRAME",
+      "width": 390,
+      "height": 828,
+      "padding": { "left": 20, "right": 20, "top": 16, "bottom": 32 },
+      "layoutMode": "VERTICAL",
+      "children": [
+        {
+          "id": "1:1683",
+          "name": "Progress Indicator",
+          "type": "FRAME",
+          "width": 350,
+          "height": 4,
+          "itemSpacing": 8,
+          "layoutMode": "HORIZONTAL",
+          "note": "6 bars, each 52x4, borderRadius 9999"
+        },
+        {
+          "id": "1:1691",
+          "name": "Header Content",
+          "type": "FRAME",
+          "width": 350,
+          "height": 96,
+          "itemSpacing": 8,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1692", "name": "Heading 1", "type": "FRAME", "width": 350, "height": 40, "layoutMode": "VERTICAL", "childCount": 1 },
+            { "id": "1:1694", "name": "Container - Subtitle", "type": "FRAME", "width": 350, "height": 48 }
+          ]
+        },
+        {
+          "id": "1:1697",
+          "name": "Profile Photo Upload",
+          "type": "FRAME",
+          "width": 350,
+          "height": 156,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1698", "name": "Container", "type": "FRAME", "width": 128, "height": 128, "note": "Photo upload circle" },
+            { "id": "1:1706", "name": "Margin", "type": "FRAME", "width": 71, "height": 28, "paddingTop": 12 }
+          ]
+        },
+        {
+          "id": "1:1708",
+          "name": "Form Fields",
+          "type": "FRAME",
+          "width": 350,
+          "height": 296,
+          "itemSpacing": 24,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1709", "name": "Container - Name Input", "type": "FRAME", "width": 350, "height": 80, "itemSpacing": 8, "layoutMode": "VERTICAL" },
+            { "id": "1:1716", "name": "Container - Username Input", "type": "FRAME", "width": 350, "height": 80, "itemSpacing": 8, "layoutMode": "VERTICAL" },
+            { "id": "1:1726", "name": "Segmented Control - Role", "type": "FRAME", "width": 350, "height": 88, "itemSpacing": 8, "layoutMode": "VERTICAL",
+              "note": "Label + 4-segment overlay, borderRadius 16, padding 4"
+            }
+          ]
+        },
+        {
+          "id": "1:1738",
+          "name": "Action Button",
+          "type": "FRAME",
+          "width": 350,
+          "height": 132,
+          "paddingTop": 32,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1740", "name": "Button", "type": "FRAME", "width": 350, "height": 56, "cornerRadius": 16, "itemSpacing": 8, "layoutMode": "HORIZONTAL" },
+            { "id": "1:1744", "name": "Container - Skip", "type": "FRAME", "width": 350, "height": 28, "paddingLeft": 32, "paddingRight": 32 }
+          ]
+        }
+      ]
+    }
+  ]
+}

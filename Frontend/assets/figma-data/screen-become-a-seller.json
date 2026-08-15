@@ -1,0 +1,27 @@
+{"screen":"Become a Seller","nodeId":"1:2514","dimensions":{"w":527,"h":1038},"backgroundColor":"#ffffff","backgroundAlt":"#fcf8ff","layout":"VERTICAL","padding":[0,0,156,0],"children":[
+  {"n":"Success Modal (hidden)","visible":false,"w":527,"h":1038,"bg":"#1a1a2e at 40%","blur":4,"children":[
+    {"n":"Modal Card","w":346,"h":295,"cr":32,"bg":"#ffffff","padding":24,"gap":16,"layout":"VERTICAL","children":[
+      {"n":"Checkmark Circle","w":72,"h":72,"cr":9999,"bg":"#4343d5 at 10%","icon":"check"},
+      {"n":"Title","text":"Application Sent!","font":"Liberation Serif","style":"Bold","size":24,"lh":"32px","color":"#1a1a2e","ta":"CENTER"},
+      {"n":"Body","text":"Our team will review your business details and get back to you within 24-48 hours.","font":"Inter","size":16,"lh":"24px","color":"#464555","ta":"CENTER","lines":3},
+      {"n":"CTA","text":"Go to Dashboard","w":302,"h":43,"cr":12,"bg":"#4343d5","font":"Liberation Serif","style":"Bold","size":14,"color":"#ffffff","ta":"CENTER","shadow":"0px 4px 20px rgba(26,26,46,0.04)"}
+    ]}
+  ]},
+  {"n":"Header","w":527,"h":52,"bg":"#fcf8ff","layout":"HORIZONTAL","padding":[12,20,12,20],"gap":246,"children":[
+    {"n":"Back + Logo","w":72,"h":28,"gap":16,"children":[
+      {"n":"Back Icon","w":16,"h":16},
+      {"n":"susej","text":"susej","font":"Liberation Serif","style":"Bold","size":20,"color":"#4343d5"}
+    ]},
+    {"n":"Menu Icon","w":20,"h":20}
+  ]},
+  {"n":"Main Content","w":487,"padding":[16,20,32,20],"gap":24,"layout":"VERTICAL","children":[
+    {"n":"Title Row","text":"Become a Seller","font":"Liberation Serif","style":"Bold","size":24,"color":"#1a1a2e"},
+    {"n":"Subtitle","text":"Complete your profile to start selling on Susej.","font":"Inter","size":14,"color":"#464555"},
+    {"n":"Progress Stepper","w":527,"h":80,"steps":[
+      {"num":"1","label":"Identity","w":80,"h":80,"cr":9999,"bg":"#4343d5","textColor":"#ffffff","active":true,"shadow":"0px 4px 20px rgba(26,26,46,0.04)"},
+      {"num":"2","label":"Documents","w":80,"h":80,"cr":9999,"bg":"#e2e0fc","textColor":"#464555","shadow":"0px 4px 20px rgba(26,26,46,0.04)"},
+      {"num":"3","label":"Review","w":80,"h":80,"cr":9999,"bg":"#e2e0fc","textColor":"#464555","shadow":"0px 4px 20px rgba(26,26,46,0.04)"}
+    ]},
+    {"n":"Form","w":487,"h":457,"layout":"VERTICAL","fields":["Business Name","Business Email","Business Category"],"cta":{"text":"Continue","w":487,"h":88,"cr":12,"bg":"#4343d5","font":"Liberation Serif","style":"Bold","size":14,"color":"#ffffff","shadow":"0px 4px 20px rgba(26,26,46,0.04)"}}
+  ]}
+]}

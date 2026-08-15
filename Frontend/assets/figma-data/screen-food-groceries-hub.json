@@ -1,0 +1,110 @@
+{
+  "id": "1:421",
+  "name": "Food & Groceries Hub",
+  "width": 390,
+  "height": 1850,
+  "bg": "#ffffff",
+  "layout": "VERTICAL",
+  "itemSpacing": 16,
+  "sections": [
+    {
+      "name": "Header - Top AppBar",
+      "id": "1:422",
+      "width": 390,
+      "height": 52,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "padding": { "left": 20, "right": 20, "top": 12, "bottom": 12 },
+      "items": [
+        { "name": "Back Arrow", "width": 18, "height": 12 },
+        { "name": "Title", "width": 50, "height": 28 },
+        { "name": "Location Pill", "width": 108, "height": 14 },
+        { "name": "Filter Button", "width": 16, "height": 20 }
+      ]
+    },
+    {
+      "name": "Main Content",
+      "id": "1:436",
+      "width": 390,
+      "height": 1782,
+      "layout": "VERTICAL",
+      "itemSpacing": 24,
+      "padding": { "bottom": 96 },
+      "children": [
+        {
+          "name": "Search & Hero Section",
+          "id": "1:437",
+          "width": 390,
+          "height": 124,
+          "layout": "VERTICAL",
+          "itemSpacing": 24,
+          "padding": { "left": 20, "right": 20 },
+          "children": [
+            { "name": "Search Bar", "width": 350, "height": 56 },
+            { "name": "Category Chips", "width": 350, "height": 44, "chips": 5 }
+          ]
+        },
+        {
+          "name": "Section - Featured Banner",
+          "id": "1:456",
+          "width": 350,
+          "height": 192,
+          "cornerRadius": 24,
+          "bg": "#ffffff",
+          "children": [
+            { "name": "Banner Image", "type": "RECTANGLE", "width": 350, "height": 192 },
+            { "name": "Banner Overlay", "width": 350, "height": 192, "layout": "VERTICAL", "padding": { "left": 24, "right": 24 } }
+          ]
+        },
+        {
+          "name": "Nearby Section",
+          "id": "1:467",
+          "width": 390,
+          "height": 304,
+          "layout": "VERTICAL",
+          "itemSpacing": 16,
+          "padding": { "top": 8 },
+          "children": [
+            { "name": "Section Header (Nearby)", "width": 390, "height": 52, "layout": "HORIZONTAL", "padding": { "left": 20, "right": 20 } },
+            { "name": "Horizontal Scroll Cards", "width": 390, "height": 228, "cards": 2 }
+          ]
+        },
+        {
+          "name": "Popular Grid Section",
+          "id": "1:515",
+          "width": 390,
+          "height": 514,
+          "layout": "VERTICAL",
+          "itemSpacing": 16,
+          "padding": { "left": 20, "right": 20, "top": 8 },
+          "children": [
+            { "name": "Section Header (Popular)", "width": 350, "height": 52 },
+            { "name": "Product Grid", "width": 350, "height": 438, "layout": "GRID", "cards": 4 }
+          ]
+        },
+        {
+          "name": "Fresh Produce Section (Bento Style)",
+          "id": "1:579",
+          "width": 390,
+          "height": 456,
+          "layout": "VERTICAL",
+          "itemSpacing": 16,
+          "padding": { "left": 20, "right": 20, "top": 8 },
+          "children": [
+            { "name": "Heading 3", "width": 350, "height": 32 },
+            { "name": "Bento Grid", "width": 350, "height": 400, "layout": "GRID", "items": 3 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bottom Navigation Bar",
+      "id": "1:596",
+      "width": 390,
+      "height": 59,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "tabs": 5
+    }
+  ]
+}

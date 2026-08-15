@@ -1,0 +1,92 @@
+﻿{
+  "id": "1:622",
+  "name": "Edit Profile",
+  "type": "FRAME",
+  "width": 390,
+  "height": 1662,
+  "fill": "#ffffff",
+  "layoutMode": "VERTICAL",
+  "itemSpacing": 24,
+  "paddingBottom": 96,
+  "children": [
+    {
+      "name": "Header",
+      "width": 390,
+      "height": 52,
+      "fill": "#fcf8ff",
+      "layoutMode": "HORIZONTAL",
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "paddingTop": 12,
+      "paddingBottom": 12,
+      "children": [
+        {"name": "Back Button", "width": 16, "height": 22},
+        {"name": "Heading 1", "width": 102, "height": 28, "type": "TEXT"},
+        {"name": "Save Button", "width": 35, "height": 16, "type": "TEXT", "characters": "Save", "fontSize": 14, "textColor": "#4343d5"}
+      ]
+    },
+    {
+      "name": "Main",
+      "width": 390,
+      "height": 1490,
+      "layoutMode": "VERTICAL",
+      "itemSpacing": 32,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "paddingBottom": 24,
+      "children": [
+        {
+          "name": "Profile Photo Section",
+          "width": 350,
+          "height": 136,
+          "children": [
+            {"name": "Avatar", "width": 96, "height": 96, "type": "FRAME"},
+            {"name": "Change Photo Button", "width": 153, "height": 40}
+          ]
+        },
+        {
+          "name": "Basic Information Section",
+          "width": 350,
+          "height": 360,
+          "layoutMode": "VERTICAL",
+          "itemSpacing": 24,
+          "fields": ["Name", "Username", "Bio"]
+        },
+        {
+          "name": "Business Info Section",
+          "width": 350,
+          "height": 537,
+          "layoutMode": "VERTICAL",
+          "itemSpacing": 24,
+          "paddingTop": 32,
+          "fields": ["Category", "Shop Name", "Business Email", "Business Phone", "Address"]
+        },
+        {
+          "name": "Privacy Section",
+          "width": 350,
+          "height": 249,
+          "layoutMode": "VERTICAL",
+          "itemSpacing": 24,
+          "paddingTop": 32,
+          "toggles": ["Private Account", "Show Phone", "Show Email", "Show Location", "Read Receipts"]
+        },
+        {
+          "name": "Button - Danger Zone",
+          "width": 350,
+          "height": 56,
+          "borderRadius": 16,
+          "children": [
+            {"name": "Text", "type": "TEXT", "characters": "Deactivate Shop Account", "fontSize": 16, "textColor": "#ba1a1a"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bottom Navigation Bar",
+      "width": 390,
+      "height": 43,
+      "fill": "#fcf8ff",
+      "tabs": ["Feed", "Explore", "Create", "Chat", "Profile"]
+    }
+  ]
+}

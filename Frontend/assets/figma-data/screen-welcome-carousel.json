@@ -1,0 +1,60 @@
+{
+  "id": "1:1935",
+  "name": "Welcome Carousel",
+  "width": 390,
+  "height": 884,
+  "children": [
+    {
+      "id": "1:1936",
+      "name": "Main Content Canvas",
+      "type": "FRAME",
+      "width": 390,
+      "height": 884,
+      "children": [
+        {
+          "id": "1:1937",
+          "name": "Onboarding Carousel Content",
+          "type": "FRAME",
+          "width": 390,
+          "height": 646,
+          "children": [
+            { "id": "1:1938", "name": "Section - Slide 1: Instagram-style Lifestyle", "type": "FRAME", "width": 390, "height": 646 },
+            { "id": "1:1954", "name": "Section - Slide 2: Map Illustration", "type": "FRAME", "width": 390, "height": 646 },
+            { "id": "1:1973", "name": "Section - Slide 3: Social Groups", "type": "FRAME", "width": 390, "height": 646 }
+          ]
+        },
+        {
+          "id": "1:2010",
+          "name": "Bottom Controls",
+          "type": "FRAME",
+          "width": 390,
+          "height": 178,
+          "paddingBottom": 32,
+          "paddingLeft": 20,
+          "paddingRight": 20,
+          "itemSpacing": 32,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:2011", "name": "Indicators", "type": "FRAME", "width": 40, "height": 8, "itemSpacing": 8, "layoutMode": "HORIZONTAL" },
+            { "id": "1:2015", "name": "Action Button", "type": "FRAME", "width": 350, "height": 56, "cornerRadius": 16, "fill": "rgb(93,95,239)", "layoutMode": "HORIZONTAL" },
+            { "id": "1:2020", "name": "Link", "type": "FRAME", "width": 194, "height": 18, "layoutMode": "VERTICAL" }
+          ]
+        },
+        {
+          "id": "1:2022",
+          "name": "Header Branding",
+          "type": "FRAME",
+          "width": 390,
+          "height": 60,
+          "paddingTop": 32,
+          "paddingLeft": 20,
+          "paddingRight": 20,
+          "layoutMode": "HORIZONTAL",
+          "children": [
+            { "id": "1:2023", "name": "Heading 1", "type": "FRAME", "width": 50, "height": 28 }
+          ]
+        }
+      ]
+    }
+  ]
+}

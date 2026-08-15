@@ -387,7 +387,7 @@ export default function OrderDetailsScreen() {
           <TouchableOpacity
             className="flex-1 items-center justify-center py-3 rounded-[16px]"
             style={{ backgroundColor: colors.surfaceContainerLow }}
-            onPress={() => router.push('/map')}
+            onPress={() => router.push(`/track-order?id=${order.id}`)}
           >
             <MapPinIcon size={18} color={colors.primaryContainer} />
             <Text className="text-[13px] font-inter-600 text-textPrimary mt-1" style={{ lineHeight: 18 }}>

@@ -1,0 +1,112 @@
+﻿{
+  "id": "1:271",
+  "name": "Settings & Privacy",
+  "type": "FRAME",
+  "width": 390,
+  "height": 1234,
+  "fill": "#ffffff",
+  "layoutMode": "VERTICAL",
+  "itemSpacing": 16,
+  "paddingBottom": 128,
+  "children": [
+    {
+      "name": "Header - Top AppBar",
+      "width": 390,
+      "height": 52,
+      "fill": "#fcf8ff",
+      "layoutMode": "HORIZONTAL",
+      "itemSpacing": 210,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "paddingTop": 12,
+      "paddingBottom": 12,
+      "children": [
+        {"name": "Back Button", "width": 16, "height": 18},
+        {"name": "Heading 1", "width": 80, "height": 28},
+        {"name": "More Button", "width": 16, "height": 22}
+      ]
+    },
+    {
+      "name": "Main",
+      "width": 390,
+      "height": 1038,
+      "layoutMode": "VERTICAL",
+      "itemSpacing": 24,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "paddingBottom": 32,
+      "children": [
+        {
+          "name": "Search Bar",
+          "width": 350,
+          "height": 47,
+          "children": [
+            {"name": "Input", "width": 350, "height": 47, "fill": "#f5f2ff", "borderRadius": 12, "paddingLeft": 32, "paddingRight": 16}
+          ]
+        },
+        {
+          "name": "Section: Account",
+          "width": 350,
+          "height": 171,
+          "layoutMode": "VERTICAL",
+          "itemSpacing": 12,
+          "children": [
+            {"name": "Heading 2", "width": 342, "height": 14},
+            {"name": "Background+Shadow", "width": 350, "height": 145, "fill": "#fcf8ff", "borderRadius": 16}
+          ]
+        },
+        {
+          "name": "Section: Privacy",
+          "width": 350,
+          "height": 173,
+          "layoutMode": "VERTICAL",
+          "itemSpacing": 12,
+          "children": [
+            {"name": "Heading 2", "width": 342, "height": 14},
+            {"name": "Background+Shadow", "width": 350, "height": 147, "fill": "#fcf8ff", "borderRadius": 16}
+          ]
+        },
+        {
+          "name": "Section: Notifications",
+          "width": 350,
+          "height": 171,
+          "layoutMode": "VERTICAL",
+          "itemSpacing": 12,
+          "children": [
+            {"name": "Heading 2", "width": 342, "height": 14},
+            {"name": "Background+Shadow", "width": 350, "height": 145, "fill": "#fcf8ff", "borderRadius": 16}
+          ]
+        },
+        {
+          "name": "Section: Marketplace",
+          "width": 350,
+          "height": 268,
+          "layoutMode": "VERTICAL",
+          "itemSpacing": 12,
+          "paddingBottom": 24,
+          "children": [
+            {"name": "Heading 2", "width": 342, "height": 14},
+            {"name": "Background+Shadow", "width": 350, "height": 218, "fill": "#fcf8ff", "borderRadius": 16}
+          ]
+        },
+        {
+          "name": "Button - Log Out Action",
+          "width": 350,
+          "height": 56,
+          "fill": "#ffdad6",
+          "borderRadius": 16,
+          "children": [
+            {"name": "Text", "type": "TEXT", "characters": "Log Out", "fontSize": 16, "textColor": "#ba1a1a"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bottom Navigation Bar",
+      "width": 390,
+      "height": 55,
+      "fill": "#fcf8ff",
+      "tabs": ["Feed", "Explore", "Create", "Chat", "Profile"]
+    }
+  ]
+}

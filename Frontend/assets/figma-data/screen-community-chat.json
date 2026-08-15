@@ -1,0 +1,61 @@
+{
+  "id": "1:122",
+  "name": "Community Chat",
+  "width": 390,
+  "height": 1826,
+  "bg": "#ffffff",
+  "layout": "VERTICAL",
+  "sections": [
+    {
+      "name": "Footer - Floating Input Area",
+      "id": "1:123",
+      "width": 390,
+      "height": 166,
+      "layout": "VERTICAL",
+      "children": [
+        { "name": "Bottom Nav Shell", "width": 390, "height": 59, "layout": "HORIZONTAL", "bg": "#fcf8ff", "tabs": 5 },
+        { "name": "Chat Input Field", "width": 390, "height": 107, "bg": "#fcf8ff" }
+      ]
+    },
+    {
+      "name": "Header - Top Navigation Bar",
+      "id": "1:170",
+      "width": 390,
+      "height": 66,
+      "layout": "HORIZONTAL",
+      "itemSpacing": 44,
+      "padding": { "left": 20, "right": 20, "top": 12, "bottom": 12 },
+      "bg": "#fcf8ff",
+      "children": [
+        { "name": "Group Info", "width": 238, "height": 42, "layout": "HORIZONTAL", "itemSpacing": 16 },
+        { "name": "Actions", "width": 34, "height": 18, "layout": "HORIZONTAL", "itemSpacing": 12 }
+      ]
+    },
+    {
+      "name": "Pinned Announcement",
+      "id": "1:184",
+      "width": 390,
+      "height": 72,
+      "layout": "VERTICAL",
+      "padding": { "left": 20, "right": 20, "top": 8, "bottom": 8 },
+      "children": [
+        { "name": "Announcement Banner", "width": 350, "height": 56, "padding": 16, "cornerRadius": 12, "bg": "#5d5fef" }
+      ]
+    },
+    {
+      "name": "Main - Chat Canvas",
+      "id": "1:194",
+      "width": 390,
+      "height": 1688,
+      "layout": "VERTICAL",
+      "padding": { "left": 20, "right": 20, "top": 24, "bottom": 128 },
+      "messages": [
+        { "name": "Day Divider", "width": 350, "height": 22 },
+        { "name": "Message: Standard Text (margin)", "width": 298, "height": 340, "padding": { "top": 24 }, "align": "flex-start" },
+        { "name": "Message: Listing Shortcut (margin)", "width": 350, "height": 862, "align": "flex-start" },
+        { "name": "Message: Self Message (margin)", "width": 350, "height": 124, "align": "flex-end" },
+        { "name": "Message: Interactive Offer (margin)", "width": 298, "height": 188, "padding": { "top": 24 }, "align": "flex-start" }
+      ]
+    }
+  ]
+}

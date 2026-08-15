@@ -1,0 +1,34 @@
+{"screen":"Messages","nodeId":"1:3387","dimensions":{"w":525,"h":1155},"backgroundColor":"#ffffff","backgroundAlt":"#fcf8ff","layout":"VERTICAL","children":[
+  {"n":"BottomNavBar","t":"FRAME","w":390,"h":59,"cr":0,"bg":"#fcf8ff at 80%","border":"#f5f2ff","blur":12,"layout":"HORIZONTAL","padding":[4,12,4,12],"gap":7,"tabs":[
+    {"name":"Feed","w":61,"h":48,"cr":12,"color":"#464555"},
+    {"name":"Explore","w":76,"h":50,"cr":12,"color":"#464555"},
+    {"name":"Create","w":71,"h":50,"cr":12,"color":"#464555"},
+    {"name":"Chat","w":60,"h":50,"cr":12,"color":"#4343d5","active":true},
+    {"name":"Profile","w":70,"h":46,"cr":12,"color":"#464555"}
+  ]},
+  {"n":"Header - TopAppBar","type":"FRAME","w":525,"h":52,"bg":"#fcf8ff","layout":"HORIZONTAL","padding":[12,20,12,20],"gap":236,"children":[
+    {"n":"Logo","w":84,"h":28,"gap":16,"children":[
+      {"n":"Icon","w":18,"h":18},
+      {"n":"Title","w":50,"h":28,"text":"susej","font":"Geist","size":20,"lh":"28px","ls":"-0.5px","color":"#4343d5"}
+    ]},
+    {"n":"Menu button","w":16,"h":26}
+  ]},
+  {"n":"FAB","w":96,"h":96,"cr":9999,"bg":"#5d5fef","position":{"x":6119,"y":3381}},
+  {"n":"Tab Navigation","w":525,"h":49,"bg":"#fcf8ff","border":"#f5f2ff","layout":"VERTICAL","padding":[0,20,0,20],"tabs":[
+    {"name":"Messages","w":243,"h":48,"font":"Geist","size":14,"color":"#4343d5","active":true},
+    {"name":"Community Chats","w":243,"h":48,"font":"Geist","size":14,"color":"#5c5e63"}
+  ],"activeIndicator":{"w":243,"h":2,"color":"#5d5fef"}},
+  {"n":"Main Content","w":525,"h":821,"layout":"VERTICAL","padding":[24,20,142,20],"gap":24,"children":[
+    {"n":"Search Bar","w":485,"h":48,"children":[
+      {"n":"Input","w":485,"h":48,"cr":12,"bg":"#f5f2ff","padding":[14,16,14,44],"placeholder":"Search conversations...","placeholderFont":"Inter","placeholderSize":16,"placeholderColor":"#6b7280"},
+      {"n":"Search Icon","w":18,"h":18}
+    ]},
+    {"n":"Chat List","w":525,"h":623,"layout":"VERTICAL","gap":12,"items":[
+      {"type":"chat","w":525,"h":139,"cr":24,"bg":"#ffffff","shadow":"0px 4px 20px rgba(26,26,46,0.04)","layout":"HORIZONTAL","padding":16,"gap":16,"avatar":{"w":56,"h":56,"cr":9999,"bg":"#dedfe5"},"unread":true,"unreadDot":{"w":8,"h":8,"cr":4,"color":"#5d5fef"},"onlineIndicator":{"w":16,"h":16,"cr":9999,"color":"#22c55e"}},
+      {"type":"chat","w":525,"h":159,"cr":24,"bg":"#ffffff","shadow":"0px 4px 20px rgba(26,26,46,0.04)","avatarImage":true},
+      {"type":"chat","w":525,"h":139,"cr":24,"bg":"#ffffff","shadow":"0px 4px 20px rgba(26,26,46,0.04)","avatarImage":true},
+      {"type":"chat","w":525,"h":139,"cr":24,"bg":"#ffffff","shadow":"0px 4px 20px rgba(26,26,46,0.04)","avatarImage":true},
+      {"type":"chat","w":525,"h":159,"cr":24,"bg":"#ffffff","shadow":"0px 4px 20px rgba(26,26,46,0.04)","avatarImage":true}
+    ]}
+  ]}
+]}

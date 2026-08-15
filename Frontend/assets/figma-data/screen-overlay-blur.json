@@ -1,0 +1,1 @@
+{"screen":"Overlay+Blur","nodeId":"15:2","type":"RECTANGLE","dimensions":{"w":312,"h":312},"cornerRadius":9999,"fill":"#c1c1ff","effect":{"type":"LAYER_BLUR","radius":60},"usage":"Utility overlay for modal backgrounds, blur effects on UI overlays"}

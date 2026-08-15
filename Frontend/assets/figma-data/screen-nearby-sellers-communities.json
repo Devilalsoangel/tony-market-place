@@ -1,0 +1,44 @@
+{"screen":"Nearby Sellers & Communities","nodeId":"1:3058","dimensions":{"w":546,"h":1054},"backgroundColor":"#ffffff","backgroundAlt":"#fcf8ff","layout":"VERTICAL","children":[
+  {"n":"Header","w":526,"h":64,"bg":"#fcf8ff","layout":"HORIZONTAL","padding":[0,20,0,20],"gap":206,"children":[
+    {"n":"Back + Logo","w":114,"h":40,"gap":16,"children":[
+      {"n":"Back Icon","w":18,"h":18},
+      {"n":"susej","text":"susej","font":"Geist","size":32,"lh":"40px","ls":"-0.8px","color":"#4343d5"}
+    ]},
+    {"n":"Menu","w":16,"h":26}
+  ]},
+  {"n":"Map Area","w":526,"h":820,"bg":"#efecff","image":true,"overlay":"#ffffff at 20% 90% opacity","children":[
+    {"n":"Map Pins", "pins":[
+      {"type":"Fashion","icon":true,"bg":"#4343d5","border":"#ffffff w2","w":64,"h":59,"cr":9999,"label":"","labelBg":"#ffffff"},
+      {"type":"Electronics","icon":true,"bg":"#50519b","border":"#ffffff w2","w":64,"h":57,"cr":9999,"label":"","labelBg":"#ffffff"},
+      {"type":"Food","icon":true,"bg":"#5d5fef","border":"#ffffff w2","w":64,"h":61,"cr":9999,"label":"","labelBg":"#ffffff"},
+      {"type":"Community","icon":true,"bg":"#5c5e63","border":"#ffffff w2","w":64,"h":54,"cr":9999,"label":"","labelBg":"#ffffff"}
+    ]},
+    {"n":"Toggle Selector","w":526,"h":80,"cr":9999,"bg":"#ffffff","shadow":"0px 4px 20px rgba(26,26,46,0.04)","layout":"HORIZONTAL","padding":4,"tabs":[
+      {"label":"Sellers","w":239,"h":32,"cr":9999,"bg":"#4343d5","active":true},
+      {"label":"Communities","w":239,"h":32","cr":9999,"active":false}
+    ]},
+    {"n":"Search Bar","w":526,"h":88,"bg":"#ffffff at 0.2%","shadow":"0px 4px 20px rgba(26,26,46,0.04)","children":[
+      {"n":"Input","w":486,"h":48,"cr":16,"bg":"#ffffff"},
+      {"n":"Search Icon","w":18,"h":48"},
+      {"n":"Filter Icon","w":18,"h":48"}
+    ]},
+    {"n":"Category Pills","w":486,"h":38,"items":[
+      {"label":"All","w":63,"h":38,"cr":9999,"bg":"#4343d5","textColor":"#ffffff","active":true},
+      {"label":"Fashion","w":95,"h":34,"cr":9999,"bg":"#ffffff","border":"#dedfe5 w1"},
+      {"label":"Electronics","w":119,"h":34,"cr":9999,"bg":"#ffffff","border":"#dedfe5 w1"},
+      {"label":"Food","w":76,"h":34,"cr":9999,"bg":"#ffffff","border":"#dedfe5 w1"},
+      {"label":"Art","w":63,"h":34,"cr":9999,"bg":"#ffffff","border":"#dedfe5 w1"}
+    ]},
+    {"n":"Near You Card","w":526,"h":219,"cr":24,"bg":"#ffffff at 85%","border":"#ffffff w1","blur":12,"shadow":"0px 10px 30px rgba(26,26,46,0.08)","padding":16,"gap":12,"children":[
+      {"n":"Header Row","w":452,"h":25,"title":"Near You","icon":"close"},
+      {"n":"Seller Preview","w":464,"h":70,"gap":16,"children":[
+        {"n":"Avatar","w":60,"h":60,"cr":9999},
+        {"n":"Info","w":324,"h":42,"text":"Seller name + category"},
+        {"n":"CTA Button","w":64,"h":64,"cr":9999,"bg":"#5d5fef"}
+      ]},
+      {"n":"Meta Row","w":452,"h":20,"text":"distance, rating, price"}
+    ]}
+  ]},
+  {"n":"FAB","w":96,"h":96,"cr":16,"bg":"#4343d5","shadow":"0px 10px 30px #4343d5"},
+  {"n":"BottomNav","w":430,"h":99,"bg":"#fcf8ff","border":"#dedfe5","shadow":"0px -4px 20px rgba(26,26,46,0.04)"}
+]}

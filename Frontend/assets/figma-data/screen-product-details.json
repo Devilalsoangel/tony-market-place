@@ -1,0 +1,82 @@
+{
+  "id": "1:3211",
+  "name": "Product Details",
+  "width": 526,
+  "height": 2011,
+  "bg": "#ffffff",
+  "layout": "VERTICAL",
+  "sections": [
+    {
+      "name": "Bottom Navigation Shell",
+      "id": "1:3212",
+      "width": 390,
+      "height": 43,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "tabs": 5
+    },
+    {
+      "name": "Header - Top AppBar",
+      "id": "1:3238",
+      "width": 526,
+      "height": 64,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "padding": { "left": 20, "right": 20 },
+      "items": [
+        { "name": "Back Button", "width": 16, "height": 22 },
+        { "name": "Brand Title", "text": "susej", "fontSize": 32, "font": "Geist Regular", "color": "#4343d5" },
+        { "name": "More Button", "width": 16, "height": 26 }
+      ]
+    },
+    {
+      "name": "Main Content",
+      "id": "1:3247",
+      "width": 526,
+      "height": 1647,
+      "layout": "VERTICAL",
+      "itemSpacing": 24,
+      "padding": { "bottom": 96 },
+      "children": [
+        {
+          "name": "Section - Image Carousel",
+          "id": "1:3248",
+          "width": 526,
+          "height": 488,
+          "bg": "#efecff",
+          "children": [
+            { "name": "Image Container", "width": 526, "height": 488 },
+            { "name": "Indicators", "width": 526, "height": 6, "layout": "HORIZONTAL", "itemSpacing": 8 }
+          ]
+        },
+        {
+          "name": "Section - Product Header & Stats",
+          "id": "1:3257",
+          "width": 526,
+          "height": 526,
+          "layout": "VERTICAL",
+          "padding": { "left": 20, "right": 20 },
+          "children": [
+            { "name": "Title & Price Row", "id": "1:3258", "width": 486, "height": 80, "layout": "HORIZONTAL", "itemSpacing": 60 },
+            { "name": "Seller Profile Snippet", "id": "1:3269", "width": 486, "height": 82, "layout": "HORIZONTAL", "itemSpacing": 59, "padding": 16, "cornerRadius": 12, "bg": "#ffffff" },
+            { "name": "Description", "id": "1:3286", "width": 486, "height": 208, "layout": "VERTICAL", "itemSpacing": 7, "padding": { "top": 24 } },
+            { "name": "Action Buttons", "id": "1:3291", "width": 486, "height": 156, "layout": "VERTICAL", "itemSpacing": 12, "padding": { "top": 32 } }
+          ]
+        },
+        {
+          "name": "Section - Similar Items Grid",
+          "id": "1:3299",
+          "width": 526,
+          "height": 490,
+          "layout": "VERTICAL",
+          "itemSpacing": 16,
+          "padding": { "left": 20, "right": 20, "top": 8 },
+          "children": [
+            { "name": "Section Header", "width": 486, "height": 24, "layout": "HORIZONTAL" },
+            { "name": "Product Grid", "width": 486, "height": 442, "layout": "GRID", "cards": 4 }
+          ]
+        }
+      ]
+    }
+  ]
+}

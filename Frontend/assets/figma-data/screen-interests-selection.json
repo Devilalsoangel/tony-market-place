@@ -1,0 +1,93 @@
+{
+  "id": "1:1334",
+  "name": "Interests Selection",
+  "width": 390,
+  "height": 1020,
+  "children": [
+    {
+      "id": "1:1335",
+      "name": "Footer - Bottom Action Bar",
+      "type": "FRAME",
+      "width": 390,
+      "height": 126,
+      "paddingTop": 16,
+      "paddingBottom": 32,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "fill": "rgb(252,248,255)",
+      "layoutMode": "VERTICAL",
+      "children": [
+        {
+          "id": "1:1336",
+          "name": "Container",
+          "type": "FRAME",
+          "width": 350,
+          "height": 78,
+          "itemSpacing": 16,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1337", "name": "Container", "type": "FRAME", "width": 350, "height": 14, "layoutMode": "HORIZONTAL" },
+            { "id": "1:1342", "name": "Button", "type": "FRAME", "width": 350, "height": 48, "cornerRadius": 9999, "fill": "rgb(93,95,239)", "layoutMode": "HORIZONTAL", "paddingTop": 16, "paddingBottom": 16 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1:1346",
+      "name": "Header - Top Navigation",
+      "type": "FRAME",
+      "width": 390,
+      "height": 72,
+      "paddingTop": 16,
+      "paddingBottom": 16,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "fill": "rgb(252,248,255)",
+      "layoutMode": "HORIZONTAL",
+      "children": [
+        { "id": "1:1347", "name": "Button (Back)", "type": "FRAME", "width": 40, "height": 40, "cornerRadius": 9999 },
+        { "id": "1:1350", "name": "Progress Dots", "type": "FRAME", "width": 72, "height": 14, "itemSpacing": 4, "layoutMode": "HORIZONTAL" },
+        { "id": "1:1357", "name": "Skip Button", "type": "FRAME", "width": 31, "height": 16,
+          "children": [{ "id": "1:1358", "name": "Text", "type": "TEXT", "characters": "Skip", "fontSize": 14, "fontName": "Geist Regular", "fill": "rgb(67,67,213)" }]
+        }
+      ]
+    },
+    {
+      "id": "1:1359",
+      "name": "Main Canvas",
+      "type": "FRAME",
+      "width": 390,
+      "height": 948,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "layoutMode": "VERTICAL",
+      "children": [
+        {
+          "id": "1:1360",
+          "name": "Section - Animated Intro Header",
+          "type": "FRAME",
+          "width": 350,
+          "height": 144,
+          "paddingTop": 16,
+          "paddingBottom": 32,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1361", "name": "Section - Animated Intro Header", "type": "FRAME", "width": 350, "height": 96, "itemSpacing": 8, "layoutMode": "VERTICAL" }
+          ]
+        },
+        {
+          "id": "1:1366",
+          "name": "Dynamic Bento-style Grid of Interests",
+          "type": "FRAME",
+          "width": 350,
+          "height": 804,
+          "paddingBottom": 128,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1367", "name": "Container", "type": "FRAME", "width": 350, "height": 676, "layoutMode": "GRID" }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "id": "1:1591",
+  "name": "Location Selection",
+  "width": 390,
+  "height": 1103,
+  "children": [
+    {
+      "id": "1:1669",
+      "name": "Nav - Header Section",
+      "type": "FRAME",
+      "width": 390,
+      "height": 64,
+      "padding": { "left": 20, "right": 143, "top": 12, "bottom": 12 },
+      "layoutMode": "HORIZONTAL",
+      "children": [
+        { "id": "1:1670", "name": "Button - Go back", "type": "FRAME", "width": 40, "height": 40, "cornerRadius": 9999 },
+        { "id": "1:1673", "name": "Progress Dots", "type": "FRAME", "width": 104, "height": 8, "itemSpacing": 8, "layoutMode": "HORIZONTAL",
+          "note": "5 dots (8x8, borderRadius 9999) + 1 half-dot (24x8)"
+        }
+      ]
+    },
+    {
+      "id": "1:1592",
+      "name": "Main",
+      "type": "FRAME",
+      "width": 390,
+      "height": 908,
+      "layoutMode": "VERTICAL",
+      "children": [
+        {
+          "id": "1:1593",
+          "name": "Container - Map Hero",
+          "type": "FRAME",
+          "width": 390,
+          "height": 240,
+          "note": "Background image + gradient overlay + pin animation",
+          "children": [
+            { "id": "1:1594", "name": "Background+Image", "type": "RECTANGLE", "width": 390, "height": 240, "opacity": 0.4 },
+            { "id": "1:1595", "name": "Gradient", "type": "RECTANGLE", "width": 390, "height": 240, "fill": "GRADIENT_LINEAR" },
+            { "id": "1:1596", "name": "Pin Animation Overlay", "type": "FRAME", "width": 390, "height": 240 }
+          ]
+        },
+        {
+          "id": "1:1601",
+          "name": "Content Area",
+          "type": "FRAME",
+          "width": 390,
+          "height": 714,
+          "padding": { "left": 20, "right": 20, "bottom": 32 },
+          "itemSpacing": 24,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1602", "name": "Container - Heading", "type": "FRAME", "width": 350, "height": 104, "itemSpacing": 8, "layoutMode": "VERTICAL" },
+            { "id": "1:1607", "name": "Button - Primary Action", "type": "FRAME", "width": 350, "height": 56, "cornerRadius": 16, "layoutMode": "HORIZONTAL", "childCount": 3 },
+            { "id": "1:1612", "name": "Separator", "type": "FRAME", "width": 350, "height": 14, "layoutMode": "HORIZONTAL", "childCount": 3 },
+            { "id": "1:1617", "name": "Search Bar", "type": "FRAME", "width": 350, "height": 56, "layoutMode": "VERTICAL", "childCount": 2 },
+            { "id": "1:1623", "name": "Popular Cities Grid", "type": "FRAME", "width": 350, "height": 356, "itemSpacing": 12, "layoutMode": "VERTICAL", "childCount": 2 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1:1663",
+      "name": "Footer Action",
+      "type": "FRAME",
+      "width": 390,
+      "height": 131,
+      "padding": 20,
+      "itemSpacing": 12,
+      "layoutMode": "VERTICAL",
+      "children": [
+        { "id": "1:1664", "name": "Button - Continue", "type": "FRAME", "width": 350, "height": 56, "cornerRadius": 16,
+          "children": [
+            { "id": "1:1665", "name": "Button:shadow", "type": "RECTANGLE", "width": 350, "height": 56, "cornerRadius": 16 },
+            { "id": "1:1666", "name": "Text", "type": "TEXT", "characters": "Continue", "fontSize": 14, "fontWeight": 600 }
+          ]
+        },
+        { "id": "1:1668", "name": "Text - Skip for now", "type": "TEXT", "characters": "Skip for now", "fontSize": 12, "fontWeight": 500 }
+      ]
+    }
+  ]
+}

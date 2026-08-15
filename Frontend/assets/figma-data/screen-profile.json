@@ -1,0 +1,111 @@
+{
+  "screen": "My Profile",
+  "nodeId": "1:1752",
+  "dimensions": {"width": 390, "height": 1023},
+  "backgroundColor": "#010101",
+  "layout": "VERTICAL",
+  "sections": {
+    "header": {
+      "name": "Header - Top App Bar",
+      "nodeId": "1:1779",
+      "dimensions": {"width": 390, "height": 52},
+      "background": "#fcfcfd/#f8f8f901 at 80% opacity",
+      "padding": {"left": 20, "right": 20, "top": 12, "bottom": 12},
+      "layout": "HORIZONTAL",
+      "gap": 208,
+      "left": [
+        {"name": "Heading 1", "text": "susej", "fontSize": 20, "fontFamily": "Geist Regular", "color": "#434343/#434343/#d5d5d6"},
+        {"name": "Verified Badge", "dimensions": {"width": 18, "height": 18}}
+      ],
+      "right": [
+        {"name": "Button (add)", "dimensions": {"width": 18, "height": 26}},
+        {"name": "Button (menu)", "dimensions": {"width": 18, "height": 20}}
+      ]
+    },
+    "main": {
+      "name": "Main",
+      "nodeId": "1:1792",
+      "dimensions": {"width": 390, "height": 459},
+      "layout": "VERTICAL",
+      "children": [
+        {
+          "name": "Section - Profile Header",
+          "nodeId": "1:1793",
+          "dimensions": {"width": 390, "height": 296},
+          "padding": {"left": 20, "right": 20, "top": 16, "bottom": 24},
+          "gap": 16,
+          "layout": "VERTICAL",
+          "children": [
+            {
+              "name": "Avatar + Stats Row",
+              "nodeId": "1:1794",
+              "dimensions": {"width": 350, "height": 96},
+              "layout": "HORIZONTAL",
+              "gap": 40,
+              "children": [
+                {"name": "Avatar Container", "nodeId": "1:1795", "dimensions": {"width": 96, "height": 96}},
+                {"name": "Stats Container", "nodeId": "1:1799", "dimensions": {"width": 214, "height": 36}, "layout": "HORIZONTAL", "gap": 24}
+              ]
+            },
+            {
+              "name": "Bio Container",
+              "nodeId": "1:1815",
+              "dimensions": {"width": 350, "height": 80},
+              "layout": "VERTICAL",
+              "children": [
+                {"name": "Heading 2 (name)", "nodeId": "1:1816", "dimensions": {"width": 350, "height": 16}},
+                {"name": "Username Container", "nodeId": "1:1818", "dimensions": {"width": 350, "height": 20}},
+                {"name": "Bio Text Container", "nodeId": "1:1820", "dimensions": {"width": 280, "height": 44}}
+              ]
+            },
+            {
+              "name": "Action Buttons",
+              "nodeId": "1:1822",
+              "dimensions": {"width": 350, "height": 48},
+              "padding": {"top": 8},
+              "gap": 8,
+              "layout": "HORIZONTAL",
+              "buttons": [
+                {"name": "Edit Profile", "nodeId": "1:1823", "dimensions": {"width": 147, "height": 40}, "background": "#e8e8e9/#e5e5e601", "borderRadius": 12, "padding": {"left": 16, "right": 16, "top": 12, "bottom": 12}},
+                {"name": "Share Profile", "nodeId": "1:1825", "dimensions": {"width": 147, "height": 40}, "background": "#e8e8e9/#e5e5e601", "borderRadius": 12},
+                {"name": "More Options", "nodeId": "1:1827", "dimensions": {"width": 40, "height": 40}, "background": "#e8e8e9/#e5e5e601", "borderRadius": 12}
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Section - Stories/Highlights",
+          "nodeId": "1:1830",
+          "dimensions": {"width": 390, "height": 106},
+          "padding": {"left": 20, "right": 20, "bottom": 24},
+          "gap": 16,
+          "layout": "HORIZONTAL",
+          "stories": [
+            {"name": "New Story", "nodeId": "1:1831", "dimensions": {"width": 64, "height": 82}, "avatarSize": 64, "borderRadius": 9999},
+            {"name": "Story 1", "nodeId": "1:1837", "dimensions": {"width": 64, "height": 82}, "background": "#e8e8e9/#e5e5e601", "borderRadius": 9999, "padding": 4},
+            {"name": "Story 2", "nodeId": "1:1842", "dimensions": {"width": 64, "height": 82}},
+            {"name": "Story 3", "nodeId": "1:1847", "dimensions": {"width": 64, "height": 82}}
+          ]
+        },
+        {
+          "name": "Nav - Tabs",
+          "nodeId": "1:1852",
+          "dimensions": {"width": 390, "height": 53},
+          "layout": "HORIZONTAL",
+          "tabs": [
+            {"name": "Posts", "nodeId": "1:1853", "dimensions": {"width": 130, "height": 52}, "iconSize": {"width": 18, "height": 18}},
+            {"name": "Reels", "nodeId": "1:1856", "dimensions": {"width": 130, "height": 48}, "iconSize": {"width": 20, "height": 16}},
+            {"name": "Shop", "nodeId": "1:1859", "dimensions": {"width": 130, "height": 52}, "iconSize": {"width": 20, "height": 20}}
+          ]
+        }
+      ]
+    },
+    "bottomNav": {
+      "name": "Bottom Navigation Bar",
+      "nodeId": "1:1753",
+      "dimensions": {"width": 390, "height": 59},
+      "background": "#fcfcfd/#f8f8f901 at 80% opacity",
+      "tabs": ["Feed", "Explore", "Create", "Chat", "Profile (Active)"]
+    }
+  }
+}

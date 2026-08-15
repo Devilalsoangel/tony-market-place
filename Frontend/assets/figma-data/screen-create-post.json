@@ -1,0 +1,59 @@
+{
+  "id": "1:3346",
+  "name": "Create New Post",
+  "width": 527,
+  "height": 1034,
+  "bg": "#ffffff",
+  "layout": "VERTICAL",
+  "sections": [
+    {
+      "name": "Header - Top App Bar",
+      "id": "1:3347",
+      "width": 527,
+      "height": 64,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "items": [
+        { "name": "Back Button", "width": 14, "height": 20 },
+        { "name": "Title", "width": 142, "height": 40, "text": "Create New Post" },
+        { "name": "Next Button", "width": 33, "height": 24 }
+      ]
+    },
+    {
+      "name": "Step 1: Media Selection",
+      "id": "1:3357",
+      "width": 527,
+      "height": 633,
+      "layout": "VERTICAL",
+      "itemSpacing": 12,
+      "children": [
+        {
+          "name": "Large Preview",
+          "id": "1:3358",
+          "width": 527,
+          "height": 390,
+          "type": "image_placeholder"
+        },
+        {
+          "name": "Grid Picker",
+          "id": "1:3360",
+          "width": 527,
+          "height": 231,
+          "layout": "VERTICAL",
+          "padding": { "left": 20, "right": 20 },
+          "itemSpacing": 16,
+          "children": [
+            { "name": "Tab Bar (Photos/Videos)", "width": 487, "height": 42 },
+            { "name": "Image Grid", "width": 487, "height": 173, "layout": "GRID", "cols": 4 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bottom Navigation Bar",
+      "width": 527,
+      "height": 183,
+      "note": "padding bottom 183 from parent"
+    }
+  ]
+}

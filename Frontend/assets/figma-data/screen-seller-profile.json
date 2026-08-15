@@ -1,0 +1,116 @@
+{
+  "id": "1:2765",
+  "name": "Seller Profile",
+  "width": 526,
+  "height": 1666,
+  "bg": "#ffffff",
+  "layout": "VERTICAL",
+  "sections": [
+    {
+      "name": "BottomNavBar",
+      "id": "1:2766",
+      "width": 390,
+      "height": 59,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "padding": { "left": 8, "right": 8, "top": 4, "bottom": 4 },
+      "tabs": [
+        { "name": "Feed", "width": 75, "height": 48 },
+        { "name": "Explore", "width": 75, "height": 50 },
+        { "name": "Create", "width": 75, "height": 50 },
+        { "name": "Chat", "width": 75, "height": 50 },
+        { "name": "Profile", "width": 75, "height": 46 }
+      ]
+    },
+    {
+      "name": "Header - TopAppBar",
+      "id": "1:2792",
+      "width": 526,
+      "height": 52,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "padding": { "left": 20, "right": 20, "top": 12, "bottom": 12 },
+      "items": [
+        { "name": "Back Arrow", "width": 18, "height": 18 },
+        { "name": "Title", "width": 50, "height": 28, "text": "Seller" },
+        { "name": "More Button", "width": 16, "height": 26 }
+      ]
+    },
+    {
+      "name": "Main Content",
+      "id": "1:2802",
+      "width": 526,
+      "height": 1270,
+      "layout": "ABSOLUTE",
+      "children": [
+        {
+          "name": "Section - Profile Header",
+          "id": "1:2803",
+          "width": 526,
+          "height": 434,
+          "layout": "VERTICAL",
+          "padding": { "left": 20, "right": 20, "top": 24, "bottom": 40 },
+          "itemSpacing": 16,
+          "children": [
+            {
+              "name": "Avatar & Name Row",
+              "id": "1:2804",
+              "width": 486,
+              "height": 96,
+              "layout": "HORIZONTAL",
+              "itemSpacing": 24,
+              "children": [
+                { "name": "Avatar", "size": 96, "cornerRadius": 9999 },
+                { "name": "Name & Username", "width": 366 }
+              ]
+            },
+            {
+              "name": "Stats Row",
+              "id": "1:2821",
+              "width": 486,
+              "height": 74,
+              "layout": "HORIZONTAL",
+              "itemSpacing": 37.2,
+              "padding": { "left": 24, "right": 24, "top": 16, "bottom": 16 },
+              "cornerRadius": 24,
+              "bg": "#f5f2ff",
+              "stats": ["Posts", "Followers", "Following", "Rating"]
+            },
+            {
+              "name": "Bio & Actions",
+              "id": "1:2841",
+              "width": 486,
+              "height": 168,
+              "layout": "VERTICAL",
+              "itemSpacing": 16,
+              "children": [
+                { "name": "Follow Button" },
+                { "name": "Message Button" }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Section - Product Grid",
+          "id": "1:2849",
+          "width": 526,
+          "height": 787,
+          "layout": "GRID",
+          "padding": { "left": 20, "right": 20, "top": 20, "bottom": 20 },
+          "productCards": 6,
+          "cardSize": { "width": 237, "height": 241 },
+          "cardRadius": 24,
+          "cardBg": "#fcf8ff"
+        },
+        {
+          "name": "Nav - Tab Bar",
+          "id": "1:2910",
+          "width": 526,
+          "height": 49,
+          "tabs": 3,
+          "bg": "#fcf8ff"
+        }
+      ]
+    }
+  ]
+}

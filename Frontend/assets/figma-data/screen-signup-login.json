@@ -1,0 +1,88 @@
+{
+  "id": "1:1894",
+  "name": "Signup / Login",
+  "width": 390,
+  "height": 1140,
+  "children": [
+    {
+      "id": "1:1896",
+      "name": "Overlay+Blur",
+      "type": "RECTANGLE",
+      "width": 192,
+      "height": 192,
+      "cornerRadius": 9999,
+      "fill": "rgb(193,193,255)"
+    },
+    {
+      "id": "1:1897",
+      "name": "Header Section",
+      "type": "FRAME",
+      "width": 390,
+      "height": 196,
+      "paddingTop": 64,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "layoutMode": "VERTICAL",
+      "children": [
+        { "id": "1:1899", "name": "Logo Branding", "type": "FRAME", "width": 100, "height": 40, "layoutMode": "VERTICAL" },
+        { "id": "1:1902", "name": "Heading 1", "type": "FRAME", "width": 170, "height": 28, "layoutMode": "VERTICAL" },
+        { "id": "1:1905", "name": "Text", "type": "TEXT", "characters": "Discover and shop the most exclusive curated collections curated for you.", "fontSize": 14, "fontName": "Inter Regular", "fill": "rgb(70,69,85)" }
+      ]
+    },
+    {
+      "id": "1:1906",
+      "name": "Main Visual Canvas (Hero)",
+      "type": "FRAME",
+      "width": 390,
+      "height": 516,
+      "paddingTop": 136,
+      "paddingBottom": 132,
+      "paddingLeft": 26,
+      "paddingRight": 18,
+      "children": [
+        { "id": "1:1907", "name": "Abstract Visual Element", "type": "FRAME", "width": 390, "height": 516, "opacity": 0.1 },
+        {
+          "id": "1:1909",
+          "name": "Imagery Grid (Bento Style Preview)",
+          "type": "FRAME",
+          "width": 345,
+          "height": 251,
+          "layoutMode": "GRID",
+          "children": [
+            { "id": "1:1910", "name": "Background", "type": "FRAME", "width": 166, "height": 251, "cornerRadius": 24, "fill": "rgb(232,229,255)" },
+            { "id": "1:1912", "name": "Background", "type": "FRAME", "width": 170, "height": 119, "cornerRadius": 24, "fill": "rgb(232,229,255)" },
+            { "id": "1:1914", "name": "Background", "type": "FRAME", "width": 173, "height": 119, "cornerRadius": 24, "fill": "rgb(232,229,255)" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1:1916",
+      "name": "Footer - Action Section",
+      "type": "FRAME",
+      "width": 390,
+      "height": 300,
+      "paddingBottom": 48,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "itemSpacing": 16,
+      "layoutMode": "VERTICAL",
+      "children": [
+        { "id": "1:1917", "name": "Button - Continue with Phone", "type": "FRAME", "width": 350, "height": 56, "cornerRadius": 16, "fill": "rgb(67,67,213)", "layoutMode": "HORIZONTAL",
+          "children": [
+            { "id": "1:1918", "name": "Container", "type": "FRAME", "width": 13, "height": 18 },
+            { "id": "1:1920", "name": "Text", "type": "TEXT", "characters": "Continue with Phone", "fontSize": 14, "fontName": "Geist Regular", "fill": "rgb(255,255,255)" }
+          ]
+        },
+        { "id": "1:1921", "name": "Button - Continue with Google", "type": "FRAME", "width": 350, "height": 56, "cornerRadius": 16, "fill": "rgb(255,255,255)", "layoutMode": "HORIZONTAL",
+          "children": [
+            { "id": "1:1922", "name": "SVG", "type": "FRAME", "width": 20, "height": 20 },
+            { "id": "1:1927", "name": "Text", "type": "TEXT", "characters": "Continue with Google", "fontSize": 14, "fontName": "Geist Regular", "fill": "rgb(26,26,46)" }
+          ]
+        },
+        { "id": "1:1929", "name": "Terms & Privacy", "type": "FRAME", "width": 300, "height": 48, "layoutMode": "VERTICAL" },
+        { "id": "1:1932", "name": "Login Link", "type": "FRAME", "width": 216, "height": 20, "layoutMode": "HORIZONTAL" }
+      ]
+    }
+  ]
+}

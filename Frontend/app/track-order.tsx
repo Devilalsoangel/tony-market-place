@@ -2,7 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, Image, Alert, Share } from 'r
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BackIcon, ShareIcon, MapPinIcon, ShopIcon, PhoneIcon, GpsTargetIcon, CheckIcon, CarIcon, BikeIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useOrders, STATUS_LABELS } from '../contexts/OrderContext';
@@ -52,6 +52,8 @@ export default function TrackOrderScreen() {
   );
   const riderKind = transportMode;
   const [riderProgress, setRiderProgress] = useState(0.35);
+  const scrollRef = useRef<ScrollView>(null);
+  const [mapY, setMapY] = useState(0);
 
   useEffect(() => {
     if (!isLiveOrder) return;
@@ -171,7 +173,11 @@ export default function TrackOrderScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: insets.bottom + 128 }}>
+      <ScrollView
+        ref={scrollRef}
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 128 }}
+      >
         <View className="px-4 pt-4 pb-6 border-b border-surfaceContainer">
           <View className="flex-row items-center justify-between mb-2">
             <Text className="text-figma-18 font-inter-700 text-textPrimary">Order {orderNumber}</Text>
@@ -200,7 +206,7 @@ export default function TrackOrderScreen() {
             </View>
             <TouchableOpacity
               className="mt-3 h-20 bg-surfaceContainer rounded-figma-12 flex-row items-center justify-center"
-              onPress={() => router.push('/map')}
+              onPress={() => scrollRef.current?.scrollTo({ y: mapY, animated: true })}
             >
               <MapPinIcon size={18} color={colors.primaryContainer} />
               <Text className="text-figma-13 font-inter-600 text-primaryContainer ml-2">Live Map</Text>
@@ -305,7 +311,11 @@ export default function TrackOrderScreen() {
             </View>
           </View>
 
-          <View className="mx-4 h-52 mb-6 rounded-figma-16 overflow-hidden" style={{ borderWidth: 1, borderColor: colors.surfaceContainer }}>
+          <View
+            className="mx-4 h-52 mb-6 rounded-figma-16 overflow-hidden"
+            style={{ borderWidth: 1, borderColor: colors.surfaceContainer }}
+            onLayout={(e) => setMapY(e.nativeEvent.layout.y)}
+          >
             <LeafletMapHost
               style={{ flex: 1, borderRadius: 16 }}
               markers={trackMarkers}

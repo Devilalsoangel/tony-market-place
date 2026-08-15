@@ -1,0 +1,117 @@
+{
+  "id": "1:763",
+  "name": "Seller Dashboard",
+  "width": 390,
+  "height": 992,
+  "bg": "#ffffff",
+  "layout": "VERTICAL",
+  "itemSpacing": 16,
+  "padding": { "bottom": 128 },
+  "sections": [
+    {
+      "name": "Top Navigation Anchor",
+      "id": "1:764",
+      "width": 390,
+      "height": 52,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "padding": { "left": 20, "right": 20, "top": 12, "bottom": 12 },
+      "items": [
+        { "name": "Back Arrow", "width": 18, "height": 12 },
+        { "name": "Title", "width": 50, "height": 28 },
+        { "name": "Settings Icons", "width": 48, "height": 20 }
+      ]
+    },
+    {
+      "name": "Main Content",
+      "id": "1:775",
+      "width": 390,
+      "height": 796,
+      "layout": "VERTICAL",
+      "itemSpacing": 24,
+      "padding": { "left": 20, "right": 20 },
+      "children": [
+        {
+          "name": "Dashboard Header",
+          "id": "1:776",
+          "width": 350,
+          "height": 48,
+          "children": [
+            { "name": "Heading 1", "width": 350, "height": 28 },
+            { "name": "Subtitle", "width": 350, "height": 20 }
+          ]
+        },
+        {
+          "name": "Section - Key Metrics Bento Grid",
+          "id": "1:781",
+          "width": 350,
+          "height": 132,
+          "layout": "HORIZONTAL",
+          "itemSpacing": 12,
+          "children": [
+            { "name": "Revenue Card", "id": "1:782", "width": 169, "height": 128, "layout": "VERTICAL", "itemSpacing": 39, "padding": 16, "cornerRadius": 24, "bg": "#fcf8ff" },
+            { "name": "Stats Stack", "id": "1:792", "width": 169, "height": 132, "layout": "VERTICAL", "itemSpacing": 12, "children": 2 }
+          ]
+        },
+        {
+          "name": "Section - Verification Status Card",
+          "id": "1:803",
+          "width": 350,
+          "height": 83,
+          "layout": "HORIZONTAL",
+          "itemSpacing": 45,
+          "padding": 16,
+          "cornerRadius": 24,
+          "bg": "#5d5fef",
+          "children": [
+            { "name": "Verification Info", "width": 201, "height": 51, "layout": "HORIZONTAL", "itemSpacing": 12 },
+            { "name": "Verify Button", "width": 70, "height": 22, "cornerRadius": 9999, "bg": "#ffffff" }
+          ]
+        },
+        {
+          "name": "My Listings Section",
+          "id": "1:814",
+          "width": 350,
+          "height": 264,
+          "layout": "VERTICAL",
+          "itemSpacing": 12,
+          "children": [
+            { "name": "Section Header", "width": 350, "height": 16, "layout": "HORIZONTAL" },
+            { "name": "Listing Item 1", "width": 350, "height": 112, "layout": "HORIZONTAL", "itemSpacing": 12, "padding": 8, "cornerRadius": 24, "bg": "#fcf8ff" },
+            { "name": "Listing Item 2", "width": 350, "height": 112, "layout": "HORIZONTAL", "itemSpacing": 12, "padding": 8, "cornerRadius": 24, "bg": "#fcf8ff" }
+          ]
+        },
+        {
+          "name": "Section - Recent Inquiries",
+          "id": "1:850",
+          "width": 350,
+          "height": 173,
+          "layout": "VERTICAL",
+          "itemSpacing": 12,
+          "children": [
+            { "name": "Heading 2", "width": 350, "height": 16 },
+            { "name": "Inquiry Card", "width": 350, "height": 145, "layout": "VERTICAL", "itemSpacing": 16, "padding": 16, "cornerRadius": 24, "bg": "#ffffff" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "FAB Button",
+      "id": "1:876",
+      "width": 56,
+      "height": 56,
+      "cornerRadius": 9999,
+      "bg": "#5d5fef",
+      "icon": { "width": 14, "height": 14, "color": "#ffffff" }
+    },
+    {
+      "name": "Bottom Navigation Shell",
+      "id": "1:879",
+      "width": 390,
+      "height": 51,
+      "layout": "HORIZONTAL",
+      "bg": "#fcf8ff",
+      "tabs": 5
+    }
+  ]
+}

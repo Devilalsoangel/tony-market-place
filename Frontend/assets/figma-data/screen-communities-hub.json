@@ -1,0 +1,33 @@
+{"screen":"Communities Hub","nodeId":"1:2589","dimensions":{"w":548,"h":1864},"backgroundColor":"#ffffff","backgroundAlt":"#fcf8ff","layout":"VERTICAL","padding":[0,0,96,0],"gap":24,"children":[
+  {"n":"Header","w":530,"h":68,"bg":"#fcf8ff at 80%","shadow":"0px 1px 2px #000000","blur":12,"layout":"HORIZONTAL","padding":[0,20,0,20],"gap":166,"children":[
+    {"n":"Back + Logo","w":114,"h":40,"gap":16,"children":[
+      {"n":"Back Icon","w":18,"h":12},
+      {"n":"susej","text":"susej","font":"Geist","size":32,"lh":"40px","ls":"-0.8px","color":"#4343d5"}
+    ]},
+    {"n":"Icons","w":50,"h":20,"gap":16,"icons":["notif","menu"]}
+  ]},
+  {"n":"Main Content","w":526,"h":1616,"layout":"VERTICAL","gap":32,"sections":[
+    {"section":"Your Communities","w":486,"h":180,"heading":"Your Communities","headingSize":20,"headingColor":"#1a1a2e","seeAll":{"text":"See all","color":"#4343d5","size":16},"items":[
+      {"name":"Community 1","avatar":{"size":96,"cr":9999,"border":"#5d5fef w2"}},
+      {"name":"Community 2","avatar":{"size":96,"cr":9999,"border":"#000000 w2"}},
+      {"name":"Community 3","avatar":{"size":96,"cr":9999,"border":"#000000 w2"}},
+      {"name":"Community 4","avatar":{"size":38,"cr":9999,"border":"#000000 w2"}}
+    ]},
+    {"section":"Discover Communities","w":486,"heading":"Discover Communities","headingSize":20,"headingColor":"#1a1a2e","filters":[
+      {"label":"For You","color":"#5d5fef","textColor":"#ffffff","cr":9999,"h":40,"pill":true},
+      {"label":"Technology","color":"#f5f2ff","textColor":"#5c5e63","cr":9999,"h":40,"pill":true},
+      {"label":"Fashion","color":"#f5f2ff","textColor":"#5c5e63","cr":9999,"h":40,"pill":true},
+      {"label":"Art","color":"#f5f2ff","textColor":"#5c5e63","cr":9999,"h":40,"pill":true},
+      {"label":"Wellness","color":"#f5f2ff","textColor":"#5c5e63","cr":9999,"h":40,"pill":true}
+    ],"discoverCards":[
+      {"w":526,"h":252,"cr":16,"bg":"#ffffff","border":"#efecff w1","shadow":"0px 4px 20px rgba(26,26,46,0.04)","imageArea":"#efecff 128h"},
+      {"w":526,"h":252,"cr":16,"bg":"#ffffff","border":"#efecff w1","shadow":"0px 4px 20px rgba(26,26,46,0.04)","imageArea":"#efecff 128h"}
+    ]},
+    {"section":"Community Feed","heading":"Community Feed","headingSize":20,"headingColor":"#1a1a2e","posts":[
+      {"type":"image_post","w":526,"h":483,"cr":24,"bg":"#ffffff","border":"#f5f2ff","shadow":"0px 4px 20px rgba(26,26,46,0.04)","imageArea":"#efecff","avatar":true},
+      {"type":"text_post","w":526,"h":313,"cr":24,"bg":"#ffffff","border":"#f5f2ff","shadow":"0px 4px 20px rgba(26,26,46,0.04)","avatar":true}
+    ]}
+  ]},
+  {"n":"FAB","w":80,"h":80,"cr":9999,"bg":"#5d5fef"},
+  {"n":"BottomNav","w":430,"h":83,"bg":"#fcf8ff","border":"#dedfe5 w1","shadow":"0px -4px 20px rgba(26,26,46,0.04)"}
+]}

@@ -1,0 +1,109 @@
+{
+  "id": "1:1432",
+  "name": "First-time Feed Welcome",
+  "width": 390,
+  "height": 1295,
+  "children": [
+    {
+      "id": "1:1433",
+      "name": "BottomNavBar",
+      "type": "FRAME",
+      "width": 390,
+      "height": 51,
+      "fill": "rgb(252,248,255)",
+      "layoutMode": "HORIZONTAL",
+      "children": [
+        { "id": "1:1434", "name": "Button - Feed (Active)", "type": "FRAME", "width": 75, "height": 40, "layoutMode": "VERTICAL" },
+        { "id": "1:1439", "name": "Button - Explore", "type": "FRAME", "width": 75, "height": 42, "cornerRadius": 12, "layoutMode": "VERTICAL" },
+        { "id": "1:1444", "name": "Button - Create", "type": "FRAME", "width": 75, "height": 42, "cornerRadius": 12, "layoutMode": "VERTICAL" },
+        { "id": "1:1449", "name": "Button - Chat", "type": "FRAME", "width": 75, "height": 42, "cornerRadius": 12, "layoutMode": "VERTICAL" },
+        { "id": "1:1454", "name": "Button - Profile", "type": "FRAME", "width": 75, "height": 38, "cornerRadius": 12, "layoutMode": "VERTICAL" }
+      ]
+    },
+    {
+      "id": "1:1459",
+      "name": "Header - TopAppBar",
+      "type": "FRAME",
+      "width": 390,
+      "height": 55,
+      "paddingTop": 12,
+      "paddingBottom": 12,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "fill": "rgb(252,248,255)",
+      "layoutMode": "HORIZONTAL",
+      "children": [
+        { "id": "1:1460", "name": "Container", "type": "FRAME", "width": 87, "height": 28, "layoutMode": "HORIZONTAL",
+          "children": [
+            { "id": "1:1461", "name": "Button", "type": "FRAME", "width": 21, "height": 22 },
+            { "id": "1:1464", "name": "Heading 1", "type": "FRAME", "width": 50, "height": 28 }
+          ]
+        },
+        { "id": "1:1466", "name": "Button", "type": "FRAME", "width": 19, "height": 31 }
+      ]
+    },
+    {
+      "id": "1:1469",
+      "name": "Main",
+      "type": "FRAME",
+      "width": 390,
+      "height": 1112,
+      "paddingTop": 12,
+      "paddingLeft": 20,
+      "paddingRight": 20,
+      "itemSpacing": 32,
+      "layoutMode": "VERTICAL",
+      "children": [
+        {
+          "id": "1:1470",
+          "name": "Section - Welcome Hero Card",
+          "type": "FRAME",
+          "width": 350,
+          "height": 382,
+          "cornerRadius": 24,
+          "paddingTop": 32,
+          "paddingBottom": 32,
+          "paddingLeft": 32,
+          "paddingRight": 32,
+          "fill": "rgb(93,95,239)",
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1471", "name": "Floating Decorative Element", "type": "RECTANGLE", "width": 160, "height": 160, "cornerRadius": 9999, "fill": "rgb(252,248,255)" },
+            { "id": "1:1472", "name": "Container", "type": "FRAME", "width": 286, "height": 318, "itemSpacing": 16, "layoutMode": "VERTICAL" }
+          ]
+        },
+        {
+          "id": "1:1486",
+          "name": "Suggested Sellers Section",
+          "type": "FRAME",
+          "width": 350,
+          "height": 274,
+          "itemSpacing": 16,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1487", "name": "Container", "type": "FRAME", "width": 350, "height": 52, "layoutMode": "HORIZONTAL" },
+            { "id": "1:1495", "name": "Horizontal Scroll Area", "type": "FRAME", "width": 390, "height": 206 }
+          ]
+        },
+        {
+          "id": "1:1534",
+          "name": "Section - Empty Feed Placeholder",
+          "type": "FRAME",
+          "width": 350,
+          "height": 380,
+          "paddingTop": 32,
+          "paddingBottom": 32,
+          "paddingLeft": 32,
+          "paddingRight": 32,
+          "itemSpacing": 16,
+          "layoutMode": "VERTICAL",
+          "children": [
+            { "id": "1:1535", "name": "Margin", "type": "FRAME", "width": 96, "height": 108 },
+            { "id": "1:1539", "name": "Container", "type": "FRAME", "width": 226, "height": 108, "itemSpacing": 8, "layoutMode": "VERTICAL" },
+            { "id": "1:1544", "name": "Button", "type": "FRAME", "width": 202, "height": 68, "paddingTop": 16 }
+          ]
+        }
+      ]
+    }
+  ]
+}

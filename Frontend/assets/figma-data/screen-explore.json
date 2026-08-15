@@ -1,0 +1,131 @@
+{
+  "screen": "Explore Marketplace",
+  "nodeId": "1:3512",
+  "dimensions": {"width": 527, "height": 1132},
+  "backgroundColor": "#010101",
+  "layout": "VERTICAL",
+  "sections": {
+    "header": {
+      "name": "Header - Top App Bar",
+      "nodeId": "1:3539",
+      "dimensions": {"width": 527, "height": 52},
+      "background": "#fcfcfd/#f8f8f901",
+      "padding": {"left": 20, "right": 20, "top": 12, "bottom": 12},
+      "layout": "HORIZONTAL",
+      "gap": 240,
+      "left": [
+        {"name": "Button (logo)", "dimensions": {"width": 18, "height": 12}},
+        {"name": "Heading 1", "text": "susej", "fontSize": 20, "fontFamily": "Geist Regular", "color": "#434343/#434343/#d5d5d6"}
+      ],
+      "right": [
+        {"name": "Button (filter)", "dimensions": {"width": 16, "height": 20}}
+      ]
+    },
+    "main": {
+      "name": "Main",
+      "nodeId": "1:3547",
+      "dimensions": {"width": 527, "height": 911},
+      "padding": {"bottom": 96},
+      "layout": "VERTICAL",
+      "children": [
+        {
+          "name": "Search and Map Toggle Section",
+          "nodeId": "1:3548",
+          "dimensions": {"width": 527, "height": 138},
+          "padding": {"left": 20, "right": 20, "top": 16, "bottom": 16},
+          "gap": 16,
+          "layout": "VERTICAL",
+          "children": [
+            {
+              "name": "Search Bar",
+              "nodeId": "1:3549",
+              "dimensions": {"width": 487, "height": 48},
+              "children": [
+                {
+                  "name": "Input",
+                  "nodeId": "1:3550",
+                  "dimensions": {"width": 487, "height": 48},
+                  "background": "#f5f5f6/#f2f2f301",
+                  "borderRadius": 16,
+                  "padding": {"left": 48, "right": 16, "top": 14, "bottom": 14},
+                  "layout": "HORIZONTAL"
+                },
+                {
+                  "name": "Search Icon Container",
+                  "nodeId": "1:3553",
+                  "dimensions": {"width": 18, "height": 24},
+                  "position": {"x": 16, "y": 12}
+                }
+              ]
+            },
+            {
+              "name": "Button - Map Toggle",
+              "nodeId": "1:3555",
+              "dimensions": {"width": 487, "height": 42},
+              "background": "#5d5d5d80/#5f5f5f80/#efeff",
+              "borderRadius": 9999,
+              "padding": {"left": 16, "right": 16, "top": 12, "bottom": 12},
+              "layout": "HORIZONTAL",
+              "gap": 12,
+              "icon": {"dimensions": {"width": 18, "height": 18}},
+              "text": "View Nearby Sellers",
+              "textStyle": {"fontSize": 14, "fontFamily": "Geist Regular", "color": "#fafafb/#f7f7f801"}
+            }
+          ]
+        },
+        {
+          "name": "Section - Category Chips",
+          "nodeId": "1:3559",
+          "dimensions": {"width": 527, "height": 30},
+          "layout": "NONE",
+          "chips": [
+            {"name": "All", "nodeId": "1:3560", "dimensions": {"width": 47, "height": 30}, "background": "#5d5d5d80/#5f5f5f80/#efeff", "borderRadius": 9999, "padding": {"left": 16, "right": 16, "top": 8, "bottom": 8}, "textStyle": {"fontSize": 12, "color": "#fafafb/#f7f7f801"}, "active": true},
+            {"name": "Fashion", "nodeId": "1:3562", "dimensions": {"width": 78, "height": 30}, "background": "#dededf/#dfdfe0/#e5e5e6", "borderRadius": 9999, "textStyle": {"fontSize": 12, "color": "#606060/#636363/#6868688"}},
+            {"name": "Electronics", "nodeId": "1:3564", "dimensions": {"width": 98, "height": 30}},
+            {"name": "Food", "nodeId": "1:3566", "dimensions": {"width": 61, "height": 30}},
+            {"name": "Beauty", "nodeId": "1:3568", "dimensions": {"width": 73, "height": 30}},
+            {"name": "Home", "nodeId": "1:3570", "dimensions": {"width": 66, "height": 30}}
+          ]
+        },
+        {
+          "name": "Section - Product Masonry Grid",
+          "nodeId": "1:3572",
+          "dimensions": {"width": 527, "height": 647},
+          "padding": {"left": 20, "right": 20, "top": 16},
+          "gap": 16,
+          "layout": "VERTICAL",
+          "children": [
+            {
+              "name": "Heading 2",
+              "text": "Trending Now",
+              "fontSize": 20,
+              "fontFamily": "Geist Regular",
+              "color": "#1a1a1a2/#1a1a1a2/#2e2e2e4"
+            },
+            {
+              "name": "Container (Grid)",
+              "nodeId": "1:3575",
+              "dimensions": {"width": 487, "height": 587},
+              "layout": "GRID",
+              "columns": 2,
+              "gap": 12,
+              "products": [
+                {"name": "Product Card 1", "nodeId": "1:3576", "dimensions": {"width": 238, "height": 287}, "background": "#010101", "borderRadius": 24, "layout": "VERTICAL"},
+                {"name": "Product Card 2", "nodeId": "1:3592", "dimensions": {"width": 238, "height": 287}},
+                {"name": "Product Card 3", "nodeId": "1:3608", "dimensions": {"width": 238, "height": 287}},
+                {"name": "Product Card 4", "nodeId": "1:3624", "dimensions": {"width": 238, "height": 287}}
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "bottomNav": {
+      "name": "Bottom Navigation Bar",
+      "nodeId": "1:3513",
+      "dimensions": {"width": 390, "height": 51},
+      "background": "#fcfcfd/#f8f8f901 at 80% opacity",
+      "tabs": ["Feed", "Explore (Active)", "Create", "Chat", "Profile"]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+﻿{
+    "imagePaths":  [
+                       "C:\\Users\\TONI\\projects\\social-commerce-template\\assets\\stitch-ref\\welcome.png",
+                       "C:\\Users\\TONI\\projects\\social-commerce-template\\Frontend\\assets\\screenshots\\ss_welcome1.png",
+                       "C:\\Users\\TONI\\projects\\social-commerce-template\\Frontend\\assets\\screenshots\\ss_welcome2.png",
+                       "C:\\Users\\TONI\\projects\\social-commerce-template\\Frontend\\assets\\screenshots\\ss_welcome3.png"
+                   ],
+    "prompt":  "Compare the first image (Figma reference) with images 2-4 (our current app screenshots of the 3-slide Welcome Carousel). Identify EVERY visual difference in detail: font sizes, colors, spacing, button styles, text content, layout, images used, and anything that doesn\u0027t match pixel-perfect. Be specific about what needs to change in the code.",
+    "timeout":  180000
+}
