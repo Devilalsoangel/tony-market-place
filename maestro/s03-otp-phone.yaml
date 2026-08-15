@@ -1,0 +1,7 @@
+appId: host.exp.exponent
+---
+- tapOn: "98765 43210"
+- inputText: "9876543210"
+- hideKeyboard
+- tapOn: "Send OTP"
+- waitForAnimationToEnd

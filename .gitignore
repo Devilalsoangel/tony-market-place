@@ -1,0 +1,75 @@
+# =========================================================
+# susej / tony-market-place - root .gitignore
+# Rule: ignore ONLY what is unnecessary/unwanted in the repo.
+# Everything else (all source code, assets, flows, workflows)
+# MUST be pushed.
+# =========================================================
+
+# ---------- Memory & agent files (never push) ----------
+AGENTS.md
+AGENTS.md.bak-*
+*.bak
+
+# ---------- Docs (kept local only) ----------
+docs/
+
+# ---------- Tooling scratch dirs ----------
+.codegraph/
+.omo/
+.playwright-mcp/
+gpt-map-verdict.txt
+
+# ---------- Dependencies ----------
+node_modules/
+.venv/
+venv/
+
+# ---------- Python ----------
+__pycache__/
+*.pyc
+
+# ---------- Env files (keep the example) ----------
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ---------- Databases & runtime data ----------
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+
+# ---------- Build artifacts ----------
+build/
+dist/
+.next/
+.expo/
+out/
+coverage/
+.nyc_output/
+
+# ---------- Android native build output ----------
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/.kotlin/
+android/local.properties
+*.keystore
+!debug.keystore
+
+# ---------- Logs ----------
+*.log
+npm-debug.log*
+yarn-debug.log*
+metro.err*
+metro.log*
+
+# ---------- IDE / OS ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

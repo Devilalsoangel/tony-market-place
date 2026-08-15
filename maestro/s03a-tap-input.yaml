@@ -1,0 +1,5 @@
+appId: host.exp.exponent
+---
+- tapOn:
+    text: "98765 43210"
+    optional: true
