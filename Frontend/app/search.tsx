@@ -1,0 +1,394 @@
+import { useState, useEffect, useMemo } from 'react';
+import { View, Text, TextInput, FlatList, TouchableOpacity, Image } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BackIcon, SearchIcon, BookmarkIcon, BellIcon, ChevronRightIcon } from '../utils/icons';
+import { formatPrice, formatCount, colors } from '../utils/theme';
+import { usePosts } from '../contexts/PostContext';
+import { useCommunities } from '../contexts/CommunityContext';
+import { productImages } from '../utils/productImages';
+
+const RECENT_KEY = '@susej_recent_searches';
+const SEARCHES_KEY = '@susej_saved_searches';
+
+interface SavedSearch {
+  id: string;
+  query: string;
+  savedAt: number;
+  priceAlert: boolean;
+}
+
+type SearchTab = 'products' | 'sellers' | 'communities' | 'hashtags';
+const searchTabs: { key: SearchTab; label: string }[] = [
+  { key: 'products', label: 'Products' },
+  { key: 'sellers', label: 'Sellers' },
+  { key: 'communities', label: 'Communities' },
+  { key: 'hashtags', label: 'Hashtags' },
+];
+
+interface SellerHit {
+  sellerName: string;
+  sellerUsername: string;
+  sellerLocation: string;
+  verified: boolean;
+}
+
+export default function SearchScreen() {
+  const { q } = useLocalSearchParams<{ q?: string }>();
+  const [query, setQuery] = useState(q || '');
+  const [tab, setTab] = useState<SearchTab>('products');
+  const { posts } = usePosts();
+  const { communities } = useCommunities();
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (q) {
+      setQuery(q);
+      addRecentSearch(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
+  const term = query.trim().toLowerCase();
+
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [recentLoaded, setRecentLoaded] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(RECENT_KEY)
+      .then((data) => {
+        if (data) {
+          try {
+            const parsed = JSON.parse(data) as unknown;
+            if (Array.isArray(parsed)) {
+              setRecentSearches(parsed.filter((s): s is string => typeof s === 'string').slice(0, 8));
+            }
+          } catch {}
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRecentLoaded(true));
+  }, []);
+
+  const persistRecent = (next: string[]) => {
+    setRecentSearches(next);
+    AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next)).catch(() => {});
+  };
+
+  const addRecentSearch = (raw: string) => {
+    const termToSave = raw.trim();
+    if (!termToSave) return;
+    setRecentSearches((prev) => {
+      const next = [termToSave, ...prev.filter((s) => s.toLowerCase() !== termToSave.toLowerCase())].slice(0, 8);
+      AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  };
+
+  const clearRecentSearches = () => {
+    persistRecent([]);
+  };
+
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(SEARCHES_KEY)
+      .then((data) => {
+        if (data) {
+          try {
+            const parsed = JSON.parse(data) as SavedSearch[];
+            if (Array.isArray(parsed)) setSavedSearches(parsed);
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const isCurrentSaved = term.length > 0 && savedSearches.some((s) => s.query.toLowerCase() === term);
+
+  const saveCurrentSearch = () => {
+    const q = query.trim();
+    if (!q || isCurrentSaved) return;
+    const entry: SavedSearch = { id: `ss_${Date.now()}`, query: q, savedAt: Date.now(), priceAlert: false };
+    const next = [entry, ...savedSearches];
+    setSavedSearches(next);
+    AsyncStorage.setItem(SEARCHES_KEY, JSON.stringify(next)).catch(() => {});
+  };
+
+  const results = useMemo(() => {
+    if (!term) return [];
+    return posts.filter(
+      (p) =>
+        p.description.toLowerCase().includes(term) ||
+        p.category.toLowerCase().includes(term) ||
+        p.hashtags.some((h) => h.toLowerCase().includes(term)) ||
+        p.sellerName.toLowerCase().includes(term) ||
+        p.sellerUsername.toLowerCase().includes(term)
+    );
+  }, [posts, term]);
+
+  const sellers = useMemo(() => {
+    const seen = new Set<string>();
+    const out: SellerHit[] = [];
+    for (const p of results) {
+      const key = p.sellerUsername.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ sellerName: p.sellerName, sellerUsername: p.sellerUsername, sellerLocation: p.sellerLocation, verified: p.verified });
+    }
+    return out;
+  }, [results]);
+
+  const communityHits = useMemo(() => {
+    if (!term) return [];
+    return communities.filter(
+      (c) =>
+        c.name.toLowerCase().includes(term) ||
+        c.category.toLowerCase().includes(term) ||
+        (c.description ?? '').toLowerCase().includes(term)
+    );
+  }, [communities, term]);
+
+  const allTags = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of posts) for (const h of p.hashtags) seen.add(h);
+    return Array.from(seen);
+  }, [posts]);
+
+  const hashtagHits = useMemo(() => {
+    const tags = allTags.filter((t) => !term || t.toLowerCase().includes(term));
+    return tags.map((t) => ({ tag: t, count: posts.filter((p) => p.hashtags.includes(t)).length }));
+  }, [allTags, posts, term]);
+
+  const renderProductCard = ({ item }: { item: (typeof posts)[number] }) => (
+    <TouchableOpacity
+      className="flex-1 bg-surfaceContainerLowest rounded-figma-12 overflow-hidden mb-3"
+      style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }}
+      onPress={() => router.push(`/product/${item.id}`)}
+    >
+      <View className="w-full aspect-square bg-surfaceContainer">
+        {item.image ? (
+          <Image source={{ uri: item.image }} className="absolute inset-0 w-full h-full" resizeMode="cover" />
+        ) : productImages[item.id] ? (
+          <Image source={productImages[item.id]} className="absolute inset-0 w-full h-full" resizeMode="cover" />
+        ) : null}
+      </View>
+      <View className="p-3">
+        <Text className="text-figma-13 font-inter-500 text-textPrimary mb-1" numberOfLines={2}>{item.description.split('#')[0].trim()}</Text>
+        <Text className="text-figma-14 font-inter-700 text-primaryContainer">{formatPrice(item.price)}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderSellerRow = ({ item }: { item: SellerHit }) => (
+    <TouchableOpacity
+      className="flex-row items-center gap-3 py-3 border-b border-surfaceContainer"
+      onPress={() => router.push(`/seller/${item.sellerUsername}`)}
+    >
+      <View className="w-11 h-11 rounded-figma-full bg-surfaceContainer items-center justify-center">
+        <Text className="font-inter-600 text-primary" style={{ fontSize: 16, lineHeight: 20 }}>
+          {item.sellerName.charAt(0)}
+        </Text>
+      </View>
+      <View className="flex-1">
+        <View className="flex-row items-center gap-2">
+          <Text className="text-figma-14 font-inter-600 text-textPrimary">{item.sellerName}</Text>
+          {item.verified && (
+            <Text className="text-figma-11 font-inter-500 text-white bg-tertiary rounded-figma-full px-2 py-0.5 overflow-hidden">
+              Verified
+            </Text>
+          )}
+        </View>
+        <Text className="text-figma-12 font-inter-400 text-textSecondary mt-0.5">
+          @{item.sellerUsername} · {item.sellerLocation}
+        </Text>
+      </View>
+      <Text className="text-figma-12 font-inter-500 text-primary">View</Text>
+    </TouchableOpacity>
+  );
+
+  const renderCommunityRow = ({ item }: { item: (typeof communities)[number] }) => (
+    <TouchableOpacity
+      className="flex-row items-center gap-3 py-3 border-b border-surfaceContainer"
+      onPress={() => router.push(`/community/${item.id}`)}
+    >
+      <View className="w-11 h-11 rounded-figma-12 bg-primaryContainer items-center justify-center">
+        <Text className="font-inter-600 text-white" style={{ fontSize: 16, lineHeight: 20 }}>
+          {item.name.charAt(0)}
+        </Text>
+      </View>
+      <View className="flex-1">
+        <Text className="text-figma-14 font-inter-600 text-textPrimary">{item.name}</Text>
+        <Text className="text-figma-12 font-inter-400 text-textSecondary mt-0.5">
+          {item.category} · {formatCount(item.memberCount)} members
+        </Text>
+      </View>
+      <Text className="text-figma-12 font-inter-500 text-primary">View</Text>
+    </TouchableOpacity>
+  );
+
+  const renderHashtagRow = ({ item }: { item: { tag: string; count: number } }) => (
+    <TouchableOpacity
+      className="flex-row items-center gap-3 py-3 border-b border-surfaceContainer"
+      onPress={() => router.push(`/hashtag/${item.tag.slice(1)}`)}
+    >
+      <View className="w-11 h-11 rounded-figma-full bg-surfaceContainerLow items-center justify-center">
+        <Text className="font-inter-700 text-primaryContainer" style={{ fontSize: 14, lineHeight: 18 }}>#</Text>
+      </View>
+      <View className="flex-1">
+        <Text className="text-figma-14 font-inter-600 text-textPrimary">{item.tag}</Text>
+        <Text className="text-figma-12 font-inter-400 text-textSecondary mt-0.5">{item.count} posts</Text>
+      </View>
+      <Text className="text-figma-12 font-inter-500 text-primary">View</Text>
+    </TouchableOpacity>
+  );
+
+  const renderEmpty = (message: string) => (
+    <View className="items-center py-16 px-4">
+      <Text className="text-figma-16 font-inter-500 text-textSecondary">{message}</Text>
+      <Text className="text-figma-12 font-inter-400 text-secondary mt-2">Try a different search term</Text>
+    </View>
+  );
+
+  return (
+    <View className="flex-1 bg-surface">
+      <View className="flex-row items-center h-14 px-4 gap-3" style={{ height: 56 + insets.top, paddingTop: insets.top }}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <BackIcon size={20} color={colors.primaryContainer} />
+        </TouchableOpacity>
+        <View className="flex-1 flex-row items-center h-11 px-4 bg-surfaceContainerLow rounded-figma-16">
+          <SearchIcon size={16} color={colors.secondary} />
+          <TextInput
+            className="flex-1 ml-3 text-figma-14 font-inter-400 text-textPrimary"
+            placeholder="Search products, sellers..."
+            placeholderTextColor={colors.secondary}
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={() => addRecentSearch(query)}
+            autoFocus
+          />
+        </View>
+        <TouchableOpacity
+          className="w-11 h-11 items-center justify-center rounded-figma-full"
+          style={{ backgroundColor: isCurrentSaved ? colors.primaryFixed : colors.surfaceContainerLow }}
+          disabled={!query.trim() || isCurrentSaved}
+          onPress={saveCurrentSearch}
+        >
+          <BookmarkIcon size={18} color={isCurrentSaved ? colors.primary : colors.textSecondary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="w-11 h-11 items-center justify-center rounded-figma-full"
+          style={{ backgroundColor: colors.surfaceContainerLow }}
+          onPress={() => router.push('/saved-searches')}
+        >
+          <BellIcon size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      {!query ? (
+        <View className="px-4 pt-4">
+          <View className="flex-row items-center justify-between mb-3">
+            <Text className="text-figma-16 font-inter-600 text-textPrimary">Recent Searches</Text>
+            {recentSearches.length > 0 && (
+              <TouchableOpacity onPress={clearRecentSearches} hitSlop={8}>
+                <Text className="text-figma-12 font-inter-500 text-primary">Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {recentLoaded && recentSearches.length === 0 ? (
+            <Text className="text-figma-14 font-inter-400 text-secondary py-3">No recent searches</Text>
+          ) : (
+            recentSearches.map((item) => (
+              <TouchableOpacity key={item} className="py-3 border-b border-surfaceContainer" onPress={() => setQuery(item)}>
+                <View className="flex-row items-center gap-3">
+                  <SearchIcon size={14} color={colors.secondary} />
+                  <Text className="text-figma-14 font-inter-400 text-textSecondary">{item}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+          <TouchableOpacity
+            className="flex-row items-center justify-between py-3 mt-2"
+            onPress={() => router.push('/saved-searches')}
+          >
+            <View className="flex-row items-center gap-3">
+              <BellIcon size={14} color={colors.secondary} />
+              <Text className="text-figma-14 font-inter-500 text-textPrimary">Saved searches & price alerts</Text>
+            </View>
+            <ChevronRightIcon size={16} color={colors.secondary} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          <View className="flex-row px-4 pt-3 pb-2 gap-2">
+            {searchTabs.map((t) => {
+              const active = tab === t.key;
+              return (
+                <TouchableOpacity
+                  key={t.key}
+                  className={`px-4 py-2 rounded-figma-full ${active ? 'bg-primaryContainer' : 'bg-surfaceContainerLow'}`}
+                  onPress={() => setTab(t.key)}
+                >
+                  <Text className={`font-inter-600 ${active ? 'text-white' : 'text-textSecondary'}`} style={{ fontSize: 13, lineHeight: 16 }}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {tab === 'products' && (
+            <FlatList
+              key="products"
+              data={results}
+              keyExtractor={(item) => item.id}
+              numColumns={2}
+              columnWrapperClassName="gap-3"
+              contentContainerClassName="px-4 pb-24 pt-3"
+              contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
+              renderItem={renderProductCard}
+              ListEmptyComponent={renderEmpty(`No results for "${query}"`)}
+            />
+          )}
+
+          {tab === 'sellers' && (
+            <FlatList
+              key="sellers"
+              data={sellers}
+              keyExtractor={(item) => item.sellerUsername}
+              contentContainerClassName="px-4 pb-24 pt-3"
+              contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
+              renderItem={renderSellerRow}
+              ListEmptyComponent={renderEmpty(`No sellers for "${query}"`)}
+            />
+          )}
+
+          {tab === 'communities' && (
+            <FlatList
+              key="communities"
+              data={communityHits}
+              keyExtractor={(item) => item.id}
+              contentContainerClassName="px-4 pb-24 pt-3"
+              contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
+              renderItem={renderCommunityRow}
+              ListEmptyComponent={renderEmpty(`No communities for "${query}"`)}
+            />
+          )}
+
+          {tab === 'hashtags' && (
+            <FlatList
+              key="hashtags"
+              data={hashtagHits}
+              keyExtractor={(item) => item.tag}
+              contentContainerClassName="px-4 pb-24 pt-3"
+              contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
+              renderItem={renderHashtagRow}
+              ListEmptyComponent={renderEmpty(`No hashtags for "${query}"`)}
+            />
+          )}
+        </>
+      )}
+    </View>
+  );
+}

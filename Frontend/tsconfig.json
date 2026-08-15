@@ -1,0 +1,60 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowJs": true,
+    "ignoreDeprecations": "6.0",
+    "noUncheckedSideEffectImports": false,
+    "types": [
+      "jest",
+      "react",
+      "react-native",
+      "nativewind/types"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".expo",
+    "__tests__",
+    "screens",
+    "App.tsx",
+    "styles",
+    "MapScreen.tsx",
+    "scan_all.mjs",
+    "scan2.mjs",
+    "scan3.mjs",
+    "scan4.mjs",
+    "test_all_screens.mjs",
+    "test_screens.mjs"
+  ],
+  "extends": "expo/tsconfig.base"
+}

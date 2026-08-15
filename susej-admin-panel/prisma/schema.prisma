@@ -1,0 +1,698 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Admin {
+  id               String               @id @default(cuid())
+  name             String
+  loginId          String               @unique
+  email            String?
+  passwordHash     String
+  avatar           String?
+  role             String
+  status           String
+  twoFactorEnabled Boolean              @default(false)
+  twoFactorCode    String?
+  failedAttempts   Int                  @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime
+  lastLogin        DateTime?
+  updatedAt        DateTime             @updatedAt
+  resetTokens      PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id       String  @id @default(cuid())
+  name     String
+  email    String  @unique
+  avatar   String?
+  role     String
+  status   String
+  joinedAt DateTime
+  verified Boolean
+}
+
+model Seller {
+  id            String            @id @default(cuid())
+  businessName  String
+  ownerName     String
+  logo          String
+  email         String
+  phone         String
+  address       String
+  taxId         String
+  kycStatus     String
+  gstStatus     String
+  score         Int
+  productsCount Int
+  totalSales    Int               @default(0)
+  rating        Float             @default(4.5)
+  reviewCount   Int               @default(0)
+  joinedAt      DateTime
+  submittedAt   DateTime
+  documents     SellerDocument[]
+  auditLogs     SellerAuditLog[]
+}
+
+model SellerDocument {
+  id         String   @id @default(cuid())
+  sellerId   String
+  seller     Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  type       String
+  label      String
+  fileName   String
+  url        String
+  uploadedAt DateTime
+  verified   Boolean
+}
+
+model SellerAuditLog {
+  id        String   @id @default(cuid())
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  action    String
+  adminName String
+  note      String
+  timestamp DateTime
+}
+
+model Category {
+  id               String    @id @default(cuid())
+  name             String
+  slug             String    @unique
+  description      String
+  parentId         String?
+  parent           Category? @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children         Category[] @relation("CategoryTree")
+  sortOrder        Int
+  icon             String
+  bannerImage      String
+  status           String
+  featured         Boolean
+  productCount     Int
+  metaTitle        String
+  metaDescription  String
+  createdAt        DateTime
+  updatedAt        DateTime @updatedAt
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  title         String
+  images        Json
+  price         Float
+  category      String
+  sellerName    String
+  status        String
+  reports       Int
+  warningReason String?
+  createdAt     DateTime
+}
+
+model Order {
+  id                 String  @id @default(cuid())
+  buyerName          String
+  sellerName         String
+  amount             Float
+  status             String
+  deliveryStatus     String
+  items              Int
+  itemsList          Json
+  shippingCarrier    String
+  trackingNumber     String
+  estimatedDelivery  String
+  actualDelivery     String
+  shippingAddress    String
+  paymentMethod      String
+  paymentStatus      String
+  createdAt          DateTime
+  deliveryLog        Json
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  productName  String
+  reviewerName String
+  rating       Int
+  text         String
+  status       String
+  sellerRating Float?
+  buyerRating  Float?
+  createdAt    DateTime @default(now())
+}
+
+model Community {
+  id                String   @id @default(cuid())
+  name              String
+  description       String
+  ownerName         String
+  members           Int
+  posts             Int
+  type              String
+  status            String
+  reports           Int
+  postingLocked     Boolean
+  commentsDisabled  Boolean
+  createdAt         DateTime
+  memberList        Json
+  postList          Json
+  commentList       Json
+  reportedList      Json
+  moderationLog     Json
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  userName  String
+  type      String
+  amount    Float
+  method    String
+  gateway   String
+  reference String
+  status    String
+  createdAt DateTime
+}
+
+model LedgerEntry {
+  id        String   @id @default(cuid())
+  partyName String
+  partyRole String
+  direction String
+  type      String
+  amount    Float
+  method    String
+  status    String
+  orderId   String
+  createdAt DateTime
+}
+
+model GatewayLog {
+  id        String   @id @default(cuid())
+  gateway   String
+  event     String
+  amount    Float
+  status    String
+  message   String
+  createdAt DateTime
+}
+
+model Shipment {
+  id                String   @id @default(cuid())
+  orderId           String
+  buyerName         String
+  destination       String
+  carrier           String
+  trackingNumber    String
+  status            String
+  estimatedDelivery String
+  deliveredAt       String
+  items             Int
+}
+
+model Carrier {
+  id             String  @id @default(cuid())
+  name           String
+  rate           Float
+  avgDeliveryDays Int
+  onTimeRate     Float
+  shipments      Int
+  active         Boolean
+}
+
+model DeliveryZone {
+  id      String  @id @default(cuid())
+  name    String
+  region  String
+  rate    Float
+  eta     String
+  coverage Int
+  active  Boolean
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userName  String
+  subject   String
+  priority  String
+  status    String
+  assignee  String?
+  createdAt DateTime
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminName String
+  action    String
+  entity    String
+  entityId  String
+  details   String
+  ip        String
+  timestamp DateTime
+}
+
+model NotificationTemplate {
+  id      String @id @default(cuid())
+  name    String
+  channel String
+  subject String?
+  title   String?
+  body    String
+  preview String
+}
+
+model NotificationHistoryItem {
+  id           String   @id @default(cuid())
+  channel      String
+  title        String
+  audience     String
+  status       String
+  scheduledFor String?
+  sentAt       DateTime?
+}
+
+model SubscriptionPlan {
+  id            String   @id @default(cuid())
+  name          String
+  description   String
+  badge         String
+  monthlyPrice  Float
+  yearlyPrice   Float
+  trialDays     Int
+  billingCycle  String
+  features      Json
+  limits        Json
+  settings      Json
+  status        String
+  createdAt     DateTime
+}
+
+model Subscriber {
+  id          String   @id @default(cuid())
+  userName    String
+  email       String
+  planName    String
+  status      String
+  billing     String
+  startedAt   DateTime
+  expiresAt   DateTime
+  cancelledAt DateTime?
+}
+
+model Coupon {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  type       String
+  value      Float
+  usageLimit Int
+  usedCount  Int
+  expiresAt  DateTime
+  status     String
+  createdAt  DateTime
+}
+
+model RevenueMetrics {
+  id                 String @id @default(cuid())
+  monthlyRevenue     Float
+  annualRevenue      Float
+  activeSubscribers  Int
+  renewalsThisMonth  Int
+  churnRate          Float
+  revenueHistory     Json
+}
+
+model AppSetting {
+  key   String @id
+  value Json
+}
+
+model HeroBanner {
+  id             String   @id @default(cuid())
+  title          String
+  subtitle       String
+  imageUrl       String
+  buttonText     String
+  buttonAction   String
+  destinationId  String?
+  destinationUrl String?
+  startDate      String
+  endDate        String
+  status         String
+  createdAt      DateTime
+  updatedAt      DateTime @updatedAt
+}
+
+model FeaturedCategory {
+  id           String   @id @default(cuid())
+  categoryId   String
+  categoryName String
+  imageUrl     String
+  position     Int
+  status       String
+  createdAt    DateTime
+  updatedAt    DateTime @updatedAt
+}
+
+model TopSeller {
+  id          String   @id @default(cuid())
+  sellerId    String
+  sellerName  String
+  sellerLogo  String
+  totalSales  Int
+  rating      Float
+  reviewCount Int
+  position    Int
+  isPinned    Boolean
+  status      String
+  createdAt   DateTime
+  updatedAt   DateTime @updatedAt
+}
+
+model HotDeal {
+  id                String   @id @default(cuid())
+  productId         String
+  productName       String
+  productImage      String
+  originalPrice     Float
+  discountedPrice   Float
+  discountPercentage Int
+  startDate         String
+  endDate           String
+  priority          Int
+  status            String
+  createdAt         DateTime
+  updatedAt         DateTime @updatedAt
+}
+
+model FeaturedPost {
+  id        String   @id @default(cuid())
+  postId    String
+  title     String
+  excerpt   String
+  imageUrl  String
+  position  Int
+  isPinned  Boolean
+  status    String
+  startDate String   @default("")
+  endDate   String   @default("")
+  createdAt DateTime
+  updatedAt DateTime @updatedAt
+}
+
+model HomeSection {
+  id        String @id
+  name      String @unique
+  title     String
+  isEnabled Boolean
+  position  Int
+}
+
+model PromotionPurchase {
+  id                String    @id @default(cuid())
+  kind              String
+  packageName       String
+  amountPaid        Float
+  currency          String    @default("PHP")
+  durationDays      Int
+  sellerId          String
+  sellerName        String
+  sellerLogo        String?
+  productId         String?
+  productName       String?
+  productImage      String?
+  originalPrice     Float?
+  discountedPrice   Float?
+  postId            String?
+  postTitle         String?
+  postImage         String?
+  postExcerpt       String?
+  provider          String    @default("dev")
+  providerPaymentId String?   @unique
+  checkoutRef       String    @unique
+  status            String
+  position          Int?
+  isPinned          Boolean   @default(false)
+  startsAt          DateTime?
+  endsAt            DateTime?
+  createdAt         DateTime  @default(now())
+}
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String
+  eventType   String
+  payload     Json
+  signature   String?
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+}
+
+model ReportedUser {
+  id           String @id @default(cuid())
+  name         String
+  email        String
+  joinedAt     String
+  reason       String
+  reports      Int
+  status       String
+  reportDetails Json
+}
+
+model ReportedProduct {
+  id          String   @id @default(cuid())
+  productId   String
+  title       String
+  sellerName  String
+  reason      String
+  reporter    String
+  reportCount Int
+  createdAt   DateTime
+}
+
+model ReportedMessage {
+  id          String   @id @default(cuid())
+  threadId    String
+  participants String
+  preview     String
+  reason      String
+  severity    String
+  reportCount Int
+  createdAt   DateTime
+}
+
+model ReportedComment {
+  id          String   @id @default(cuid())
+  commentId   String
+  postTitle   String
+  authorName  String
+  text        String
+  reason      String
+  reportCount Int
+  createdAt   DateTime
+}
+
+model Post {
+  id         String   @id @default(cuid())
+  title      String
+  authorName String
+  type       String
+  status     String
+  likes      Int
+  comments   Int
+  createdAt  DateTime
+}
+
+model BlockedUser {
+  id       String   @id @default(cuid())
+  userName String
+  email    String
+  reason   String
+  bannedBy String
+  bannedAt DateTime
+  kind     String
+}
+
+model AddressBookEntry {
+  id        String  @id @default(cuid())
+  userName  String
+  label     String
+  address   String
+  city      String
+  phone     String
+  isDefault Boolean
+}
+
+model PaymentMethod {
+  id       String   @id @default(cuid())
+  userName String
+  type     String
+  brand    String
+  last4    String
+  status   String
+  addedAt  DateTime
+}
+
+model LiveStream {
+  id        String   @id @default(cuid())
+  title     String
+  hostName  String
+  viewers   Int
+  status    String
+  startedAt DateTime
+}
+
+model Reel {
+  id          String   @id @default(cuid())
+  title       String
+  creatorName String
+  views       Int
+  likes       Int
+  status      String
+  createdAt   DateTime
+}
+
+model Story {
+  id          String   @id @default(cuid())
+  creatorName String
+  views       Int
+  status      String
+  createdAt   DateTime
+}
+
+model Hashtag {
+  id         String  @id @default(cuid())
+  tag        String
+  postsCount Int
+  followers  Int
+  trending   Boolean
+  status     String
+}
+
+model Bundle {
+  id         String   @id @default(cuid())
+  title      String
+  itemsCount Int
+  price      Float
+  discount   Int
+  sellerName String
+  status     String
+  createdAt  DateTime
+}
+
+model FoodHubItem {
+  id         String  @id @default(cuid())
+  title      String
+  category   String
+  price      Float
+  restaurant String
+  rating     Float
+  status     String
+}
+
+model Broadcast {
+  id          String   @id @default(cuid())
+  title       String
+  hostName    String
+  listeners   Int
+  status      String
+  scheduledAt DateTime
+}
+
+model Booking {
+  id           String @id @default(cuid())
+  serviceName  String
+  customerName String
+  sellerName   String
+  date         String
+  time         String
+  price        Float
+  status       String
+}
+
+model LoyaltyUser {
+  id              String   @id @default(cuid())
+  userName        String
+  points          Int
+  tier            String
+  referrals       Int
+  rewardsRedeemed Int
+  joinedAt        DateTime
+}
+
+model Dispute {
+  id         String    @id @default(cuid())
+  orderId    String
+  buyerName  String
+  sellerName String
+  reason     String
+  amount     Float
+  status     String
+  raisedAt   DateTime
+  outcome    String?
+  note       String?
+  resolvedAt DateTime?
+}
+
+model Auction {
+  id             String   @id @default(cuid())
+  title          String
+  status         String
+  currentBid     Float
+  endsAt         DateTime
+  bids           Int
+  sellerName     String
+  sellerUsername String
+}
+
+model Refund {
+  id          String    @id @default(cuid())
+  orderRef    String
+  buyerName   String
+  sellerName  String
+  reason      String
+  amount      Float
+  status      String
+  requestedAt DateTime
+  respondedAt DateTime?
+}
+
+model Withdrawal {
+  id          String    @id @default(cuid())
+  userName    String
+  method      String
+  amount      Float
+  status      String
+  requestedAt DateTime
+  respondedAt DateTime?
+}
+
+model CommissionSetting {
+  id                String @id
+  commissionRate    Float
+  listingFee        Float
+  payoutFee         Float
+  categoryOverrides Json
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  threadId   String
+  sender     String
+  senderRole String
+  body       String
+  createdAt  DateTime
+}

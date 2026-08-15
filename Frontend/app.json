@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "susej",
+    "slug": "susej",
+    "version": "1.1.0",
+    "sdkVersion": "57.0.0",
+    "scheme": "susej",
+    "platforms": [
+      "android",
+      "ios",
+      "web"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.susej.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.susej.app"
+    },
+    "plugins": [],
+    "userInterfaceStyle": "automatic",
+    "extra": {
+      "eas": {
+        "projectId": "4ab95910-e86b-4f1a-adfd-2634f4934ba7"
+      }
+    },
+    "owner": "toni_stann7"
+  }
+}

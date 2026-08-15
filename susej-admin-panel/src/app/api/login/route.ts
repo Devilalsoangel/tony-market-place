@@ -1,0 +1,216 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  verifyPassword,
+  signSession,
+  signChallenge,
+  hashPassword,
+  SESSION_COOKIE,
+  SESSION_MAX_AGE,
+  CHALLENGE_COOKIE,
+  CHALLENGE_TTL_MS,
+  MAX_LOGIN_ATTEMPTS,
+  LOCKOUT_MINUTES,
+  getClientIp,
+} from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
+import { mockAdmins } from "@/services/mock-data";
+import type { PrismaClient } from "@/generated/prisma/client";
+
+type AdminLike = {
+  id: string;
+  name: string;
+  loginId: string;
+  email: string | null;
+  avatar: string | null;
+  role: string;
+  status: string;
+  passwordHash: string;
+  twoFactorEnabled: boolean;
+  lockedUntil: Date | null;
+  failedAttempts: number;
+};
+
+async function getPrisma(): Promise<PrismaClient | null> {
+  const { getPrisma: resolveDb } = await import("@/lib/db");
+  return resolveDb();
+}
+
+async function recordFailure(prisma: NonNullable<Awaited<ReturnType<typeof getPrisma>>>, adminId: string): Promise<{ locked: boolean; remaining: number }> {
+  try {
+    const admin = await prisma.admin.update({
+      where: { id: adminId },
+      data: { failedAttempts: { increment: 1 } },
+    });
+    if (admin.failedAttempts >= MAX_LOGIN_ATTEMPTS) {
+      const lockedUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
+      await prisma.admin.update({ where: { id: adminId }, data: { lockedUntil } });
+      return { locked: true, remaining: 0 };
+    }
+    return { locked: false, remaining: MAX_LOGIN_ATTEMPTS - admin.failedAttempts };
+  } catch {
+    return { locked: false, remaining: MAX_LOGIN_ATTEMPTS };
+  }
+}
+
+export async function POST(request: NextRequest) {
+  let loginId = "";
+  let password = "";
+  try {
+    const body = await request.json();
+    loginId = String(body?.loginId ?? "").trim();
+    password = String(body?.password ?? "");
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+
+  if (!loginId || !password) {
+    return NextResponse.json({ error: "Admin ID and password are required." }, { status: 400 });
+  }
+
+  const ip = getClientIp(request);
+  const prisma = await getPrisma();
+
+  let db: AdminLike | null = null;
+  if (prisma) {
+    try {
+      db = await prisma.admin.findUnique({ where: { loginId } });
+    } catch {
+      db = null;
+    }
+  }
+  if (!db) {
+    const mock = mockAdmins.find((a) => a.loginId === loginId);
+    if (mock) {
+      db = {
+        id: mock.id,
+        name: mock.name,
+        loginId: mock.loginId,
+        email: mock.email ?? null,
+        avatar: mock.avatar ?? null,
+        role: mock.role,
+        status: mock.status,
+        passwordHash: mock.password ? hashPassword(mock.password) : "",
+        twoFactorEnabled: false,
+        lockedUntil: null,
+        failedAttempts: 0,
+      };
+    }
+  }
+
+  if (!db) {
+    await writeAudit({ action: "auth.login.failed", entity: "admins", details: `Unknown loginId: ${loginId}`, ip });
+    return NextResponse.json({ error: "Invalid Admin ID or password." }, { status: 401 });
+  }
+
+  if (db.lockedUntil && db.lockedUntil > new Date()) {
+    const minutes = Math.max(1, Math.ceil((db.lockedUntil.getTime() - Date.now()) / 60000));
+    await writeAudit({
+      action: "auth.login.locked",
+      entity: "admins",
+      entityId: db.id,
+      details: `Blocked for ${minutes} more minute(s)`,
+      adminName: loginId,
+      ip,
+    });
+    return NextResponse.json(
+      { error: `Too many failed attempts. Try again in ${minutes} minute(s).`, locked: true },
+      { status: 423 }
+    );
+  }
+
+  if (!verifyPassword(password, db.passwordHash)) {
+    let locked = false;
+    if (prisma) {
+      locked = (await recordFailure(prisma, db.id)).locked;
+    }
+    await writeAudit({
+      action: "auth.login.failed",
+      entity: "admins",
+      entityId: db.id,
+      details: locked ? "Account locked after too many attempts" : "Invalid password",
+      adminName: loginId,
+      ip,
+    });
+    return NextResponse.json({ error: "Invalid Admin ID or password." }, { status: 401 });
+  }
+
+  if (db.status !== "active") {
+    await writeAudit({
+      action: "auth.login.rejected",
+      entity: "admins",
+      entityId: db.id,
+      details: "Account deactivated",
+      adminName: loginId,
+      ip,
+    });
+    return NextResponse.json({ error: "This account is deactivated. Contact a Super Admin." }, { status: 403 });
+  }
+
+  if (prisma) {
+    prisma.admin.update({
+      where: { id: db.id },
+      data: {
+        lastLogin: new Date(),
+        failedAttempts: 0,
+        lockedUntil: null,
+      },
+      select: { id: true },
+    })
+      .catch(() => null);
+  }
+
+  if (db.twoFactorEnabled) {
+    const challenge = signChallenge({ id: db.id });
+    const response = NextResponse.json({ twoFactor: true });
+    response.cookies.set(CHALLENGE_COOKIE, challenge, {
+      path: "/",
+      maxAge: CHALLENGE_TTL_MS / 1000,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+    await writeAudit({
+      action: "auth.pre_2fa",
+      entity: "admins",
+      entityId: db.id,
+      details: "Password verified, awaiting 2FA code",
+      adminName: loginId,
+      ip,
+    });
+    return response;
+  }
+
+  const token = signSession({ id: db.id, name: db.name, role: db.role, loginId: db.loginId });
+  const response = NextResponse.json({
+    token,
+    user: {
+      id: db.id,
+      name: db.name,
+      loginId: db.loginId,
+      email: db.email,
+      avatar: db.avatar,
+      role: db.role,
+      status: db.status,
+      twoFactorEnabled: db.twoFactorEnabled,
+      createdAt: null,
+      lastLogin: null,
+      password: "",
+    },
+  });
+  response.cookies.set(SESSION_COOKIE, token, {
+    path: "/",
+    maxAge: SESSION_MAX_AGE,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
+  await writeAudit({
+    action: "auth.login",
+    entity: "admins",
+    entityId: db.id,
+    details: "Signed in",
+    adminName: loginId,
+    ip,
+  });
+  return response;
+}
