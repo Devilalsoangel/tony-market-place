@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Admin {
@@ -37,14 +37,33 @@ model PasswordResetToken {
 }
 
 model User {
-  id       String  @id @default(cuid())
-  name     String
-  email    String  @unique
-  avatar   String?
-  role     String
-  status   String
-  joinedAt DateTime
-  verified Boolean
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  avatar        String?
+  role          String   @default("buyer")
+  status        String   @default("active")
+  joinedAt      DateTime @default(now())
+  verified      Boolean  @default(false)
+  phone         String?
+  username      String?  @unique
+  bio           String?
+  location      String?
+  interests     Json?
+  isSeller      Boolean  @default(false)
+  businessName  String?
+  category      String?
+  verification  String   @default("none")
+  walletBalance Int      @default(0)
+  passwordHash  String?
+  loyaltyPoints Int      @default(0)
+  updatedAt     DateTime @default(now()) @updatedAt
+  sessions      AppSession[]
+
+  @@index([phone])
+  @@index([verification])
+  @@index([status])
+  @@index([joinedAt])
 }
 
 model Seller {
@@ -55,13 +74,26 @@ model Seller {
   email         String
   phone         String
   address       String
+  category      String?
+  storeLat      Float?
+  storeLng      Float?
+  storeAddress  String?
   taxId         String
+  // CKYC identity binding from the become-a-seller wizard (nullable: unknown
+  // for legacy rows). Shown on the seller detail Identity card.
+  idType        String?
+  idNumber      String?
+  nameOnId      String?
+  dob           String?
+  pan           String?
+  bankAccount   String?
+  selfieUrl     String?
   kycStatus     String
   gstStatus     String
   score         Int
   productsCount Int
   totalSales    Int               @default(0)
-  rating        Float             @default(4.5)
+  rating        Float             @default(0)
   reviewCount   Int               @default(0)
   joinedAt      DateTime
   submittedAt   DateTime
@@ -125,35 +157,50 @@ model Product {
 }
 
 model Order {
-  id                 String  @id @default(cuid())
-  buyerName          String
-  sellerName         String
-  amount             Float
-  status             String
-  deliveryStatus     String
-  items              Int
-  itemsList          Json
-  shippingCarrier    String
-  trackingNumber     String
-  estimatedDelivery  String
-  actualDelivery     String
-  shippingAddress    String
-  paymentMethod      String
-  paymentStatus      String
-  createdAt          DateTime
-  deliveryLog        Json
+  id               String   @id @default(cuid())
+  buyerName        String
+  sellerName       String
+  amount           Float
+  status           String
+  deliveryStatus   String
+  items            Int
+  itemsList        Json
+  shippingCarrier  String
+  trackingNumber   String
+  estimatedDelivery String
+  actualDelivery   String
+  shippingAddress  String
+  paymentMethod    String
+  paymentStatus    String
+  createdAt        DateTime @default(now())
+  deliveryLog      Json
+  orderNumber      String?
+  buyerUsername    String?
+  sellerUsername   String?
+  reviewed         Boolean  @default(false)
+  rating           Int?
+  reviewComment    String?
+  placedAt         DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
+
+  @@index([status])
+  @@index([buyerUsername])
+  @@index([sellerUsername])
+  @@index([createdAt])
+  @@index([paymentStatus])
 }
 
 model Review {
-  id           String   @id @default(cuid())
-  productName  String
-  reviewerName String
-  rating       Int
-  text         String
-  status       String
-  sellerRating Float?
-  buyerRating  Float?
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  productName   String
+  reviewerName  String
+  rating        Int
+  text          String
+  status        String
+  sellerRating  Float?
+  buyerRating   Float?
+  sellerUsername String?
+  createdAt     DateTime @default(now())
 }
 
 model Community {
@@ -229,7 +276,9 @@ model Carrier {
   name           String
   rate           Float
   avgDeliveryDays Int
-  onTimeRate     Float
+  // Nullable: a newly added carrier has no delivery history yet - the admin UI
+  // renders an em dash until real shipments produce an on-time rate.
+  onTimeRate     Float?
   shipments      Int
   active         Boolean
 }
@@ -263,6 +312,11 @@ model AuditLog {
   details   String
   ip        String
   timestamp DateTime
+
+  @@index([timestamp])
+  @@index([entity])
+  @@index([adminName])
+  @@index([action])
 }
 
 model NotificationTemplate {
@@ -340,33 +394,6 @@ model AppSetting {
   value Json
 }
 
-model HeroBanner {
-  id             String   @id @default(cuid())
-  title          String
-  subtitle       String
-  imageUrl       String
-  buttonText     String
-  buttonAction   String
-  destinationId  String?
-  destinationUrl String?
-  startDate      String
-  endDate        String
-  status         String
-  createdAt      DateTime
-  updatedAt      DateTime @updatedAt
-}
-
-model FeaturedCategory {
-  id           String   @id @default(cuid())
-  categoryId   String
-  categoryName String
-  imageUrl     String
-  position     Int
-  status       String
-  createdAt    DateTime
-  updatedAt    DateTime @updatedAt
-}
-
 model TopSeller {
   id          String   @id @default(cuid())
   sellerId    String
@@ -413,6 +440,29 @@ model FeaturedPost {
   updatedAt DateTime @updatedAt
 }
 
+model Spotlight {
+  id           String   @id @default(cuid())
+  postId       String?
+  productId    String?
+  sellerId     String
+  sellerName   String
+  sellerLogo   String?
+  title        String
+  imageUrl     String?
+  position     Int      @default(1)  // spotlight always occupies position 1
+  isPinned     Boolean  @default(true)
+  status       String   @default("active")
+  startDate    String   @default("")
+  endDate      String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([sellerId])
+  @@index([postId])
+  @@index([productId])
+  @@index([status, endDate])
+}
+
 model HomeSection {
   id        String @id
   name      String @unique
@@ -421,12 +471,30 @@ model HomeSection {
   position  Int
 }
 
+model StorefrontBanner {
+  id              String   @id @default(cuid())
+  sellerUsername  String
+  sellerName      String
+  title           String
+  subtitle        String?
+  ctaLabel        String?
+  imageUrl        String?
+  imageIndex      Int?
+  size            String?
+  position        Int?
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([sellerUsername])
+}
+
 model PromotionPurchase {
   id                String    @id @default(cuid())
   kind              String
   packageName       String
   amountPaid        Float
-  currency          String    @default("PHP")
+  currency          String    @default("INR")
   durationDays      Int
   sellerId          String
   sellerName        String
@@ -440,7 +508,7 @@ model PromotionPurchase {
   postTitle         String?
   postImage         String?
   postExcerpt       String?
-  provider          String    @default("dev")
+  provider          String    @default("manual")
   providerPaymentId String?   @unique
   checkoutRef       String    @unique
   status            String
@@ -506,14 +574,41 @@ model ReportedComment {
 }
 
 model Post {
-  id         String   @id @default(cuid())
-  title      String
-  authorName String
-  type       String
-  status     String
-  likes      Int
-  comments   Int
-  createdAt  DateTime
+  id             String   @id @default(cuid())
+  title          String
+  authorName     String
+  authorUsername String?
+  sellerLocation String?
+  verified       Boolean  @default(false)
+  price          Float?
+  mrp            Float?
+  description    String?
+  category       String?
+  subCategories  Json?
+  hashtags       Json?
+  images         Json?
+  type           String   @default("product")
+  status         String   @default("active")
+  likes          Int      @default(0)
+  comments       Int      @default(0)
+  isSold         Boolean  @default(false)
+  featured       Boolean  @default(false)
+  condition      String?
+  brand          String?
+  variants       Json?
+  stockLeft      Int?
+  negotiable     Boolean?
+  deliveryMode   String?
+  shippingFee    Float?
+  listingLat      Float?
+  listingLng      Float?
+  listingLocation String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@index([status, createdAt])
+  @@index([authorUsername])
+  @@index([category])
 }
 
 model BlockedUser {
@@ -547,30 +642,42 @@ model PaymentMethod {
 }
 
 model LiveStream {
-  id        String   @id @default(cuid())
-  title     String
-  hostName  String
-  viewers   Int
-  status    String
-  startedAt DateTime
+  id           String    @id @default(cuid())
+  title        String
+  hostName     String
+  hostUsername String    @default("")
+  viewers      Int
+  status       String
+  startedAt    DateTime
+  endedAt      DateTime?
 }
 
 model Reel {
-  id          String   @id @default(cuid())
-  title       String
-  creatorName String
-  views       Int
-  likes       Int
-  status      String
-  createdAt   DateTime
+  id              String   @id @default(cuid())
+  title           String
+  creatorName     String
+  creatorUsername String?
+  mediaUrl        String?
+  caption         String?
+  views           Int
+  likes           Int
+  status          String
+  createdAt       DateTime
 }
 
 model Story {
   id          String   @id @default(cuid())
-  creatorName String
-  views       Int
-  status      String
-  createdAt   DateTime
+  username    String
+  creatorName String   @default("")
+  image       String   @default("")
+  caption     String?
+  durationMs  Int      @default(5000)
+  overlays    Json?
+  productRef  Json?
+  views       Int      @default(0)
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime @default(now())
 }
 
 model Hashtag {
@@ -591,6 +698,9 @@ model Bundle {
   sellerName String
   status     String
   createdAt  DateTime
+  // Bundle contents: [{ listingId, name, price }] — drives one-tap add-to-cart
+  // in the app. Null for legacy rows (card shows seller shop link instead).
+  items      Json?
 }
 
 model FoodHubItem {
@@ -656,6 +766,9 @@ model Auction {
   bids           Int
   sellerName     String
   sellerUsername String
+  startPrice     Float?
+  imageKey       String?
+  startsAt       DateTime?
 }
 
 model Refund {
@@ -695,4 +808,125 @@ model Message {
   senderRole String
   body       String
   createdAt  DateTime
+}
+
+// ---- App-side models (unified marketplace, added for buyer+seller real data) ----
+
+model AppSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  username  String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model Follow {
+  id        String   @id @default(cuid())
+  follower  String   // username of the follower
+  followed  String   // username being followed (seller)
+  createdAt DateTime @default(now())
+  @@unique([follower, followed])
+  @@index([followed])
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  username  String
+  createdAt DateTime @default(now())
+  @@unique([postId, username])
+  @@index([postId])
+  @@index([username])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String
+  author    String
+  username  String?
+  parentId  String?
+  text      String
+  likes     Int      @default(0)
+  likedBy   String[] @default([])
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+}
+
+model ChatThread {
+  id           String   @id @default(cuid())
+  participantA String   // username
+  participantB String   // username
+  lastMessage  String?
+  lastAt       DateTime @default(now())
+  // Pinned-chat VAS (OLX Elite pattern): the paying seller pins this thread
+  // to the top of the OTHER participant's inbox for a paid window.
+  pinnedUntil  DateTime?
+  pinnedBy     String?
+  createdAt    DateTime @default(now())
+  @@unique([participantA, participantB])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  threadId  String
+  sender    String
+  receiver  String
+  body      String
+  status    String   @default("sent")
+  createdAt DateTime @default(now())
+  // Price negotiation (OLX-style offers): structured fields so BOTH sides
+  // render/accept/decline the same offer. Null for plain text messages.
+  offerAmount      Float?
+  offerProductId   String?
+  offerProductName String?
+  offerStatus      String?
+
+  @@index([threadId])
+}
+
+model WalletTransaction {
+  id        String   @id @default(cuid())
+  username  String
+  title     String
+  detail    String
+  amount    Float
+  ts        DateTime @default(now())
+
+  @@index([username])
+  @@index([ts])
+}
+
+model UserNotification {
+  id        String   @id @default(cuid())
+  username  String
+  type      String
+  userName  String
+  userHandle String?
+  action    String
+  target    String?
+  targetId  String?
+  read      Boolean  @default(false)
+  timestamp DateTime @default(now())
+}
+
+model AuctionBid {
+  id        String   @id @default(cuid())
+  auctionId String
+  bidder    String
+  amount    Float
+  createdAt DateTime @default(now())
+
+  @@index([auctionId])
+}
+
+model CommunityMessage {
+  id            String   @id @default(cuid())
+  communityId   String
+  author        String
+  authorUsername String
+  text          String
+  createdAt     DateTime @default(now())
 }

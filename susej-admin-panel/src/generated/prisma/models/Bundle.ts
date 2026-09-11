@@ -69,6 +69,7 @@ export type BundleCountAggregateOutputType = {
   sellerName: number
   status: number
   createdAt: number
+  items: number
   _all: number
 }
 
@@ -116,6 +117,7 @@ export type BundleCountAggregateInputType = {
   sellerName?: true
   status?: true
   createdAt?: true
+  items?: true
   _all?: true
 }
 
@@ -214,6 +216,7 @@ export type BundleGroupByOutputType = {
   sellerName: string
   status: string
   createdAt: Date
+  items: runtime.JsonValue | null
   _count: BundleCountAggregateOutputType | null
   _avg: BundleAvgAggregateOutputType | null
   _sum: BundleSumAggregateOutputType | null
@@ -248,6 +251,7 @@ export type BundleWhereInput = {
   sellerName?: Prisma.StringFilter<"Bundle"> | string
   status?: Prisma.StringFilter<"Bundle"> | string
   createdAt?: Prisma.DateTimeFilter<"Bundle"> | Date | string
+  items?: Prisma.JsonNullableFilter<"Bundle">
 }
 
 export type BundleOrderByWithRelationInput = {
@@ -259,6 +263,7 @@ export type BundleOrderByWithRelationInput = {
   sellerName?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  items?: Prisma.SortOrderInput | Prisma.SortOrder
 }
 
 export type BundleWhereUniqueInput = Prisma.AtLeast<{
@@ -273,6 +278,7 @@ export type BundleWhereUniqueInput = Prisma.AtLeast<{
   sellerName?: Prisma.StringFilter<"Bundle"> | string
   status?: Prisma.StringFilter<"Bundle"> | string
   createdAt?: Prisma.DateTimeFilter<"Bundle"> | Date | string
+  items?: Prisma.JsonNullableFilter<"Bundle">
 }, "id">
 
 export type BundleOrderByWithAggregationInput = {
@@ -284,6 +290,7 @@ export type BundleOrderByWithAggregationInput = {
   sellerName?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  items?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.BundleCountOrderByAggregateInput
   _avg?: Prisma.BundleAvgOrderByAggregateInput
   _max?: Prisma.BundleMaxOrderByAggregateInput
@@ -303,6 +310,7 @@ export type BundleScalarWhereWithAggregatesInput = {
   sellerName?: Prisma.StringWithAggregatesFilter<"Bundle"> | string
   status?: Prisma.StringWithAggregatesFilter<"Bundle"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Bundle"> | Date | string
+  items?: Prisma.JsonNullableWithAggregatesFilter<"Bundle">
 }
 
 export type BundleCreateInput = {
@@ -314,6 +322,7 @@ export type BundleCreateInput = {
   sellerName: string
   status: string
   createdAt: Date | string
+  items?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
 }
 
 export type BundleUncheckedCreateInput = {
@@ -325,6 +334,7 @@ export type BundleUncheckedCreateInput = {
   sellerName: string
   status: string
   createdAt: Date | string
+  items?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
 }
 
 export type BundleUpdateInput = {
@@ -336,6 +346,7 @@ export type BundleUpdateInput = {
   sellerName?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  items?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
 }
 
 export type BundleUncheckedUpdateInput = {
@@ -347,6 +358,7 @@ export type BundleUncheckedUpdateInput = {
   sellerName?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  items?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
 }
 
 export type BundleCreateManyInput = {
@@ -358,6 +370,7 @@ export type BundleCreateManyInput = {
   sellerName: string
   status: string
   createdAt: Date | string
+  items?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
 }
 
 export type BundleUpdateManyMutationInput = {
@@ -369,6 +382,7 @@ export type BundleUpdateManyMutationInput = {
   sellerName?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  items?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
 }
 
 export type BundleUncheckedUpdateManyInput = {
@@ -380,6 +394,7 @@ export type BundleUncheckedUpdateManyInput = {
   sellerName?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  items?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
 }
 
 export type BundleCountOrderByAggregateInput = {
@@ -391,6 +406,7 @@ export type BundleCountOrderByAggregateInput = {
   sellerName?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  items?: Prisma.SortOrder
 }
 
 export type BundleAvgOrderByAggregateInput = {
@@ -438,6 +454,7 @@ export type BundleSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   sellerName?: boolean
   status?: boolean
   createdAt?: boolean
+  items?: boolean
 }, ExtArgs["result"]["bundle"]>
 
 export type BundleSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -449,6 +466,7 @@ export type BundleSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extens
   sellerName?: boolean
   status?: boolean
   createdAt?: boolean
+  items?: boolean
 }, ExtArgs["result"]["bundle"]>
 
 export type BundleSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -460,6 +478,7 @@ export type BundleSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extens
   sellerName?: boolean
   status?: boolean
   createdAt?: boolean
+  items?: boolean
 }, ExtArgs["result"]["bundle"]>
 
 export type BundleSelectScalar = {
@@ -471,9 +490,10 @@ export type BundleSelectScalar = {
   sellerName?: boolean
   status?: boolean
   createdAt?: boolean
+  items?: boolean
 }
 
-export type BundleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "itemsCount" | "price" | "discount" | "sellerName" | "status" | "createdAt", ExtArgs["result"]["bundle"]>
+export type BundleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "itemsCount" | "price" | "discount" | "sellerName" | "status" | "createdAt" | "items", ExtArgs["result"]["bundle"]>
 
 export type $BundlePayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Bundle"
@@ -487,6 +507,7 @@ export type $BundlePayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
     sellerName: string
     status: string
     createdAt: Date
+    items: runtime.JsonValue | null
   }, ExtArgs["result"]["bundle"]>
   composites: {}
 }
@@ -918,6 +939,7 @@ export interface BundleFieldRefs {
   readonly sellerName: Prisma.FieldRef<"Bundle", 'String'>
   readonly status: Prisma.FieldRef<"Bundle", 'String'>
   readonly createdAt: Prisma.FieldRef<"Bundle", 'DateTime'>
+  readonly items: Prisma.FieldRef<"Bundle", 'Json'>
 }
     
 
@@ -1128,6 +1150,7 @@ export type BundleCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Intern
    * The data used to create many Bundles.
    */
   data: Prisma.BundleCreateManyInput | Prisma.BundleCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1146,6 +1169,7 @@ export type BundleCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensio
    * The data used to create many Bundles.
    */
   data: Prisma.BundleCreateManyInput | Prisma.BundleCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

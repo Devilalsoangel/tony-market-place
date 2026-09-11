@@ -34,39 +34,32 @@ const orderColumns = [
   orderColumnHelper.accessor("amount", { header: "Amount", cell: (info) => <span className="font-medium">{formatCurrency(info.getValue())}</span> }),
   orderColumnHelper.accessor("items", { header: "Items", cell: (info) => info.getValue() }),
   orderColumnHelper.accessor("status", { header: "Status", cell: (info) => <StatusBadge status={info.getValue()} /> }),
-  orderColumnHelper.accessor("paymentMethod", { header: "Payment", cell: (info) => <span className="capitalize text-gray-600">{String(info.getValue()).replace("_", " ")}</span> }),
+  orderColumnHelper.accessor("paymentMethod", { header: "Payment", cell: (info) => <span className="capitalize text-gray-600">{String(info.getValue()).replaceAll("_", " ")}</span> }),
   orderColumnHelper.accessor("createdAt", { header: "Date", cell: (info) => <span className="text-gray-500">{formatDate(info.getValue())}</span> }),
 ];
 
-interface LoginSession {
+interface AppSessionRow {
   id: string;
-  device: string;
-  location: string;
-  ip: string;
-  at: string;
-  current?: boolean;
+  userId: string;
+  username: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
-interface ReportEntry {
+interface ReportedUserRow {
   id: string;
-  reporter: string;
-  reason: string;
-  date: string;
+  name?: string;
+  email?: string;
+  reason?: string;
+  status?: string;
+  joinedAt?: string;
+  reports?: number;
 }
 
-function generateLoginSessions(userId: string): LoginSession[] {
-  return [
-    { id: `${userId}_s1`, device: "iPhone 15 Pro", location: "Bengaluru, IN", ip: "103.21.44.118", at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), current: true },
-    { id: `${userId}_s2`, device: "Windows 11 · Chrome", location: "Bengaluru, IN", ip: "103.21.44.119", at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-    { id: `${userId}_s3`, device: "Samsung Galaxy S24", location: "Mumbai, IN", ip: "49.207.10.52", at: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString() },
-  ];
-}
-
-function generateReports(): ReportEntry[] {
-  return [
-    { id: "rep_a1", reporter: "TechStore", reason: "Spam in comments", date: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString() },
-    { id: "rep_a2", reporter: "FashionHub", reason: "Abusive language", date: new Date(Date.now() - 13 * 24 * 60 * 60 * 1000).toISOString() },
-  ];
+function sameIdentity(a?: string | null, b?: string | null): boolean {
+  const x = String(a ?? "").trim().toLowerCase();
+  const y = String(b ?? "").trim().toLowerCase();
+  return x.length > 0 && x === y;
 }
 
 export default function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -74,6 +67,8 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
   const { data: users, refresh } = useDbResource<User>("users");
   const { data: products } = useDbResource<Product>("products");
   const { data: orders } = useDbResource<Order>("orders");
+  const { data: reportedRows } = useDbResource<ReportedUserRow>("reported-users");
+  const { data: sessionRows } = useDbResource<AppSessionRow>("sessions");
   const [confirmAction, setConfirmAction] = useState<"suspend" | "ban" | "delete" | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
@@ -96,6 +91,24 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
   const userOrders = useMemo(
     () => (user ? (orders ?? []).filter((o) => o.buyerName === user.name || o.sellerName === user.name) : []),
     [user, orders]
+  );
+  const reports = useMemo(
+    () =>
+      !user
+        ? []
+        : (reportedRows ?? []).filter(
+            (r) => sameIdentity(r.email, user.email) || sameIdentity(r.name, user.name)
+          ),
+    [user, reportedRows]
+  );
+  const loginSessions = useMemo(
+    () =>
+      !user
+        ? []
+        : (sessionRows ?? [])
+            .filter((s) => s.userId === user.id || sameIdentity(s.username, user.username))
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [user, sessionRows]
   );
 
   if (!user) {
@@ -125,6 +138,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
     void fetch("/api/data/users", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: current.id, data: patch }),
     });
     setConfirmAction(null);
@@ -136,14 +150,12 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
     void fetch("/api/data/users", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: current.id }),
     });
     setConfirmAction(null);
     window.location.href = "/dashboard/users";
   }
-
-  const loginSessions = generateLoginSessions(user.id);
-  const reports = generateReports();
 
   return (
     <div className="space-y-6">
@@ -158,7 +170,9 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-[#18181B] ">{user.name}</h1>
-              {user.verified && <Badge variant="success"><ShieldCheck className="h-3.5 w-3.5" /> Verified</Badge>}
+              {(user.verification === "approved" || (!user.verification && user.verified)) && (
+                <Badge variant="success"><ShieldCheck className="h-3.5 w-3.5" /> Verified</Badge>
+              )}
               <StatusBadge status={user.status} />
             </div>
             <p className="mt-1 flex items-center gap-2 text-sm text-gray-500">
@@ -167,8 +181,8 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!user.verified && (
-            <Button variant="outline" onClick={() => patchUser({ verified: true })}>
+          {!(user.verification === "approved" || (!user.verification && user.verified)) && (
+            <Button variant="outline" onClick={() => patchUser({ verification: "approved" })}>
               <ShieldCheck className="h-4 w-4" /> Verify User
             </Button>
           )}
@@ -245,7 +259,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                     <div>
                       <p className="text-xs text-gray-500">Account Type</p>
                       <p className="mt-1 text-sm font-medium text-[#18181B] ">
-                        {user.verified ? "Verified" : "Unverified"}
+                        {user.verification === "approved" || (!user.verification && user.verified) ? "Verified" : "Unverified"}
                       </p>
                     </div>
                     <div>
@@ -288,7 +302,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                 </CardHeader>
                 <CardContent>
                   {reports.length === 0 ? (
-                    <EmptyState icon={<Flag className="h-8 w-8 text-gray-300" />} title="No reports" description="This user has no reports against them." />
+                    <EmptyState icon={<Flag className="h-8 w-8 text-gray-300" />} title="No reports" description="No reports against this user." />
                   ) : (
                     <div className="space-y-3">
                       {reports.map((r) => (
@@ -298,11 +312,11 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                               <Flag className="h-4 w-4 text-[#EF4444]" />
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-[#18181B] ">{r.reason}</p>
-                              <p className="text-xs text-gray-500">Reported by {r.reporter}</p>
+                              <p className="text-sm font-medium text-[#18181B] ">{r.reason || "Unspecified reason"}</p>
+                              <p className="text-xs text-gray-500">Status: {r.status ?? "open"}{typeof r.reports === "number" ? ` · ${r.reports} report(s)` : ""}</p>
                             </div>
                           </div>
-                          <span className="text-xs text-gray-400">{formatDate(r.date, "long")}</span>
+                          <span className="text-xs text-gray-400">{r.joinedAt ? formatDate(r.joinedAt, "long") : "—"}</span>
                         </div>
                       ))}
                     </div>
@@ -317,24 +331,31 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                   <CardTitle>Login History</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {loginSessions.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between rounded-xl border border-[#E4E4E7] bg-white px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#6C3BFF]/10">
-                            <KeyRound className="h-4 w-4 text-[#6C3BFF]" />
+                  {loginSessions.length === 0 ? (
+                    <EmptyState icon={<KeyRound className="h-8 w-8 text-gray-300" />} title="No session data recorded yet" description="Login history appears here after this account signs in." />
+                  ) : (
+                    <div className="space-y-3">
+                      {loginSessions.map((s) => {
+                        const active = new Date(s.expiresAt).getTime() > Date.now();
+                        return (
+                          <div key={s.id} className="flex items-center justify-between rounded-xl border border-[#E4E4E7] bg-white px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#6C3BFF]/10">
+                                <KeyRound className="h-4 w-4 text-[#6C3BFF]" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-[#18181B] ">
+                                  Signed in {formatDate(s.createdAt, "long")}{" "}
+                                  {active && <Badge variant="success">Active</Badge>}
+                                </p>
+                                <p className="text-xs text-gray-500">Expires {formatDate(s.expiresAt, "long")}</p>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-[#18181B] ">
-                              {s.device} {s.current && <Badge variant="success">Current</Badge>}
-                            </p>
-                            <p className="text-xs text-gray-500">{s.location} · {s.ip}</p>
-                          </div>
-                        </div>
-                        <span className="text-xs text-gray-400">{formatDate(s.at, "long")}</span>
-                      </div>
-                    ))}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -342,22 +363,14 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
             {active === "devices" && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Devices ({loginSessions.length})</CardTitle>
+                  <CardTitle>Devices</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {loginSessions.map((s) => (
-                      <div key={`dev_${s.id}`} className="flex items-center justify-between rounded-xl border border-[#E4E4E7] bg-white px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#6C3BFF]/10">
-                            <Smartphone className="h-4 w-4 text-[#6C3BFF]" />
-                          </div>
-                          <p className="text-sm font-medium text-[#18181B] ">{s.device}</p>
-                        </div>
-                        <span className="text-xs text-gray-400">Last active {formatDate(s.at, "relative")}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <EmptyState
+                    icon={<Smartphone className="h-8 w-8 text-gray-300" />}
+                    title="No device data recorded yet"
+                    description="Device details are not captured for app sessions."
+                  />
                 </CardContent>
               </Card>
             )}

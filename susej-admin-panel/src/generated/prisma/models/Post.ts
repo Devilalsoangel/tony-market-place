@@ -27,91 +27,237 @@ export type AggregatePost = {
 }
 
 export type PostAvgAggregateOutputType = {
+  price: number | null
+  mrp: number | null
   likes: number | null
   comments: number | null
+  stockLeft: number | null
+  shippingFee: number | null
+  listingLat: number | null
+  listingLng: number | null
 }
 
 export type PostSumAggregateOutputType = {
+  price: number | null
+  mrp: number | null
   likes: number | null
   comments: number | null
+  stockLeft: number | null
+  shippingFee: number | null
+  listingLat: number | null
+  listingLng: number | null
 }
 
 export type PostMinAggregateOutputType = {
   id: string | null
   title: string | null
   authorName: string | null
+  authorUsername: string | null
+  sellerLocation: string | null
+  verified: boolean | null
+  price: number | null
+  mrp: number | null
+  description: string | null
+  category: string | null
   type: string | null
   status: string | null
   likes: number | null
   comments: number | null
+  isSold: boolean | null
+  featured: boolean | null
+  condition: string | null
+  brand: string | null
+  stockLeft: number | null
+  negotiable: boolean | null
+  deliveryMode: string | null
+  shippingFee: number | null
+  listingLat: number | null
+  listingLng: number | null
+  listingLocation: string | null
   createdAt: Date | null
+  updatedAt: Date | null
 }
 
 export type PostMaxAggregateOutputType = {
   id: string | null
   title: string | null
   authorName: string | null
+  authorUsername: string | null
+  sellerLocation: string | null
+  verified: boolean | null
+  price: number | null
+  mrp: number | null
+  description: string | null
+  category: string | null
   type: string | null
   status: string | null
   likes: number | null
   comments: number | null
+  isSold: boolean | null
+  featured: boolean | null
+  condition: string | null
+  brand: string | null
+  stockLeft: number | null
+  negotiable: boolean | null
+  deliveryMode: string | null
+  shippingFee: number | null
+  listingLat: number | null
+  listingLng: number | null
+  listingLocation: string | null
   createdAt: Date | null
+  updatedAt: Date | null
 }
 
 export type PostCountAggregateOutputType = {
   id: number
   title: number
   authorName: number
+  authorUsername: number
+  sellerLocation: number
+  verified: number
+  price: number
+  mrp: number
+  description: number
+  category: number
+  subCategories: number
+  hashtags: number
+  images: number
   type: number
   status: number
   likes: number
   comments: number
+  isSold: number
+  featured: number
+  condition: number
+  brand: number
+  variants: number
+  stockLeft: number
+  negotiable: number
+  deliveryMode: number
+  shippingFee: number
+  listingLat: number
+  listingLng: number
+  listingLocation: number
   createdAt: number
+  updatedAt: number
   _all: number
 }
 
 
 export type PostAvgAggregateInputType = {
+  price?: true
+  mrp?: true
   likes?: true
   comments?: true
+  stockLeft?: true
+  shippingFee?: true
+  listingLat?: true
+  listingLng?: true
 }
 
 export type PostSumAggregateInputType = {
+  price?: true
+  mrp?: true
   likes?: true
   comments?: true
+  stockLeft?: true
+  shippingFee?: true
+  listingLat?: true
+  listingLng?: true
 }
 
 export type PostMinAggregateInputType = {
   id?: true
   title?: true
   authorName?: true
+  authorUsername?: true
+  sellerLocation?: true
+  verified?: true
+  price?: true
+  mrp?: true
+  description?: true
+  category?: true
   type?: true
   status?: true
   likes?: true
   comments?: true
+  isSold?: true
+  featured?: true
+  condition?: true
+  brand?: true
+  stockLeft?: true
+  negotiable?: true
+  deliveryMode?: true
+  shippingFee?: true
+  listingLat?: true
+  listingLng?: true
+  listingLocation?: true
   createdAt?: true
+  updatedAt?: true
 }
 
 export type PostMaxAggregateInputType = {
   id?: true
   title?: true
   authorName?: true
+  authorUsername?: true
+  sellerLocation?: true
+  verified?: true
+  price?: true
+  mrp?: true
+  description?: true
+  category?: true
   type?: true
   status?: true
   likes?: true
   comments?: true
+  isSold?: true
+  featured?: true
+  condition?: true
+  brand?: true
+  stockLeft?: true
+  negotiable?: true
+  deliveryMode?: true
+  shippingFee?: true
+  listingLat?: true
+  listingLng?: true
+  listingLocation?: true
   createdAt?: true
+  updatedAt?: true
 }
 
 export type PostCountAggregateInputType = {
   id?: true
   title?: true
   authorName?: true
+  authorUsername?: true
+  sellerLocation?: true
+  verified?: true
+  price?: true
+  mrp?: true
+  description?: true
+  category?: true
+  subCategories?: true
+  hashtags?: true
+  images?: true
   type?: true
   status?: true
   likes?: true
   comments?: true
+  isSold?: true
+  featured?: true
+  condition?: true
+  brand?: true
+  variants?: true
+  stockLeft?: true
+  negotiable?: true
+  deliveryMode?: true
+  shippingFee?: true
+  listingLat?: true
+  listingLng?: true
+  listingLocation?: true
   createdAt?: true
+  updatedAt?: true
   _all?: true
 }
 
@@ -205,11 +351,34 @@ export type PostGroupByOutputType = {
   id: string
   title: string
   authorName: string
+  authorUsername: string | null
+  sellerLocation: string | null
+  verified: boolean
+  price: number | null
+  mrp: number | null
+  description: string | null
+  category: string | null
+  subCategories: runtime.JsonValue | null
+  hashtags: runtime.JsonValue | null
+  images: runtime.JsonValue | null
   type: string
   status: string
   likes: number
   comments: number
+  isSold: boolean
+  featured: boolean
+  condition: string | null
+  brand: string | null
+  variants: runtime.JsonValue | null
+  stockLeft: number | null
+  negotiable: boolean | null
+  deliveryMode: string | null
+  shippingFee: number | null
+  listingLat: number | null
+  listingLng: number | null
+  listingLocation: string | null
   createdAt: Date
+  updatedAt: Date
   _count: PostCountAggregateOutputType | null
   _avg: PostAvgAggregateOutputType | null
   _sum: PostSumAggregateOutputType | null
@@ -239,22 +408,68 @@ export type PostWhereInput = {
   id?: Prisma.StringFilter<"Post"> | string
   title?: Prisma.StringFilter<"Post"> | string
   authorName?: Prisma.StringFilter<"Post"> | string
+  authorUsername?: Prisma.StringNullableFilter<"Post"> | string | null
+  sellerLocation?: Prisma.StringNullableFilter<"Post"> | string | null
+  verified?: Prisma.BoolFilter<"Post"> | boolean
+  price?: Prisma.FloatNullableFilter<"Post"> | number | null
+  mrp?: Prisma.FloatNullableFilter<"Post"> | number | null
+  description?: Prisma.StringNullableFilter<"Post"> | string | null
+  category?: Prisma.StringNullableFilter<"Post"> | string | null
+  subCategories?: Prisma.JsonNullableFilter<"Post">
+  hashtags?: Prisma.JsonNullableFilter<"Post">
+  images?: Prisma.JsonNullableFilter<"Post">
   type?: Prisma.StringFilter<"Post"> | string
   status?: Prisma.StringFilter<"Post"> | string
   likes?: Prisma.IntFilter<"Post"> | number
   comments?: Prisma.IntFilter<"Post"> | number
+  isSold?: Prisma.BoolFilter<"Post"> | boolean
+  featured?: Prisma.BoolFilter<"Post"> | boolean
+  condition?: Prisma.StringNullableFilter<"Post"> | string | null
+  brand?: Prisma.StringNullableFilter<"Post"> | string | null
+  variants?: Prisma.JsonNullableFilter<"Post">
+  stockLeft?: Prisma.IntNullableFilter<"Post"> | number | null
+  negotiable?: Prisma.BoolNullableFilter<"Post"> | boolean | null
+  deliveryMode?: Prisma.StringNullableFilter<"Post"> | string | null
+  shippingFee?: Prisma.FloatNullableFilter<"Post"> | number | null
+  listingLat?: Prisma.FloatNullableFilter<"Post"> | number | null
+  listingLng?: Prisma.FloatNullableFilter<"Post"> | number | null
+  listingLocation?: Prisma.StringNullableFilter<"Post"> | string | null
   createdAt?: Prisma.DateTimeFilter<"Post"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"Post"> | Date | string
 }
 
 export type PostOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   authorName?: Prisma.SortOrder
+  authorUsername?: Prisma.SortOrderInput | Prisma.SortOrder
+  sellerLocation?: Prisma.SortOrderInput | Prisma.SortOrder
+  verified?: Prisma.SortOrder
+  price?: Prisma.SortOrderInput | Prisma.SortOrder
+  mrp?: Prisma.SortOrderInput | Prisma.SortOrder
+  description?: Prisma.SortOrderInput | Prisma.SortOrder
+  category?: Prisma.SortOrderInput | Prisma.SortOrder
+  subCategories?: Prisma.SortOrderInput | Prisma.SortOrder
+  hashtags?: Prisma.SortOrderInput | Prisma.SortOrder
+  images?: Prisma.SortOrderInput | Prisma.SortOrder
   type?: Prisma.SortOrder
   status?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   comments?: Prisma.SortOrder
+  isSold?: Prisma.SortOrder
+  featured?: Prisma.SortOrder
+  condition?: Prisma.SortOrderInput | Prisma.SortOrder
+  brand?: Prisma.SortOrderInput | Prisma.SortOrder
+  variants?: Prisma.SortOrderInput | Prisma.SortOrder
+  stockLeft?: Prisma.SortOrderInput | Prisma.SortOrder
+  negotiable?: Prisma.SortOrderInput | Prisma.SortOrder
+  deliveryMode?: Prisma.SortOrderInput | Prisma.SortOrder
+  shippingFee?: Prisma.SortOrderInput | Prisma.SortOrder
+  listingLat?: Prisma.SortOrderInput | Prisma.SortOrder
+  listingLng?: Prisma.SortOrderInput | Prisma.SortOrder
+  listingLocation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type PostWhereUniqueInput = Prisma.AtLeast<{
@@ -264,22 +479,68 @@ export type PostWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.PostWhereInput | Prisma.PostWhereInput[]
   title?: Prisma.StringFilter<"Post"> | string
   authorName?: Prisma.StringFilter<"Post"> | string
+  authorUsername?: Prisma.StringNullableFilter<"Post"> | string | null
+  sellerLocation?: Prisma.StringNullableFilter<"Post"> | string | null
+  verified?: Prisma.BoolFilter<"Post"> | boolean
+  price?: Prisma.FloatNullableFilter<"Post"> | number | null
+  mrp?: Prisma.FloatNullableFilter<"Post"> | number | null
+  description?: Prisma.StringNullableFilter<"Post"> | string | null
+  category?: Prisma.StringNullableFilter<"Post"> | string | null
+  subCategories?: Prisma.JsonNullableFilter<"Post">
+  hashtags?: Prisma.JsonNullableFilter<"Post">
+  images?: Prisma.JsonNullableFilter<"Post">
   type?: Prisma.StringFilter<"Post"> | string
   status?: Prisma.StringFilter<"Post"> | string
   likes?: Prisma.IntFilter<"Post"> | number
   comments?: Prisma.IntFilter<"Post"> | number
+  isSold?: Prisma.BoolFilter<"Post"> | boolean
+  featured?: Prisma.BoolFilter<"Post"> | boolean
+  condition?: Prisma.StringNullableFilter<"Post"> | string | null
+  brand?: Prisma.StringNullableFilter<"Post"> | string | null
+  variants?: Prisma.JsonNullableFilter<"Post">
+  stockLeft?: Prisma.IntNullableFilter<"Post"> | number | null
+  negotiable?: Prisma.BoolNullableFilter<"Post"> | boolean | null
+  deliveryMode?: Prisma.StringNullableFilter<"Post"> | string | null
+  shippingFee?: Prisma.FloatNullableFilter<"Post"> | number | null
+  listingLat?: Prisma.FloatNullableFilter<"Post"> | number | null
+  listingLng?: Prisma.FloatNullableFilter<"Post"> | number | null
+  listingLocation?: Prisma.StringNullableFilter<"Post"> | string | null
   createdAt?: Prisma.DateTimeFilter<"Post"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"Post"> | Date | string
 }, "id">
 
 export type PostOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   authorName?: Prisma.SortOrder
+  authorUsername?: Prisma.SortOrderInput | Prisma.SortOrder
+  sellerLocation?: Prisma.SortOrderInput | Prisma.SortOrder
+  verified?: Prisma.SortOrder
+  price?: Prisma.SortOrderInput | Prisma.SortOrder
+  mrp?: Prisma.SortOrderInput | Prisma.SortOrder
+  description?: Prisma.SortOrderInput | Prisma.SortOrder
+  category?: Prisma.SortOrderInput | Prisma.SortOrder
+  subCategories?: Prisma.SortOrderInput | Prisma.SortOrder
+  hashtags?: Prisma.SortOrderInput | Prisma.SortOrder
+  images?: Prisma.SortOrderInput | Prisma.SortOrder
   type?: Prisma.SortOrder
   status?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   comments?: Prisma.SortOrder
+  isSold?: Prisma.SortOrder
+  featured?: Prisma.SortOrder
+  condition?: Prisma.SortOrderInput | Prisma.SortOrder
+  brand?: Prisma.SortOrderInput | Prisma.SortOrder
+  variants?: Prisma.SortOrderInput | Prisma.SortOrder
+  stockLeft?: Prisma.SortOrderInput | Prisma.SortOrder
+  negotiable?: Prisma.SortOrderInput | Prisma.SortOrder
+  deliveryMode?: Prisma.SortOrderInput | Prisma.SortOrder
+  shippingFee?: Prisma.SortOrderInput | Prisma.SortOrder
+  listingLat?: Prisma.SortOrderInput | Prisma.SortOrder
+  listingLng?: Prisma.SortOrderInput | Prisma.SortOrder
+  listingLocation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
   _count?: Prisma.PostCountOrderByAggregateInput
   _avg?: Prisma.PostAvgOrderByAggregateInput
   _max?: Prisma.PostMaxOrderByAggregateInput
@@ -294,131 +555,392 @@ export type PostScalarWhereWithAggregatesInput = {
   id?: Prisma.StringWithAggregatesFilter<"Post"> | string
   title?: Prisma.StringWithAggregatesFilter<"Post"> | string
   authorName?: Prisma.StringWithAggregatesFilter<"Post"> | string
+  authorUsername?: Prisma.StringNullableWithAggregatesFilter<"Post"> | string | null
+  sellerLocation?: Prisma.StringNullableWithAggregatesFilter<"Post"> | string | null
+  verified?: Prisma.BoolWithAggregatesFilter<"Post"> | boolean
+  price?: Prisma.FloatNullableWithAggregatesFilter<"Post"> | number | null
+  mrp?: Prisma.FloatNullableWithAggregatesFilter<"Post"> | number | null
+  description?: Prisma.StringNullableWithAggregatesFilter<"Post"> | string | null
+  category?: Prisma.StringNullableWithAggregatesFilter<"Post"> | string | null
+  subCategories?: Prisma.JsonNullableWithAggregatesFilter<"Post">
+  hashtags?: Prisma.JsonNullableWithAggregatesFilter<"Post">
+  images?: Prisma.JsonNullableWithAggregatesFilter<"Post">
   type?: Prisma.StringWithAggregatesFilter<"Post"> | string
   status?: Prisma.StringWithAggregatesFilter<"Post"> | string
   likes?: Prisma.IntWithAggregatesFilter<"Post"> | number
   comments?: Prisma.IntWithAggregatesFilter<"Post"> | number
+  isSold?: Prisma.BoolWithAggregatesFilter<"Post"> | boolean
+  featured?: Prisma.BoolWithAggregatesFilter<"Post"> | boolean
+  condition?: Prisma.StringNullableWithAggregatesFilter<"Post"> | string | null
+  brand?: Prisma.StringNullableWithAggregatesFilter<"Post"> | string | null
+  variants?: Prisma.JsonNullableWithAggregatesFilter<"Post">
+  stockLeft?: Prisma.IntNullableWithAggregatesFilter<"Post"> | number | null
+  negotiable?: Prisma.BoolNullableWithAggregatesFilter<"Post"> | boolean | null
+  deliveryMode?: Prisma.StringNullableWithAggregatesFilter<"Post"> | string | null
+  shippingFee?: Prisma.FloatNullableWithAggregatesFilter<"Post"> | number | null
+  listingLat?: Prisma.FloatNullableWithAggregatesFilter<"Post"> | number | null
+  listingLng?: Prisma.FloatNullableWithAggregatesFilter<"Post"> | number | null
+  listingLocation?: Prisma.StringNullableWithAggregatesFilter<"Post"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Post"> | Date | string
+  updatedAt?: Prisma.DateTimeWithAggregatesFilter<"Post"> | Date | string
 }
 
 export type PostCreateInput = {
   id?: string
   title: string
   authorName: string
-  type: string
-  status: string
-  likes: number
-  comments: number
-  createdAt: Date | string
+  authorUsername?: string | null
+  sellerLocation?: string | null
+  verified?: boolean
+  price?: number | null
+  mrp?: number | null
+  description?: string | null
+  category?: string | null
+  subCategories?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  hashtags?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  images?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  type?: string
+  status?: string
+  likes?: number
+  comments?: number
+  isSold?: boolean
+  featured?: boolean
+  condition?: string | null
+  brand?: string | null
+  variants?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  stockLeft?: number | null
+  negotiable?: boolean | null
+  deliveryMode?: string | null
+  shippingFee?: number | null
+  listingLat?: number | null
+  listingLng?: number | null
+  listingLocation?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type PostUncheckedCreateInput = {
   id?: string
   title: string
   authorName: string
-  type: string
-  status: string
-  likes: number
-  comments: number
-  createdAt: Date | string
+  authorUsername?: string | null
+  sellerLocation?: string | null
+  verified?: boolean
+  price?: number | null
+  mrp?: number | null
+  description?: string | null
+  category?: string | null
+  subCategories?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  hashtags?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  images?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  type?: string
+  status?: string
+  likes?: number
+  comments?: number
+  isSold?: boolean
+  featured?: boolean
+  condition?: string | null
+  brand?: string | null
+  variants?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  stockLeft?: number | null
+  negotiable?: boolean | null
+  deliveryMode?: string | null
+  shippingFee?: number | null
+  listingLat?: number | null
+  listingLng?: number | null
+  listingLocation?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type PostUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   authorName?: Prisma.StringFieldUpdateOperationsInput | string
+  authorUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sellerLocation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  price?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  mrp?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subCategories?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  hashtags?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  images?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   type?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   likes?: Prisma.IntFieldUpdateOperationsInput | number
   comments?: Prisma.IntFieldUpdateOperationsInput | number
+  isSold?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  featured?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  condition?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  brand?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  variants?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  stockLeft?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  negotiable?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  deliveryMode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  shippingFee?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLocation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type PostUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   authorName?: Prisma.StringFieldUpdateOperationsInput | string
+  authorUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sellerLocation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  price?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  mrp?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subCategories?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  hashtags?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  images?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   type?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   likes?: Prisma.IntFieldUpdateOperationsInput | number
   comments?: Prisma.IntFieldUpdateOperationsInput | number
+  isSold?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  featured?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  condition?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  brand?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  variants?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  stockLeft?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  negotiable?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  deliveryMode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  shippingFee?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLocation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type PostCreateManyInput = {
   id?: string
   title: string
   authorName: string
-  type: string
-  status: string
-  likes: number
-  comments: number
-  createdAt: Date | string
+  authorUsername?: string | null
+  sellerLocation?: string | null
+  verified?: boolean
+  price?: number | null
+  mrp?: number | null
+  description?: string | null
+  category?: string | null
+  subCategories?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  hashtags?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  images?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  type?: string
+  status?: string
+  likes?: number
+  comments?: number
+  isSold?: boolean
+  featured?: boolean
+  condition?: string | null
+  brand?: string | null
+  variants?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  stockLeft?: number | null
+  negotiable?: boolean | null
+  deliveryMode?: string | null
+  shippingFee?: number | null
+  listingLat?: number | null
+  listingLng?: number | null
+  listingLocation?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type PostUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   authorName?: Prisma.StringFieldUpdateOperationsInput | string
+  authorUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sellerLocation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  price?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  mrp?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subCategories?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  hashtags?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  images?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   type?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   likes?: Prisma.IntFieldUpdateOperationsInput | number
   comments?: Prisma.IntFieldUpdateOperationsInput | number
+  isSold?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  featured?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  condition?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  brand?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  variants?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  stockLeft?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  negotiable?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  deliveryMode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  shippingFee?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLocation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type PostUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   authorName?: Prisma.StringFieldUpdateOperationsInput | string
+  authorUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sellerLocation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  price?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  mrp?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subCategories?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  hashtags?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  images?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   type?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   likes?: Prisma.IntFieldUpdateOperationsInput | number
   comments?: Prisma.IntFieldUpdateOperationsInput | number
+  isSold?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  featured?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  condition?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  brand?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  variants?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  stockLeft?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  negotiable?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  deliveryMode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  shippingFee?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  listingLocation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type PostCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   authorName?: Prisma.SortOrder
+  authorUsername?: Prisma.SortOrder
+  sellerLocation?: Prisma.SortOrder
+  verified?: Prisma.SortOrder
+  price?: Prisma.SortOrder
+  mrp?: Prisma.SortOrder
+  description?: Prisma.SortOrder
+  category?: Prisma.SortOrder
+  subCategories?: Prisma.SortOrder
+  hashtags?: Prisma.SortOrder
+  images?: Prisma.SortOrder
   type?: Prisma.SortOrder
   status?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   comments?: Prisma.SortOrder
+  isSold?: Prisma.SortOrder
+  featured?: Prisma.SortOrder
+  condition?: Prisma.SortOrder
+  brand?: Prisma.SortOrder
+  variants?: Prisma.SortOrder
+  stockLeft?: Prisma.SortOrder
+  negotiable?: Prisma.SortOrder
+  deliveryMode?: Prisma.SortOrder
+  shippingFee?: Prisma.SortOrder
+  listingLat?: Prisma.SortOrder
+  listingLng?: Prisma.SortOrder
+  listingLocation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type PostAvgOrderByAggregateInput = {
+  price?: Prisma.SortOrder
+  mrp?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   comments?: Prisma.SortOrder
+  stockLeft?: Prisma.SortOrder
+  shippingFee?: Prisma.SortOrder
+  listingLat?: Prisma.SortOrder
+  listingLng?: Prisma.SortOrder
 }
 
 export type PostMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   authorName?: Prisma.SortOrder
+  authorUsername?: Prisma.SortOrder
+  sellerLocation?: Prisma.SortOrder
+  verified?: Prisma.SortOrder
+  price?: Prisma.SortOrder
+  mrp?: Prisma.SortOrder
+  description?: Prisma.SortOrder
+  category?: Prisma.SortOrder
   type?: Prisma.SortOrder
   status?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   comments?: Prisma.SortOrder
+  isSold?: Prisma.SortOrder
+  featured?: Prisma.SortOrder
+  condition?: Prisma.SortOrder
+  brand?: Prisma.SortOrder
+  stockLeft?: Prisma.SortOrder
+  negotiable?: Prisma.SortOrder
+  deliveryMode?: Prisma.SortOrder
+  shippingFee?: Prisma.SortOrder
+  listingLat?: Prisma.SortOrder
+  listingLng?: Prisma.SortOrder
+  listingLocation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type PostMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   authorName?: Prisma.SortOrder
+  authorUsername?: Prisma.SortOrder
+  sellerLocation?: Prisma.SortOrder
+  verified?: Prisma.SortOrder
+  price?: Prisma.SortOrder
+  mrp?: Prisma.SortOrder
+  description?: Prisma.SortOrder
+  category?: Prisma.SortOrder
   type?: Prisma.SortOrder
   status?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   comments?: Prisma.SortOrder
+  isSold?: Prisma.SortOrder
+  featured?: Prisma.SortOrder
+  condition?: Prisma.SortOrder
+  brand?: Prisma.SortOrder
+  stockLeft?: Prisma.SortOrder
+  negotiable?: Prisma.SortOrder
+  deliveryMode?: Prisma.SortOrder
+  shippingFee?: Prisma.SortOrder
+  listingLat?: Prisma.SortOrder
+  listingLng?: Prisma.SortOrder
+  listingLocation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type PostSumOrderByAggregateInput = {
+  price?: Prisma.SortOrder
+  mrp?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   comments?: Prisma.SortOrder
+  stockLeft?: Prisma.SortOrder
+  shippingFee?: Prisma.SortOrder
+  listingLat?: Prisma.SortOrder
+  listingLng?: Prisma.SortOrder
+}
+
+export type NullableBoolFieldUpdateOperationsInput = {
+  set?: boolean | null
 }
 
 
@@ -427,47 +949,139 @@ export type PostSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   id?: boolean
   title?: boolean
   authorName?: boolean
+  authorUsername?: boolean
+  sellerLocation?: boolean
+  verified?: boolean
+  price?: boolean
+  mrp?: boolean
+  description?: boolean
+  category?: boolean
+  subCategories?: boolean
+  hashtags?: boolean
+  images?: boolean
   type?: boolean
   status?: boolean
   likes?: boolean
   comments?: boolean
+  isSold?: boolean
+  featured?: boolean
+  condition?: boolean
+  brand?: boolean
+  variants?: boolean
+  stockLeft?: boolean
+  negotiable?: boolean
+  deliveryMode?: boolean
+  shippingFee?: boolean
+  listingLat?: boolean
+  listingLng?: boolean
+  listingLocation?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["post"]>
 
 export type PostSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   title?: boolean
   authorName?: boolean
+  authorUsername?: boolean
+  sellerLocation?: boolean
+  verified?: boolean
+  price?: boolean
+  mrp?: boolean
+  description?: boolean
+  category?: boolean
+  subCategories?: boolean
+  hashtags?: boolean
+  images?: boolean
   type?: boolean
   status?: boolean
   likes?: boolean
   comments?: boolean
+  isSold?: boolean
+  featured?: boolean
+  condition?: boolean
+  brand?: boolean
+  variants?: boolean
+  stockLeft?: boolean
+  negotiable?: boolean
+  deliveryMode?: boolean
+  shippingFee?: boolean
+  listingLat?: boolean
+  listingLng?: boolean
+  listingLocation?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["post"]>
 
 export type PostSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   title?: boolean
   authorName?: boolean
+  authorUsername?: boolean
+  sellerLocation?: boolean
+  verified?: boolean
+  price?: boolean
+  mrp?: boolean
+  description?: boolean
+  category?: boolean
+  subCategories?: boolean
+  hashtags?: boolean
+  images?: boolean
   type?: boolean
   status?: boolean
   likes?: boolean
   comments?: boolean
+  isSold?: boolean
+  featured?: boolean
+  condition?: boolean
+  brand?: boolean
+  variants?: boolean
+  stockLeft?: boolean
+  negotiable?: boolean
+  deliveryMode?: boolean
+  shippingFee?: boolean
+  listingLat?: boolean
+  listingLng?: boolean
+  listingLocation?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["post"]>
 
 export type PostSelectScalar = {
   id?: boolean
   title?: boolean
   authorName?: boolean
+  authorUsername?: boolean
+  sellerLocation?: boolean
+  verified?: boolean
+  price?: boolean
+  mrp?: boolean
+  description?: boolean
+  category?: boolean
+  subCategories?: boolean
+  hashtags?: boolean
+  images?: boolean
   type?: boolean
   status?: boolean
   likes?: boolean
   comments?: boolean
+  isSold?: boolean
+  featured?: boolean
+  condition?: boolean
+  brand?: boolean
+  variants?: boolean
+  stockLeft?: boolean
+  negotiable?: boolean
+  deliveryMode?: boolean
+  shippingFee?: boolean
+  listingLat?: boolean
+  listingLng?: boolean
+  listingLocation?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
 }
 
-export type PostOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "authorName" | "type" | "status" | "likes" | "comments" | "createdAt", ExtArgs["result"]["post"]>
+export type PostOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "authorName" | "authorUsername" | "sellerLocation" | "verified" | "price" | "mrp" | "description" | "category" | "subCategories" | "hashtags" | "images" | "type" | "status" | "likes" | "comments" | "isSold" | "featured" | "condition" | "brand" | "variants" | "stockLeft" | "negotiable" | "deliveryMode" | "shippingFee" | "listingLat" | "listingLng" | "listingLocation" | "createdAt" | "updatedAt", ExtArgs["result"]["post"]>
 
 export type $PostPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Post"
@@ -476,11 +1090,34 @@ export type $PostPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     id: string
     title: string
     authorName: string
+    authorUsername: string | null
+    sellerLocation: string | null
+    verified: boolean
+    price: number | null
+    mrp: number | null
+    description: string | null
+    category: string | null
+    subCategories: runtime.JsonValue | null
+    hashtags: runtime.JsonValue | null
+    images: runtime.JsonValue | null
     type: string
     status: string
     likes: number
     comments: number
+    isSold: boolean
+    featured: boolean
+    condition: string | null
+    brand: string | null
+    variants: runtime.JsonValue | null
+    stockLeft: number | null
+    negotiable: boolean | null
+    deliveryMode: string | null
+    shippingFee: number | null
+    listingLat: number | null
+    listingLng: number | null
+    listingLocation: string | null
     createdAt: Date
+    updatedAt: Date
   }, ExtArgs["result"]["post"]>
   composites: {}
 }
@@ -907,11 +1544,34 @@ export interface PostFieldRefs {
   readonly id: Prisma.FieldRef<"Post", 'String'>
   readonly title: Prisma.FieldRef<"Post", 'String'>
   readonly authorName: Prisma.FieldRef<"Post", 'String'>
+  readonly authorUsername: Prisma.FieldRef<"Post", 'String'>
+  readonly sellerLocation: Prisma.FieldRef<"Post", 'String'>
+  readonly verified: Prisma.FieldRef<"Post", 'Boolean'>
+  readonly price: Prisma.FieldRef<"Post", 'Float'>
+  readonly mrp: Prisma.FieldRef<"Post", 'Float'>
+  readonly description: Prisma.FieldRef<"Post", 'String'>
+  readonly category: Prisma.FieldRef<"Post", 'String'>
+  readonly subCategories: Prisma.FieldRef<"Post", 'Json'>
+  readonly hashtags: Prisma.FieldRef<"Post", 'Json'>
+  readonly images: Prisma.FieldRef<"Post", 'Json'>
   readonly type: Prisma.FieldRef<"Post", 'String'>
   readonly status: Prisma.FieldRef<"Post", 'String'>
   readonly likes: Prisma.FieldRef<"Post", 'Int'>
   readonly comments: Prisma.FieldRef<"Post", 'Int'>
+  readonly isSold: Prisma.FieldRef<"Post", 'Boolean'>
+  readonly featured: Prisma.FieldRef<"Post", 'Boolean'>
+  readonly condition: Prisma.FieldRef<"Post", 'String'>
+  readonly brand: Prisma.FieldRef<"Post", 'String'>
+  readonly variants: Prisma.FieldRef<"Post", 'Json'>
+  readonly stockLeft: Prisma.FieldRef<"Post", 'Int'>
+  readonly negotiable: Prisma.FieldRef<"Post", 'Boolean'>
+  readonly deliveryMode: Prisma.FieldRef<"Post", 'String'>
+  readonly shippingFee: Prisma.FieldRef<"Post", 'Float'>
+  readonly listingLat: Prisma.FieldRef<"Post", 'Float'>
+  readonly listingLng: Prisma.FieldRef<"Post", 'Float'>
+  readonly listingLocation: Prisma.FieldRef<"Post", 'String'>
   readonly createdAt: Prisma.FieldRef<"Post", 'DateTime'>
+  readonly updatedAt: Prisma.FieldRef<"Post", 'DateTime'>
 }
     
 
@@ -1122,6 +1782,7 @@ export type PostCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Internal
    * The data used to create many Posts.
    */
   data: Prisma.PostCreateManyInput | Prisma.PostCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1140,6 +1801,7 @@ export type PostCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensions
    * The data used to create many Posts.
    */
   data: Prisma.PostCreateManyInput | Prisma.PostCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

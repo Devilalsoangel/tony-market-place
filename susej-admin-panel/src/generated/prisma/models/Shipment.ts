@@ -1172,6 +1172,7 @@ export type ShipmentCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Inte
    * The data used to create many Shipments.
    */
   data: Prisma.ShipmentCreateManyInput | Prisma.ShipmentCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1190,6 +1191,7 @@ export type ShipmentCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extens
    * The data used to create many Shipments.
    */
   data: Prisma.ShipmentCreateManyInput | Prisma.ShipmentCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

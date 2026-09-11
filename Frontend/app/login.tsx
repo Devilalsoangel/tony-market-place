@@ -1,38 +1,57 @@
-import { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, FlatList } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
-import { ChevronLeftIcon, PhoneIcon, VerifiedIcon } from '../utils/icons';
+import { ChevronLeftIcon } from '../utils/icons';
+import Svg, { Path } from 'react-native-svg';
 import { colors } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
-import { DEMO_ACCOUNTS } from '../utils/demoAccounts';
+import { serverApi, transportMessage } from '../utils/serverApi';
+
+const COUNTRIES = [
+  { code: '+91', name: 'India', flag: '🇮🇳' },
+  { code: '+1', name: 'United States', flag: '🇺🇸' },
+  { code: '+44', name: 'United Kingdom', flag: '🇬🇧' },
+  { code: '+971', name: 'UAE', flag: '🇦🇪' },
+  { code: '+65', name: 'Singapore', flag: '🇸🇬' },
+  { code: '+61', name: 'Australia', flag: '🇦🇺' },
+  { code: '+81', name: 'Japan', flag: '🇯🇵' },
+];
 
 const OTP_LENGTH = 6;
 
-// Demo OTP: the onboarding + login flows accept this fixed code (the admin
-// panel 2FA uses the same code, so reviewers never get stuck).
-const DEMO_OTP = '123456';
+function ChevronDownIcon({ size = 12, color = '#5c5e63' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 8 8" fill="none">
+      <Path d="M0 2L4 6L8 2L7.2 1.2L4 4.4L0.8 1.2L0 2Z" fill={color} />
+    </Svg>
+  );
+}
+
+type AuthMode = 'phone' | 'email';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login, completeOnboarding } = useAuth();
+  const { serverLogin, serverEmailLogin, completeOnboarding } = useAuth();
+  const [mode, setMode] = useState<AuthMode>('phone');
+  // Phone OTP state
   const [phone, setPhone] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [code, setCode] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [verifying, setVerifying] = useState(false);
+  const [sending, setSending] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState('');
-  const inputsRef = useRef<(TextInput | null)[]>([]);
-
+  const [devHint, setDevHint] = useState('');
+  // Email state
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [emailRegister, setEmailRegister] = useState(false);
+  const [countryCode, setCountryCode] = useState('+91');
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const codeComplete = code.every((d) => d !== '');
-
-  useEffect(() => {
-    if (!otpSent) return;
-    const t = setTimeout(() => inputsRef.current[0]?.focus(), 200);
-    return () => clearTimeout(t);
-  }, [otpSent]);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -40,54 +59,94 @@ export default function LoginScreen() {
     return () => clearTimeout(t);
   }, [resendIn]);
 
-  const sendOtp = () => {
-    if (phone.trim().length < 10) return;
-    setCode(Array(OTP_LENGTH).fill(''));
+  // Industry standard (E.164): the selected country code is part of the
+  // identity — never send bare national digits (see onboarding otp.tsx).
+  const fullPhone = () => countryCode.replace(/\D/g, '') + phone.replace(/\D/g, '');
+
+  const requestOtp = async () => {
+    if (phone.trim().length < 10 || sending) return;
+    setSending(true);
     setError('');
-    setResendIn(30);
-    setOtpSent(true);
+    try {
+      const res = await serverApi.sendOtp(fullPhone());
+      if (res.ok) {
+        setCode(Array(OTP_LENGTH).fill(''));
+        setResendIn(45); // match server RESEND_COOLDOWN_MS (45s)
+        setOtpSent(true);
+        // Dev-mode convenience: the SERVER decides whether a hint may be
+        // shown (AUTH_DEV_MODE). Production with an SMS provider sends none.
+        setDevHint(res.data?.devCode ? `Dev code: ${res.data.devCode}` : '');
+      } else {
+        setError(transportMessage(res.error, 'try again'));
+      }
+    } catch (e) {
+      setError('Could not send the code. Please try again.');
+    } finally {
+      setSending(false);
+    }
   };
 
-  const handleChangeDigit = (i: number, text: string) => {
-    const digit = text.replace(/\D/g, '').slice(-1);
-    const next = [...code];
-    next[i] = digit;
-    setCode(next);
+  const handleOtpChange = (text: string) => {
+    const digits = text.replace(/\D/g, '').slice(0, OTP_LENGTH).split('');
+    while (digits.length < OTP_LENGTH) digits.push('');
+    setCode(digits);
     if (error) setError('');
-    if (digit && i < OTP_LENGTH - 1) {
-      inputsRef.current[i + 1]?.focus();
+    // Auto-submit once all 6 digits are entered (industry standard). Pass the
+    // fresh digits explicitly — state is stale inside this handler, so the
+    // 6th digit never auto-submitted (only the manual button worked).
+    if (text.replace(/\D/g, '').length === OTP_LENGTH) {
+      const freshCode = digits.join('');
+      setTimeout(() => { handleVerify(freshCode); }, 150);
     }
   };
 
-  const handleVerify = async () => {
-    if (!codeComplete || verifying) return;
-    if (code.join('') !== DEMO_OTP) {
-      setError(`Incorrect code. For this demo, use ${DEMO_OTP}.`);
-      return;
-    }
+  const otpCode = code.join('');
+
+  // NOTE: the Sign in button calls this as () => handleVerify() (never bare
+  // onPress={handleVerify}) — the press event must not land in codeOverride.
+  const handleVerify = async (codeOverride?: string) => {
+    const finalCode = typeof codeOverride === 'string' ? codeOverride : otpCode;
+    if (finalCode.length !== OTP_LENGTH || verifying) return;
     setVerifying(true);
     setError('');
     try {
-      // Resolve the identity from the phone number: demo accounts match their
-      // registered phone; anything else becomes a fresh buyer account.
-      const digits = phone.replace(/\D/g, '');
-      const demo = DEMO_ACCOUNTS.find((a) => a.user.phone?.replace(/\D/g, '') === digits);
-      await login(
-        demo
-          ? demo.user
-          : { name: 'New User', username: `user${digits.slice(-4)}`, phone: phone.trim(), role: 'buyer' }
-      );
-      await completeOnboarding();
-      router.replace('/(tabs)/feed');
+      const res = await serverLogin(fullPhone(), finalCode);
+      if (res.ok) {
+        await completeOnboarding();
+        router.replace('/(tabs)/feed');
+      } else if (res.error) {
+        setError(transportMessage(res.error, 'try again'));
+      } else {
+        Alert.alert('Sign-in unavailable', 'Sign-in is unavailable offline. Please try again once you are back online.');
+      }
+    } catch (e) {
+      // Network abort/timeout must never crash to the root screen.
+      setError('Sign-in is unavailable. Check your connection and try again.');
     } finally {
       setVerifying(false);
     }
   };
 
-  const enterDemo = async (account: (typeof DEMO_ACCOUNTS)[number]) => {
-    await login(account.user);
-    await completeOnboarding();
-    router.replace('/(tabs)/feed');
+  const handleEmailAuth = async () => {
+    if (verifying) return;
+    setVerifying(true);
+    setError('');
+    try {
+      const res = await serverEmailLogin(emailRegister ? 'register' : 'login', email, password, name);
+      if (res.ok) {
+        await completeOnboarding();
+        router.replace('/(tabs)/feed');
+      } else if (res.error) {
+        setError(res.error);
+      } else {
+        Alert.alert('Sign-in unavailable', 'Sign-in is unavailable offline. Please try again once you are back online.');
+      }
+    } catch (e) {
+      // Network abort/timeout must never crash to the root screen.
+      setError('Sign-in is unavailable. Check your connection and try again.');
+    } finally {
+      setVerifying(false);
+    }
   };
 
   return (
@@ -96,7 +155,7 @@ export default function LoginScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         {/* Header */}
         <View className="flex-row items-center px-5" style={{ height: 52 }}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}>
             <ChevronLeftIcon size={18} color={colors.primary} />
           </TouchableOpacity>
           <Text className="flex-1 text-center font-inter-700" style={{ fontSize: 20, lineHeight: 28, letterSpacing: -0.5, color: colors.primary }}>
@@ -105,174 +164,216 @@ export default function LoginScreen() {
           <View style={{ width: 18 }} />
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}>
-          {/* Phone sign-in */}
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}>
           <View className="px-8 pt-4">
             <Text className="font-inter-700" style={{ fontSize: 28, lineHeight: 36, letterSpacing: -0.56, color: colors.textPrimary }}>
               Welcome back
             </Text>
-            <Text className="font-inter-400 mt-1 mb-6" style={{ fontSize: 14, lineHeight: 20, color: colors.textSecondary }}>
-              Sign in with your phone number to continue.
+            <Text className="font-inter-400 mt-1 mb-5" style={{ fontSize: 14, lineHeight: 20, color: colors.textSecondary }}>
+              Sign in to continue to the marketplace.
             </Text>
 
-            {!otpSent ? (
-              <>
-                <View className="flex-row items-center mb-5" style={{ gap: 8 }}>
-                  <View className="h-14 px-4 rounded-figma-16 flex-row items-center" style={{ backgroundColor: colors.surfaceContainer }}>
-                    <Text className="font-inter-400" style={{ fontSize: 16, lineHeight: 24, color: colors.textPrimary }}>
-                      +91
-                    </Text>
-                    <Text style={{ fontSize: 10, marginLeft: 4, color: colors.textSecondary }}>▼</Text>
-                  </View>
-                  <View className="flex-1 h-14 px-4 rounded-figma-16 justify-center" style={{ backgroundColor: colors.surfaceContainer }}>
-                    <TextInput
-                      className="font-inter-400"
-                      style={{ fontSize: 16, color: colors.textPrimary }}
-                      placeholder="98765 43210"
-                      placeholderTextColor="rgba(70,69,85,0.4)"
-                      keyboardType="phone-pad"
-                      value={phone}
-                      onChangeText={setPhone}
-                    />
-                  </View>
-                </View>
+            {/* Phone / Email switch */}
+            <View className="flex-row mb-6 rounded-figma-16 p-1" style={{ backgroundColor: colors.surfaceContainer }}>
+              {(['phone', 'email'] as AuthMode[]).map((m) => (
                 <TouchableOpacity
-                  className="w-full h-14 items-center justify-center rounded-figma-16 mb-2"
-                  style={{ backgroundColor: phone.trim().length >= 10 ? colors.primary : 'rgba(93,95,239,0.2)' }}
-                  disabled={phone.trim().length < 10}
-                  onPress={sendOtp}
+                  key={m}
+                  className="flex-1 h-10 items-center justify-center rounded-figma-12"
+                  style={{ backgroundColor: mode === m ? colors.surfaceContainerLowest : 'transparent' }}
+                  onPress={() => { setMode(m); setError(''); }}
                 >
-                  <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: phone.trim().length >= 10 ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}>
-                    Send OTP
+                  <Text className="font-inter-600 capitalize" style={{ fontSize: 13, lineHeight: 18, color: mode === m ? colors.textPrimary : colors.textSecondary }}>
+                    {m === 'phone' ? 'Phone' : 'Email'}
                   </Text>
                 </TouchableOpacity>
-                <Text className="font-inter-400 text-center mb-2" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
-                  New here?{' '}
-                  <Text className="font-inter-600" style={{ color: colors.primary }} onPress={() => router.replace('/(onboarding)/auth')}>
-                    Create an account
+              ))}
+            </View>
+
+            {mode === 'phone' ? (
+              !otpSent ? (
+                <>
+                    <View className="flex-row items-center mb-5" style={{ gap: 8 }}>
+                    <TouchableOpacity className="h-14 px-4 rounded-figma-16 flex-row items-center" style={{ backgroundColor: colors.surfaceContainer }} onPress={() => setShowCountryPicker(true)}>
+                      <Text className="font-inter-400" style={{ fontSize: 16, lineHeight: 24, color: colors.textPrimary }}>
+                        {countryCode}
+                      </Text>
+                      <View style={{ marginLeft: 4 }}>
+                        <ChevronDownIcon size={12} color={colors.textSecondary} />
+                      </View>
+                    </TouchableOpacity>
+                    <View className="flex-1 h-14 px-4 rounded-figma-16 justify-center" style={{ backgroundColor: colors.surfaceContainer }}>
+                      <TextInput
+                        className="font-inter-400"
+                        style={{ fontSize: 16, color: colors.textPrimary }}
+                        placeholder="98765 43210"
+                        placeholderTextColor="rgba(70,69,85,0.4)"
+                        keyboardType="phone-pad"
+                        value={phone}
+                        onChangeText={(t) => { setPhone(t); if (error) setError(''); }}
+                      />
+                    </View>
+                  </View>
+                  {error ? (
+                    <Text className="font-inter-500 mb-3" style={{ fontSize: 13, lineHeight: 18, color: colors.error }}>
+                      {error}
+                    </Text>
+                  ) : null}
+                  <TouchableOpacity
+                    className="w-full h-14 items-center justify-center rounded-figma-16 mb-2"
+                    style={{ backgroundColor: phone.trim().length >= 10 && !sending ? colors.primary : 'rgba(93,95,239,0.2)' }}
+                    onPress={requestOtp}
+                    disabled={sending}
+                  >
+                    <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: !sending ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}>
+                      {sending ? 'Sending...' : 'Send code'}
+                    </Text>
+                  </TouchableOpacity>
+                  <Text className="font-inter-400 text-center mb-2" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
+                    New here?{' '}
+                    <Text className="font-inter-600" style={{ color: colors.primary }} onPress={() => router.replace('/(onboarding)/auth')}>
+                      Create an account
+                    </Text>
                   </Text>
-                </Text>
-              </>
+                </>
+              ) : (
+                <>
+                  <Text className="font-inter-400 mb-5" style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
+                    We've sent a 6-digit code to {countryCode} {phone}.
+                  </Text>
+                  {devHint && !error ? (
+                    <Text className="font-inter-500 mb-3" style={{ fontSize: 13, lineHeight: 18, color: colors.tertiary }}>
+                      {devHint}
+                    </Text>
+                  ) : null}
+                  {error ? (
+                    <Text className="font-inter-500 mb-3" style={{ fontSize: 13, lineHeight: 18, color: colors.error }}>
+                      {error}
+                    </Text>
+                  ) : null}
+                  <View className="flex-row mb-5" style={{ gap: 8 }}>
+                    {code.map((d, i) => (
+                      <View
+                        key={i}
+                        className="flex-1 h-14 rounded-figma-16 items-center justify-center"
+                        style={{
+                          backgroundColor: colors.surfaceContainer,
+                          borderWidth: d ? 1.5 : 0,
+                          borderColor: d ? colors.primaryContainer : 'transparent',
+                        }}
+                      >
+                        <Text className="font-inter-600" style={{ fontSize: 20, lineHeight: 24, color: colors.textPrimary }}>
+                          {d}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <TextInput
+                    value={otpCode}
+                    onChangeText={handleOtpChange}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    caretHidden
+                    autoFocus={otpSent}
+                    className="absolute opacity-0"
+                    style={{ width: 1, height: 1, top: -9999 }}
+                  />
+                  <TouchableOpacity
+                    className="w-full h-14 items-center justify-center rounded-figma-16 mb-2"
+                    style={{ backgroundColor: codeComplete && !verifying ? colors.primary : 'rgba(93,95,239,0.2)' }}
+                    disabled={!codeComplete || verifying}
+                    onPress={() => handleVerify()}
+                  >
+                    <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: codeComplete && !verifying ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}>
+                      {verifying ? 'Signing in...' : 'Sign in'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity disabled={resendIn > 0} onPress={requestOtp} className="items-center">
+                    <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 18, color: resendIn > 0 ? colors.textSecondary : colors.primary }}>
+                      {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )
             ) : (
               <>
-                <Text className="font-inter-400 mb-5" style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
-                  We've sent a 6-digit code to +91 {phone}.
-                </Text>
+                {emailRegister ? (
+                  <TextInput
+                    className="h-14 px-4 rounded-figma-16 font-inter-400 mb-3"
+                    style={{ backgroundColor: colors.surfaceContainer, fontSize: 15, color: colors.textPrimary }}
+                    placeholder="Full name"
+                    placeholderTextColor="rgba(70,69,85,0.4)"
+                    value={name}
+                    onChangeText={(t) => { setName(t); if (error) setError(''); }}
+                    autoCapitalize="words"
+                  />
+                ) : null}
+                <TextInput
+                  className="h-14 px-4 rounded-figma-16 font-inter-400 mb-3"
+                  style={{ backgroundColor: colors.surfaceContainer, fontSize: 15, color: colors.textPrimary }}
+                  placeholder="Email address"
+                  placeholderTextColor="rgba(70,69,85,0.4)"
+                  value={email}
+                  onChangeText={(t) => { setEmail(t); if (error) setError(''); }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  className="h-14 px-4 rounded-figma-16 font-inter-400 mb-2"
+                  style={{ backgroundColor: colors.surfaceContainer, fontSize: 15, color: colors.textPrimary }}
+                  placeholder={emailRegister ? 'Create a password (min 8 characters)' : 'Password'}
+                  placeholderTextColor="rgba(70,69,85,0.4)"
+                  value={password}
+                  onChangeText={(t) => { setPassword(t); if (error) setError(''); }}
+                  secureTextEntry
+                />
                 {error ? (
-                  <Text className="font-inter-500 mb-3" style={{ fontSize: 13, lineHeight: 18, color: colors.error }}>
+                  <Text className="font-inter-500 mb-3 mt-2" style={{ fontSize: 13, lineHeight: 18, color: colors.error }}>
                     {error}
                   </Text>
                 ) : null}
-                <View className="flex-row mb-5" style={{ gap: 8 }}>
-                  {code.map((d, i) => (
-                    <TextInput
-                      key={i}
-                      ref={(el) => {
-                        inputsRef.current[i] = el;
-                      }}
-                      className="flex-1 h-14 rounded-figma-16 font-inter-600"
-                      style={{
-                        backgroundColor: colors.surfaceContainer,
-                        textAlign: 'center',
-                        fontSize: 20,
-                        lineHeight: 24,
-                        color: colors.textPrimary,
-                        borderWidth: d ? 1.5 : 0,
-                        borderColor: d ? colors.primaryContainer : 'transparent',
-                      }}
-                      value={d}
-                      onChangeText={(t) => handleChangeDigit(i, t)}
-                      keyboardType="number-pad"
-                      maxLength={1}
-                      caretHidden
-                      selectTextOnFocus
-                    />
-                  ))}
-                </View>
                 <TouchableOpacity
-                  className="w-full h-14 items-center justify-center rounded-figma-16 mb-2"
-                  style={{ backgroundColor: codeComplete && !verifying ? colors.primary : 'rgba(93,95,239,0.2)' }}
-                  disabled={!codeComplete || verifying}
-                  onPress={handleVerify}
+                  className="w-full h-14 items-center justify-center rounded-figma-16 mb-3"
+                  style={{
+                    backgroundColor:
+                      email.includes('@') && password.length >= 8 && (!emailRegister || name.trim().length >= 2) && !verifying
+                        ? colors.primary
+                        : 'rgba(93,95,239,0.2)',
+                  }}
+                  disabled={!email.includes('@') || password.length < 8 || (emailRegister && name.trim().length < 2) || verifying}
+                  onPress={handleEmailAuth}
                 >
-                  <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: codeComplete && !verifying ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}>
-                    {verifying ? 'Signing in...' : 'Sign in'}
+                  <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: email.includes('@') && password.length >= 8 && (!emailRegister || name.trim().length >= 2) && !verifying ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}>
+                    {verifying ? 'Please wait...' : emailRegister ? 'Create account' : 'Sign in'}
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity disabled={resendIn > 0} onPress={sendOtp} className="items-center">
-                  <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 18, color: resendIn > 0 ? colors.textSecondary : colors.primary }}>
-                    {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                <Text className="font-inter-400 text-center" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
+                  {emailRegister ? 'Already have an account? ' : 'New here? '}
+                  <Text className="font-inter-600" style={{ color: colors.primary }} onPress={() => { setEmailRegister(!emailRegister); setError(''); }}>
+                    {emailRegister ? 'Sign in' : 'Create an account'}
                   </Text>
-                </TouchableOpacity>
-                <Text className="font-inter-400 text-center mt-3" style={{ fontSize: 11, lineHeight: 15, color: colors.textTertiary }}>
-                  Demo: any 10-digit number works — the code is always {DEMO_OTP}
                 </Text>
               </>
             )}
           </View>
-
-          {/* Demo POV switcher */}
-          <View className="mt-8 px-5">
-            <View className="flex-row items-center mb-1">
-              <Text className="flex-1 font-inter-700" style={{ fontSize: 18, lineHeight: 26, color: colors.textPrimary }}>
-                View as demo
-              </Text>
-              <Text className="font-inter-400" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
-                Tap any profile
-              </Text>
-            </View>
-            <Text className="font-inter-400 mb-4" style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
-              Jump straight into any POV — one buyer and one seller per storefront category.
-            </Text>
-
-            <View className="flex-row flex-wrap" style={{ gap: 12 }}>
-              {DEMO_ACCOUNTS.map((acc) => (
-                <TouchableOpacity
-                  key={acc.id}
-                  activeOpacity={0.85}
-                  onPress={() => enterDemo(acc)}
-                  className="overflow-hidden"
-                  style={{
-                    width: (392 - 40 - 12) / 2,
-                    borderRadius: 20,
-                    backgroundColor: colors.surfaceContainerLowest,
-                    shadowColor: colors.textPrimary,
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.04,
-                    shadowRadius: 8,
-                    elevation: 2,
-                  }}
-                >
-                  <View className="flex-row items-center px-3 pt-3" style={{ gap: 10 }}>
-                    <Image
-                      source={{ uri: `https://picsum.photos/seed/${acc.avatarSeed}/120/120` }}
-                      style={{ width: 44, height: 44, borderRadius: 9999, backgroundColor: colors.surfaceContainer }}
-                    />
-                    <View className="flex-1">
-                      <View className="flex-row items-center" style={{ gap: 4 }}>
-                        <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 13, lineHeight: 16, flexShrink: 1 }} numberOfLines={1}>
-                          {acc.label}
-                        </Text>
-                        {acc.user.isSeller ? <VerifiedIcon size={12} /> : null}
-                      </View>
-                      <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 11, lineHeight: 14 }}>
-                        {acc.categoryLabel}
-                      </Text>
-                    </View>
-                  </View>
-                  <View className="px-3 pb-3">
-                    <View className="mt-2.5 self-start px-2 py-0.5 rounded-full" style={{ backgroundColor: colors.surfaceContainer }}>
-                      <Text className="font-inter-500" style={{ fontSize: 10, lineHeight: 13, color: colors.primary }}>
-                        {acc.user.isSeller ? 'Seller POV' : 'Buyer POV'}
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
         </ScrollView>
       </SafeAreaView>
+      <Modal visible={showCountryPicker} transparent animationType="fade" onRequestClose={() => setShowCountryPicker(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowCountryPicker(false)}>
+          <View style={{ backgroundColor: colors.surfaceContainerLowest, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: 380, paddingTop: 12 }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.outlineVariant, alignSelf: 'center', marginBottom: 12 }} />
+            <Text className="font-inter-600" style={{ fontSize: 16, textAlign: 'center', marginBottom: 12, color: colors.textPrimary }}>Select country</Text>
+            <FlatList data={COUNTRIES} keyExtractor={(i) => i.code} renderItem={({ item }) => (
+              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 14, backgroundColor: countryCode === item.code ? colors.surfaceContainer : 'transparent' }} onPress={() => { setCountryCode(item.code); setShowCountryPicker(false); }}>
+                <Text style={{ fontSize: 20, marginRight: 12 }}>{item.flag}</Text>
+                <Text className="font-inter-400" style={{ flex: 1, fontSize: 15, color: colors.textPrimary }}>{item.name}</Text>
+                <Text className="font-inter-600" style={{ fontSize: 15, color: colors.textPrimary }}>{item.code}</Text>
+              </TouchableOpacity>
+            )} />
+            <View style={{ height: 24 }} />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
+

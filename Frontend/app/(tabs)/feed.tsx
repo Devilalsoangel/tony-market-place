@@ -1,41 +1,29 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, Image, FlatList, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { useState, useMemo, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { View, Text, Image, FlatList, ScrollView, TouchableOpacity, StyleSheet, Animated, Dimensions, RefreshControl } from 'react-native';
+import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
+import { hasRealImage, resolveAvatar, resolveListingImage } from '../../utils/productImages';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { HamburgerIcon, PlusIcon, CheckIcon, VerifiedIcon, HeartIcon, BagIcon } from '../../utils/icons';
+import { PlusIcon, CheckIcon, VerifiedIcon, BellIcon, BagIcon, HeartIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
-import { productImages, sellerAvatars } from '../../utils/productImages';
 import { ProductCard } from '../../components/cards/ProductCard';
+import { PostCardSkeleton } from '../../components/ui/Skeleton';
+import { useCart } from '../../contexts/CartContext';
 import { usePosts, type Post } from '../../contexts/PostContext';
 import { useFollow } from '../../contexts/FollowContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRecentlyViewed } from '../../contexts/RecentlyViewedContext';
 import { useHashtags } from '../../contexts/HashtagContext';
-import { usePromotions } from '../../contexts/PromotionContext';
-// Industry-style story tray — 8 sellers (IG shows 8-12 scrollable + functional; Figma only 4 static)
-import { STORY_TRAY, trayParam } from '../../utils/storyTray';
+import { useBookmark } from '../../contexts/BookmarkContext';
+import { serverApi } from '../../utils/serverApi';
+import { getAdminUrl } from '../../utils/adminSync';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
+// REAL stories only — first-class /api/app/stories entities (24h, author-posted).
+// Feed posts are NEVER shown as stories.
+import { groupStoriesByAuthor, trayParam, type AppStory } from '../../utils/storyTray';
 // User's own uploaded story — read on focus so an upload is VISIBLE in the tray (ring + image)
 import { loadMyStory, type MyStory } from '../../utils/myStory';
-
-// Full-quality Figma assets (223:30 Home Feed) — 4x originals exported via LOCAL BRIDGE (exportAsync, no REST).
-// Autos/Jobs tiles keep old photos: Figma image fills there are broken stubs (223:92, 223:97).
-const FEED_IMAGES = {
-  catForYou: require('../../assets/images/screens/feed/img-223-72.png'),
-  catFood: require('../../assets/images/screens/feed/img-223-77.png'),
-  catFashion: require('../../assets/images/screens/feed/img-223-82.png'),
-  catElectronics: require('../../assets/images/screens/feed/img-223-87.png'),
-  catAutos: require('../../assets/images/feed/cat-autos.png'),
-  catJobs: require('../../assets/images/feed/cat-jobs.png'),
-  heroBanner: require('../../assets/images/screens/feed/img-223-107.png'),
-  seller1: require('../../assets/images/screens/feed/img-223-135.png'),
-  seller2: require('../../assets/images/screens/feed/img-223-148.png'),
-  deal1: require('../../assets/images/screens/feed/img-223-163.png'),
-  deal2: require('../../assets/images/screens/feed/img-223-177.png'),
-  sponsoredAvatar: require('../../assets/images/screens/feed/img-223-192.png'),
-  sponsoredPost: require('../../assets/images/screens/feed/img-223-232.png'),
-} as const;
 
 // Helper for Image source — handles both require() (number) and uri strings
 const imgSource = (img: string | number | undefined | null): any => {
@@ -54,15 +42,6 @@ const CompareIcon = ({ size = 16, color = '#464555' }: { size?: number; color?: 
   </Svg>
 );
 
-const FlameIcon = ({ size = 14, color = '#ba1a1a' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={(size * 16) / 14} viewBox="0 0 14 16" fill="none">
-    <Path
-      d="M7 0c.4 3.4-2.6 4.8-3.6 6.9C2.6 8.6 2 9.8 2 11.2A5.2 5.2 0 007 16.4a5.2 5.2 0 005-5.2c0-1.7-.7-3.2-1.9-4.6-.2.9-.8 1.6-1.7 1.9C9.6 5.5 8.6 2.4 7 0z"
-      fill={color}
-    />
-  </Svg>
-);
-
 const GridIcon = ({ size = 18, color = '#4343d5' }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">
     <Path d="M2 2h6v6H2V2zM10 2h6v6h-6V2zM2 10h6v6H2v-6zM10 10h6v6h-6v-6z" fill={color} />
@@ -71,33 +50,18 @@ const GridIcon = ({ size = 18, color = '#4343d5' }: { size?: number; color?: str
 
 const MAX_COMPARE = 3;
 
-const WORLD_RAIL = [
-  { label: 'For You', slug: null as string | null },
-  { label: 'Food', slug: 'food' },
-  { label: 'Fashion', slug: 'fashion' },
-  { label: 'Electronics', slug: 'electronics' },
-  { label: 'Auto', slug: 'automobiles' },
-  { label: 'Jobs', slug: 'job' },
-];
-
-const DEALS = [
-  { id: 'deal_1', name: 'Astron Chrono Watch', price: 12499, oldPrice: 15999, badge: '20% OFF', seed: 'astron', cat: 'electronics' },
-  { id: 'deal_2', name: 'Urban Ace Low-Tops', price: 6999, oldPrice: 8500, badge: 'SALE', seed: 'ace-lowtop', cat: 'fashion' },
-  { id: 'deal_3', name: 'Luxe Silk Saree', price: 2499, oldPrice: 3999, badge: '37% OFF', seed: 'silksaree', cat: 'fashion' },
-  { id: 'deal_4', name: 'ProBook 14 Air', price: 54999, oldPrice: 62999, badge: '12% OFF', seed: 'probook', cat: 'electronics' },
-];
+// Real deals only: posts where the seller set an MRP above the selling price.
+// No fabricated discount rows — when nothing is discounted the rail hides entirely.
 
 // Figma Home Feed (223:30) shows 4 static story items; industry shows 8-12 scrollable + functional.
-// STORY_TRAY (storyTray.ts) provides the full tray; the viewer advances across it (IG-style).
+// The tray lists authors who actually POSTED a story (/api/app/stories); the viewer walks it IG-style.
 
-const formatFollowers = (n: number): string =>
-  n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1e3)}K`;
-
-// Deterministic demo follower counts per seller
-const followersFor = (username: string): number => {
-  let h = 0;
-  for (let i = 0; i < username.length; i++) h = (h * 31 + username.charCodeAt(i)) % 997;
-  return 120_000 + h * 12_000;
+// Real follower counts come from the server Follow table via FollowContext.
+// Small numbers render exact ("7 followers") — honest data beats vanity metrics.
+const formatFollowers = (n: number): string => {
+  if (n < 1000) return String(n);
+  if (n < 1e6) return `${(n / 1e3).toFixed(n % 1000 >= 100 ? 1 : 0)}K`;
+  return `${(n / 1e6).toFixed(1)}M`;
 };
 
 export default function FeedScreen() {
@@ -106,27 +70,92 @@ export default function FeedScreen() {
 
 function FeedContent() {
   // hiddenPostIds/mutedSellers land in PostContext from a parallel agent — read defensively
-  const { posts, hiddenPostIds = [], mutedSellers = [] } = usePosts() as {
+  const { posts, hiddenPostIds = [], mutedSellers = [], refresh: refreshPosts, toggleLike, isLiked } = usePosts() as {
     posts: Post[];
+    loaded: boolean;
+    refresh: () => Promise<void>;
     hiddenPostIds?: string[];
     mutedSellers?: string[];
+    toggleLike: (postId: string) => boolean;
+    isLiked: (postId: string) => boolean;
   };
-  const { isFollowing, toggleFollow } = useFollow();
+  // Industry-standard cart affordance: item-count badge on the bag icon (feed header). The
+  // count mirrors CartContext so the badge stays truthful across every surface.
+  const { cart: cartItems } = useCart();
+  const feedLoaded = (usePosts() as unknown as { loaded?: boolean }).loaded ?? false;
+  // Industry-standard pull-to-refresh: refetch server feed + reconcile cache; spinner
+  // runs only while the request is live — failure just stops the spinner (honest state).
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    Promise.resolve(refreshPosts ? refreshPosts() : null).finally(() => setRefreshing(false));
+  }, [refreshPosts]);
+  const { isFollowing, toggleFollow, followerCounts } = useFollow();
   const { user: authUser, isLoading: authLoading } = useAuth();
   const { followedHashtags } = useHashtags();
   const insets = useSafeAreaInsets();
   const { recents } = useRecentlyViewed();
+  // ROLE-BASED UI: post/story/live creation surfaces render for SELLERS only.
+  const isSeller = !!authUser?.isSeller;
   const [compareIds, setCompareIds] = useState<string[]>([]);
-  const [countdown, setCountdown] = useState('04:12:35');
   const [myStory, setMyStory] = useState<MyStory | null>(null);
+  // Marketing banner hero: REAL seller-uploaded banner image synced from the
+  // seller dashboard (admin "Marketing Banners"). No server content -> NO hero
+  // section at all (no fabricated campaigns, no post marketing).
+  const [hero, setHero] = useState<{ sellerUsername: string; sellerName: string; title: string; subtitle?: string | null; ctaLabel?: string | null; imageUrl: string; size?: string | null } | null>(null);
+  // Admin-owned category catalog (name + banner image from the DB). The app
+  // injects NO category assets — tiles without an admin image render a
+  // neutral letter tile.
+  const [worldCats, setWorldCats] = useState<Array<{ name: string; slug: string; bannerImage?: string | null }>>([]);
+  // REAL stories posted via /api/app/stories (own story is local, everyone else server-side)
+  const [serverStories, setServerStories] = useState<AppStory[]>([]);
+  // Paid promotion campaigns from the SERVER (source of truth for placements).
+  // The local PromotionContext mirrors only the seller's own purchases.
+  const [serverPromos, setServerPromos] = useState<any[]>([]);
 
   // Reload the user's own uploaded story whenever the feed regains focus
-  // (so a story posted from /create-story shows up in the tray immediately).
+  // (so a story posted from /create-story shows up in the tray immediately)
+  // and refresh admin-curated content (hero + categories) + real stories/promos.
   useFocusEffect(
     useCallback(() => {
       let active = true;
       loadMyStory().then((s) => {
         if (active) setMyStory(s);
+      });
+      serverApi.getHome().then(async (res) => {
+        if (!active) return;
+        const list = res.ok && res.data?.marketingBanners?.length ? res.data.marketingBanners : [];
+        // Only banners with a REAL uploaded image can be a hero — a text-only
+        // row would render an empty box.
+        const first = list.find((b) => b.imageUrl) || null;
+        if (!first || !first.imageUrl) {
+          setHero(null);
+          return;
+        }
+        const base = await getAdminUrl();
+        if (!active) return;
+        setHero({
+          sellerUsername: first.sellerUsername,
+          sellerName: first.sellerName,
+          title: first.title,
+          subtitle: first.subtitle,
+          ctaLabel: first.ctaLabel,
+          imageUrl: first.imageUrl.startsWith('http') ? first.imageUrl : `${base}${first.imageUrl}`,
+          size: first.size,
+        });
+      });
+      serverApi.getCategories().then((res) => {
+        if (!active) return;
+        const cats = res.ok && res.data?.categories?.length ? res.data.categories : [];
+        setWorldCats(cats.slice(0, 6).map((c) => ({ name: c.name, slug: c.slug, bannerImage: c.bannerImage ?? null })));
+      });
+      serverApi.getStories().then((res) => {
+        if (!active) return;
+        setServerStories(res.ok && res.data?.stories ? (res.data.stories as AppStory[]) : []);
+      });
+      serverApi.getPromotions().then((res) => {
+        if (!active) return;
+        setServerPromos(res.ok && res.data?.promotions ? res.data.promotions : []);
       });
       return () => {
         active = false;
@@ -134,42 +163,38 @@ function FeedContent() {
     }, [])
   );
 
-  // Hot deals countdown tick
-  useEffect(() => {
-    const tick = () => {
-      setCountdown((prev) => {
-        const parts = prev.split(':').map(Number);
-        let total = parts[0] * 3600 + parts[1] * 60 + parts[2] - 1;
-        if (total < 0) total = 24 * 3600 - 1;
-        const hh = String(Math.floor(total / 3600)).padStart(2, '0');
-        const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
-        const ss = String(total % 60).padStart(2, '0');
-        return `${hh}:${mm}:${ss}`;
-      });
-    };
-    const iv = setInterval(tick, 1000);
-    return () => clearInterval(iv);
-  }, []);
+  // Story tray: authors with REAL posted stories only (never feed posts).
+  // Own story tile renders separately above this row.
+  const storyTray = useMemo(
+    () =>
+      groupStoriesByAuthor(
+        serverStories.filter((s) => s.username !== authUser?.username),
+        10
+      ),
+    [serverStories, authUser?.username]
+  );
+  const trayUsernames = useMemo(() => storyTray.map((s) => s.username), [storyTray]);
 
-  // Suggested sellers — unique sellers from posts, excluding followed + current user
+  // Suggested sellers — unique sellers from posts, excluding followed + muted + hidden + imageless
   const suggestions = useMemo(() => {
     const seen = new Map<string, { username: string; name: string; location: string; verified: boolean; avatar: any }>();
     for (const p of posts) {
       if (seen.has(p.sellerUsername)) continue;
       if (isFollowing(p.sellerUsername)) continue;
       if (authUser?.username && p.sellerUsername === authUser.username) continue;
+      if ((mutedSellers as string[] | undefined)?.includes(p.sellerUsername)) continue;
+      if ((hiddenPostIds as string[] | undefined)?.includes(p.id)) continue;
+      if (!hasRealImage(p)) continue;
       seen.set(p.sellerUsername, {
         username: p.sellerUsername,
         name: p.sellerName,
         location: p.sellerLocation,
         verified: p.verified,
-        avatar:
-          sellerAvatars[p.id] ??
-          { uri: `https://picsum.photos/seed/${p.sellerUsername}/200/200` },
+        avatar: resolveAvatar(p.sellerUsername),
       });
     }
     return Array.from(seen.values()).slice(0, 8);
-  }, [posts, isFollowing, authUser?.username]);
+  }, [posts, isFollowing, authUser?.username, mutedSellers, hiddenPostIds]);
 
   const toggleCompare = (postId: string) => {
     setCompareIds((prev) => {
@@ -179,14 +204,12 @@ function FeedContent() {
     });
   };
 
-  // Sort: sponsored post_001 first (Figma's top sponsored slot), then followed sellers, then newest
+  // Sort: followed sellers first, then newest — imageless NEVER in feed (even for seller), only in seller dashboard under review until image added
   const sortedPosts = useMemo(() => {
     const visible = posts.filter(
-      (p) => !hiddenPostIds?.includes(p.id) && !mutedSellers?.includes(p.sellerUsername)
+      (p) => !hiddenPostIds?.includes(p.id) && !mutedSellers?.includes(p.sellerUsername) && hasRealImage(p)
     );
     return [...visible].sort((a, b) => {
-      if (a.id === 'post_001') return -1;
-      if (b.id === 'post_001') return 1;
       const aFollowed = isFollowing(a.sellerUsername);
       const bFollowed = isFollowing(b.sellerUsername);
       if (aFollowed && !bFollowed) return -1;
@@ -195,14 +218,12 @@ function FeedContent() {
     });
   }, [posts, hiddenPostIds, mutedSellers, isFollowing]);
 
-  // Promotions & Ads (IG boost model): sellers buy visibility from the Promotions
-  // screen; the feed reflects live campaigns — Boost Posts interleaved every 4th
-  // slot with a Sponsored chip, Hot Deals pinned in the deals rail, Top Sellers
-  // pinned in the sellers rail. Vocabulary mirrors the admin Promotions console.
-  const { promotions = [] } = usePromotions();
+  // Promotions & Ads (IG boost model): PAID placements come from the SERVER
+  // (PromotionPurchase rows). No paid campaign -> no placement anywhere; the
+  // deals rail NEVER backfills with organic discounts (paid-only rule).
   const activePromos = useMemo(
-    () => promotions.filter((p) => p.status === 'active'),
-    [promotions]
+    () => serverPromos.filter((p) => p.status === 'active'),
+    [serverPromos]
   );
   const boostedIds = useMemo(
     () => new Set(activePromos.filter((p) => p.kind === 'featuredPost' && p.postId).map((p) => p.postId as string)),
@@ -212,12 +233,18 @@ function FeedContent() {
     () => new Set(activePromos.filter((p) => p.kind === 'hotDeal' && p.postId).map((p) => p.postId as string)),
     [activePromos]
   );
+  // Feed Spotlight (OLX Pin-to-Top): paid posts float to the VERY top of the feed.
+  const spotlightIds = useMemo(
+    () => new Set(activePromos.filter((p) => p.kind === 'spotlight' && p.postId).map((p) => p.postId as string)),
+    [activePromos]
+  );
   const promotedSellers = useMemo(
-    () => new Set(activePromos.filter((p) => p.kind === 'topSeller').map((p) => p.sellerUsername)),
+    () => new Set(activePromos.filter((p) => p.kind === 'topSeller').map((p) => p.sellerId ?? p.sellerUsername)),
     [activePromos]
   );
 
-  // Paid Hot Deal campaigns are pinned into the deals rail with an URGENT badge.
+  // PAID Hot Deal campaigns ONLY (kind=hotDeal with a real post). Organic MRP
+  // discounts are NOT deals-rail material — they stay as badges on normal cards.
   const hotDealCards = useMemo(
     () =>
       sortedPosts
@@ -226,19 +253,24 @@ function FeedContent() {
           id: p.id,
           name: p.description,
           price: p.price,
-          oldPrice: p.mrp ?? Math.round(p.price * 1.25),
+          oldPrice: typeof p.mrp === 'number' && p.mrp > p.price ? p.mrp : undefined as number | undefined,
           badge: 'URGENT',
-          seed: p.id,
-          cat: p.category || 'fashion',
+          image: p.image ?? p.images?.[0],
         })),
     [sortedPosts, hotDealIds]
   );
 
-  // Interleave boosted posts every 4th position (post_001 keeps the Figma top slot).
+  // Deals rail = paid campaigns only. Hides entirely when nothing is paid.
+  const dealsRail = useMemo(() => hotDealCards, [hotDealCards]);
+
+  // Spotlight pins first (paid #1 slot), then boosted posts interleaved every
+  // 4th position (paid campaigns only — no fake sponsored slot).
   const feedList = useMemo(() => {
-    const boosted = sortedPosts.filter((p) => boostedIds.has(p.id) && p.id !== 'post_001');
-    if (boosted.length === 0) return sortedPosts;
-    const rest = sortedPosts.filter((p) => !boostedIds.has(p.id) || p.id === 'post_001');
+    const pinned = sortedPosts.filter((p) => spotlightIds.has(p.id));
+    if (boostedIds.size === 0 && pinned.length > 0) return pinned.concat(sortedPosts.filter((p) => !spotlightIds.has(p.id)));
+    const boosted = sortedPosts.filter((p) => boostedIds.has(p.id));
+    if (boosted.length === 0 && pinned.length === 0) return sortedPosts;
+    const rest = sortedPosts.filter((p) => !boostedIds.has(p.id));
     const out: (typeof sortedPosts)[number][] = [];
     let bi = 0;
     for (let i = 0; i < rest.length; i++) {
@@ -246,64 +278,141 @@ function FeedContent() {
       out.push(rest[i]);
     }
     while (bi < boosted.length) out.push(boosted[bi++]);
-    return out;
-  }, [sortedPosts, boostedIds]);
+    return pinned.length > 0 ? pinned.concat(out.filter((p) => !spotlightIds.has(p.id))) : out;
+  }, [sortedPosts, boostedIds, spotlightIds]);
 
   const recentlyViewed = useMemo(() => {
     return recents
       .map((r) => ({ entry: r, post: posts.find((p) => p.id === r.postId) }))
       .filter((x): x is { entry: { postId: string; viewedAt: number }; post: (typeof posts)[number] } => !!x.post)
-      .filter((x) => !hiddenPostIds?.includes(x.post.id) && !mutedSellers?.includes(x.post.sellerUsername))
+      .filter((x) => !hiddenPostIds?.includes(x.post.id) && !mutedSellers?.includes(x.post.sellerUsername) && hasRealImage(x.post))
       .slice(0, 8);
   }, [recents, posts, hiddenPostIds, mutedSellers]);
 
+  // IG-style hold-and-drag reveal: dragging right progressively slides the
+  // camera/creation surface in from the left while the feed shrinks slightly.
+  // Release past threshold -> complete into the real creator route; otherwise
+  // spring back. Replaces the old instant fling navigation.
+  const winW = Dimensions.get('window').width;
+  const dragX = useRef(new Animated.Value(0)).current;
+  const navLock = useRef(false);
+  const revealX = dragX.interpolate({ inputRange: [0, 1], outputRange: [-winW, 0] });
+  const feedScale = dragX.interpolate({ inputRange: [0, 1], outputRange: [1, 0.94] });
+  const feedShift = dragX.interpolate({ inputRange: [0, 1], outputRange: [0, 44] });
+  const onDragUpdate = ({ nativeEvent }: { nativeEvent: { translationX: number } }) => {
+    if (nativeEvent.translationX > 0) dragX.setValue(Math.min(1, nativeEvent.translationX / winW));
+  };
+  const onDragEnd = ({ nativeEvent }: { nativeEvent: { state: number; translationX: number } }) => {
+    const s = nativeEvent.state;
+    if (s !== State.END && s !== State.CANCELLED) return;
+    if (nativeEvent.translationX > winW * 0.3 && !navLock.current) {
+      navLock.current = true;
+      Animated.timing(dragX, { toValue: 1, duration: 130, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) router.push('/(tabs)/creator');
+        setTimeout(() => {
+          dragX.setValue(0);
+          navLock.current = false;
+        }, 400);
+      });
+    } else {
+      Animated.spring(dragX, { toValue: 0, speed: 24, bounciness: 5, useNativeDriver: true }).start();
+    }
+  };
+
   return (
     <View className="flex-1 bg-surface">
-      {/* Header */}
-      <View
-        className="flex-row items-center justify-between px-5"
-        style={{ height: 64, paddingTop: insets.top, backgroundColor: colors.surface }}
+      {/* IG pattern: hold + drag RIGHT anywhere on the feed -> progressive
+          camera reveal; release completes into the creator surface. */}
+      <PanGestureHandler
+        activeOffsetX={30}
+        failOffsetY={[-14, 14]}
+        onGestureEvent={onDragUpdate}
+        onHandlerStateChange={onDragEnd}
       >
-        <TouchableOpacity onPress={() => router.push('/explore')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <HamburgerIcon size={18} color={colors.primary} />
-        </TouchableOpacity>
-        <Text className="font-inter-700" style={{ fontSize: 24, lineHeight: 28, color: colors.primary, letterSpacing: -0.5 }}>
+      {/* Normal flex child (NOT absoluteFill) so it never overlaps the header;
+          header lives INSIDE so the whole feed scales together like Instagram. */}
+      <Animated.View
+        style={[
+          { flex: 1 },
+          {
+            transform: [{ scale: feedScale }, { translateX: feedShift }],
+          },
+        ]}
+      >
+      {/* Header — airier: taller bar + wider side padding + more icon gap */}
+      <View
+        className="flex-row items-center justify-between px-6"
+        style={{ height: 64 + insets.top, paddingTop: insets.top, backgroundColor: colors.surface }}
+      >
+        <Text className="font-inter-700" style={{ fontSize: 26, lineHeight: 32, color: colors.primary, letterSpacing: -0.5 }}>
           susej
         </Text>
-        <View className="flex-row items-center" style={{ gap: 10 }}>
-          <TouchableOpacity onPress={() => router.push('/saved')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <HeartIcon size={18} color={colors.primary} />
+        <View className="flex-row items-center" style={{ gap: 20 }}>
+          <TouchableOpacity onPress={() => router.push('/notifications')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Notifications">
+            <BellIcon size={22} color={colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/cart')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <BagIcon size={18} color={colors.primary} />
+          <TouchableOpacity onPress={() => router.push('/cart')} hitSlop={{ top: 10, bottom: 10, left:  10, right:  10 }} accessibilityLabel="Shopping cart" accessibilityRole="button">
+            <View style={{ position: 'relative' }}>
+              <BagIcon size={22} color={colors.primary} />
+              {cartItems.length > 0 && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: -6,
+                    right: -9,
+                    minWidth: 18,
+                    height:  18,
+                    borderRadius:  9,
+                    paddingHorizontal: 4,
+                    backgroundColor: colors.error,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: '700', lineHeight: 14 }}>
+                    {cartItems.length > 99 ? '99+' : cartItems.length}
+                  </Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
         </View>
       </View>
-
       <FlatList
         data={feedList}
         keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primaryContainer}
+            colors={[colors.primaryContainer]}
+          />
+        }
+        contentContainerStyle={{ paddingBottom: 96, paddingTop: 8 }}
         ListHeaderComponent={
           <View>
             {/* Stories — Figma 223:30 ring style (gradient stroke 64, avatar 56, label 12, gap 16),
                 but industry-practical: YOUR STORY first + 8 seller stories, horizontally scrollable,
                 tray navigation in viewer (tap -> story -> next story automatically). */}
-            <View>
+            <View style={{ paddingTop: 8, paddingBottom: 4 }}>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerClassName="px-5"
-                contentContainerStyle={{ gap: 8 }}
+                contentContainerStyle={{ gap: 14 }}
               >
-                {/* Your Story (IG pattern): uploaded story gets a ring + preview; empty state = + tile */}
-                {myStory ? (
+                {/* Your Story (IG pattern): uploaded story gets a ring + preview; empty state = + tile.
+                    SELLERS ONLY — buyers consume stories, they never see story-creation UI. */}
+                {isSeller &&
+                  (myStory ? (
                   <TouchableOpacity
                     className="items-center"
-                    style={{ width: 56 }}
+                    style={{ width: 68 }}
                     onPress={() =>
                       router.push({
                         pathname: '/story/me',
-                        params: { mine: '1', tray: trayParam(), idx: '0' },
+                        params: { mine: '1', tray: trayParam(trayUsernames), idx: '0' },
                       })
                     }
                   >
@@ -338,18 +447,12 @@ function FeedContent() {
                 ) : (
                   <TouchableOpacity
                     className="items-center"
-                    style={{ width: 56 }}
-                    onPress={() => router.push('/create-story')}
+                    style={{ width: 68 }}
+                    onPress={() => router.push('/(tabs)/creator?mode=story')}
                   >
                     <View className="w-14 h-14 rounded-full items-center justify-center" style={{ backgroundColor: colors.surfaceContainerLow }}>
-                      <View className="w-[54px] h-[54px] rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: colors.surfaceContainerLowest }}>
-                        <Image source={FEED_IMAGES.sponsoredAvatar} className="w-[50px] h-[50px] rounded-full" />
-                        <View
-                          className="absolute bottom-0 right-0 w-[18px] h-[18px] rounded-full items-center justify-center"
-                          style={{ backgroundColor: colors.primaryContainer, borderWidth: 2, borderColor: colors.surface }}
-                        >
-                          <PlusIcon size={10} color={colors.surfaceContainerLowest} />
-                        </View>
+                      <View className="w-[54px] h-[54px] rounded-full items-center justify-center" style={{ backgroundColor: colors.surfaceContainerLowest }}>
+                        <PlusIcon size={18} color={colors.primaryContainer} />
                       </View>
                     </View>
                     <Text
@@ -360,17 +463,17 @@ function FeedContent() {
                       Your Story
                     </Text>
                   </TouchableOpacity>
-                )}
+                ))}
 
-                {STORY_TRAY.map((story, idx) => (
+                {storyTray.map((story, idx) => (
                   <TouchableOpacity
-                    key={story.id}
+                    key={story.username}
                     className="items-center"
-                    style={{ width: 56 }}
+                    style={{ width: 68 }}
                     onPress={() =>
                       router.push({
-                        pathname: `/story/${story.route}`,
-                        params: { tray: trayParam(), idx: String(idx) },
+                        pathname: `/story/${story.username}`,
+                        params: { tray: trayParam(trayUsernames), idx: String(idx) },
                       })
                     }
                   >
@@ -391,7 +494,13 @@ function FeedContent() {
                         className="w-[54px] h-[54px] rounded-full items-center justify-center overflow-hidden"
                         style={{ backgroundColor: colors.surfaceContainerLowest }}
                       >
-                        <Image source={imgSource(story.avatar)} className="w-[50px] h-[50px] rounded-full" />
+                        {story.avatar ? (
+                          <Image source={imgSource(story.avatar)} className="w-[50px] h-[50px] rounded-full" />
+                        ) : (
+                          <Text className="font-inter-700" style={{ fontSize: 20, color: colors.primaryContainer }}>
+                            {story.name.charAt(0).toUpperCase()}
+                          </Text>
+                        )}
                       </View>
                     </LinearGradient>
                     <Text
@@ -406,48 +515,60 @@ function FeedContent() {
               </ScrollView>
             </View>
 
-            {/* WORLD RAIL — categories rail: heading 18 SemiBold, tiles 72x92 gap 12, All tile icon-only */}
-            <View className="mt-4">
-              <Text className="px-5 text-figma-18 font-inter-600 text-textPrimary" style={{ letterSpacing: 0.18 }}>
-                WORLD RAIL
+            {/* Shop by Category — airier rail */}
+            <View className="mt-6">
+              <Text className="px-6 text-figma-18 font-inter-600 text-textPrimary" style={{ letterSpacing: 0.18 }}>
+                Shop by Category
               </Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                className="mt-4"
-                contentContainerClassName="px-5"
-                contentContainerStyle={{ gap: 12 }}
+                className="mt-3"
+                contentContainerClassName="px-6"
+                contentContainerStyle={{ gap: 14 }}
               >
-                {WORLD_RAIL.map((tile) => (
+                {/* 'For You' = personalized all-products page (interests / searches / watched / followed) */}
+                <TouchableOpacity
+                  className="w-[72px] h-[92px] rounded-figma-16 items-center justify-center"
+                  style={{ backgroundColor: colors.surfaceContainerLow }}
+                  onPress={() => router.push('/foryou')}
+                >
+                  <GridIcon size={16} color={colors.primary} />
+                  <Text className="font-inter-500 text-primary mt-1" style={{ fontSize: 10, lineHeight: 13 }}>
+                    For You
+                  </Text>
+                </TouchableOpacity>
+                {worldCats.map((tile) => (
                   <TouchableOpacity
-                    key={tile.label}
+                    key={tile.slug}
                     className="w-[72px] h-[92px] rounded-figma-16 overflow-hidden"
-                    onPress={() => (tile.slug ? router.push(`/category/${tile.slug}`) : router.push('/explore'))}
+                    onPress={() => router.push(`/category/${tile.slug}`)}
                   >
-                    <Image
-                      source={
-                        tile.slug === 'food' ? FEED_IMAGES.catFood
-                        : tile.slug === 'fashion' ? FEED_IMAGES.catFashion
-                        : tile.slug === 'electronics' ? FEED_IMAGES.catElectronics
-                        : tile.slug === 'automobiles' ? FEED_IMAGES.catAutos
-                        : tile.slug === 'job' ? FEED_IMAGES.catJobs
-                        : FEED_IMAGES.catForYou
-                      }
-                      className="w-full h-full"
-                      resizeMode="cover"
-                    />
+                    {tile.bannerImage ? (
+                      <Image
+                        source={{ uri: tile.bannerImage }}
+                        className="w-full h-full"
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View className="w-full h-full items-center justify-center" style={{ backgroundColor: colors.primaryFixed }}>
+                        <Text className="font-inter-700" style={{ fontSize: 26, lineHeight: 32, color: colors.primary }}>
+                          {tile.name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
                     <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']} style={StyleSheet.absoluteFill} />
                     <Text
                       className="absolute bottom-2 left-0 right-0 text-center font-inter-400 text-white"
                       style={{ fontSize: 10, lineHeight: 13, letterSpacing: 0.2 }}
                     >
-                      {tile.label}
+                      {tile.name}
                     </Text>
                   </TouchableOpacity>
                 ))}
                 <TouchableOpacity
                   className="w-[72px] h-[92px] rounded-figma-12 items-center justify-center"
-                  onPress={() => router.push('/explore')}
+                  onPress={() => router.push('/category')}
                 >
                   <GridIcon size={16} color={colors.primary} />
                   <Text className="font-inter-400 text-primary mt-1" style={{ fontSize: 10, lineHeight: 13 }}>
@@ -457,44 +578,60 @@ function FeedContent() {
               </ScrollView>
             </View>
 
-            {/* Hero banner — Figma 223:106: 350x176 section (mx-5), image 350x160, purple #5d5fef left-half gradient 0.75->0, CTA 115x32 */}
-            <View className="mx-5 mt-4 rounded-figma-24 overflow-hidden bg-surfaceContainerLowest" style={{ height: 176 }}>
-              <Image
-                source={FEED_IMAGES.heroBanner}
-                className="w-full"
-                style={{ height: 160 }}
-                resizeMode="cover"
-              />
-              <LinearGradient
-                colors={['rgba(93,95,239,0.85)', 'rgba(93,95,239,0.05)']}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 0.6, y: 0.5 }}
-                style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 160 }}
-              />
-              <View className="absolute inset-0 justify-between" style={{ paddingTop: 18, paddingBottom: 30, paddingLeft: 24, paddingRight: 24 }}>
-                <Text className="font-inter-600 text-white" style={{ fontSize: 13, lineHeight: 15, letterSpacing: 1.4 }}>
-                  EXCLUSIVE OFFER
-                </Text>
-                <View>
-                  <Text className="font-inter-600 text-white" style={{ fontSize: 19, lineHeight: 24 }}>
-                    Mega Fashion{'\n'}Sale
-                  </Text>
-                  <TouchableOpacity
-                    className="mt-4 items-center justify-center rounded-figma-full bg-white"
-                    style={{ width: 115, height: 32 }}
-                    onPress={() => router.push('/category/fashion')}
-                  >
-                    <Text className="font-inter-600 text-primary" style={{ fontSize: 14, lineHeight: 16 }}>
-                      Shop now
+            {/* Marketing banner hero — REAL seller-uploaded banner image
+                (seller dashboard → admin Marketing Banners). Size follows the
+                seller's picked preset; tap opens that seller's shop. */}
+            {hero && (() => {
+              const W = Dimensions.get('window').width - 40;
+              const imgH = hero.size === 'wide' ? Math.round((W * 9) / 16) : hero.size === 'tall' ? Math.round(Math.min((W * 5) / 4, 340)) : 160;
+              // hero.imageUrl is already resolved to an absolute URL at fetch time.
+              const bannerUri = hero.imageUrl;
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => router.push(`/seller/${hero.sellerUsername}`)}
+                  className="mx-5 mt-4 rounded-figma-24 overflow-hidden bg-surfaceContainerLowest"
+                  style={{ height: imgH + 16 }}
+                >
+                  <Image
+                    source={{ uri: bannerUri }}
+                    className="w-full"
+                    style={{ height: imgH }}
+                    resizeMode="cover"
+                  />
+                  <LinearGradient
+                    colors={['rgba(93,95,239,0.85)', 'rgba(93,95,239,0.05)']}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 0.6, y: 0.5 }}
+                    style={{ position: 'absolute', left: 0, right: 0, top: 0, height: imgH }}
+                  />
+                  <View className="absolute inset-0 justify-between" style={{ paddingTop: 18, paddingBottom: 30, paddingLeft: 24, paddingRight: 24 }}>
+                    <Text className="font-inter-600 text-white" style={{ fontSize: 11, lineHeight: 13, letterSpacing: 1.4 }}>
+                      {(hero.sellerName || hero.sellerUsername || '').toUpperCase()} · SPONSORED
                     </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
+                    <View>
+                      <Text className="font-inter-600 text-white" style={{ fontSize: 19, lineHeight: 24 }} numberOfLines={2}>
+                        {hero.title}
+                      </Text>
+                      {hero.subtitle ? (
+                        <Text className="font-inter-400 text-white" style={{ fontSize: 12, lineHeight: 16, marginTop: 2, opacity: 0.9 }} numberOfLines={1}>
+                          {hero.subtitle}
+                        </Text>
+                      ) : null}
+                      <View className="mt-4 items-center justify-center rounded-figma-full bg-white self-start px-5" style={{ height: 32 }}>
+                        <Text className="font-inter-600 text-primary" style={{ fontSize: 14, lineHeight: 16 }}>
+                          {hero.ctaLabel || 'View shop'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })()}
 
-            {/* Top sellers — Figma: 2 cards 192x187 gap 16, avatar 56 top, solid primary Follow */}
+            {/* Top sellers — more breathing room */}
             {!authLoading && suggestions.length > 0 && (
-              <View className="mt-4">
+              <View className="mt-6">
                 <View className="flex-row items-center justify-between px-5">
                   <Text className="text-figma-12 font-inter-600 text-secondary" style={{ letterSpacing: 0.12 }}>
                     TOP SELLERS
@@ -510,10 +647,10 @@ function FeedContent() {
                   contentContainerClassName="px-5"
                   contentContainerStyle={{ gap: 16 }}
                 >
-                  {suggestions.slice(0, 6).map((s, i) => {
-                    // Figma personas (223:118): Velvet & Co 2.4M + Urban Threads 890K first; rest demo data
-                    const figmaName = i === 0 ? 'Velvet & Co' : i === 1 ? 'Urban Threads' : s.name;
-                    const figmaFollowers = i === 0 ? 2400000 : i === 1 ? 890000 : followersFor(s.username);
+                  {suggestions.slice(0, 6).map((s) => {
+                    // REAL data only: name/avatar/verified from the seller's posts,
+                    // follower count from the server Follow table (0 when nobody follows yet).
+                    const realFollowers = followerCounts[s.username] ?? 0;
                     return (
                     <View
                       key={s.username}
@@ -523,10 +660,10 @@ function FeedContent() {
                       <TouchableOpacity onPress={() => router.push(`/seller/${s.username}`)} className="items-center">
                         <View className="w-14 h-14 rounded-full bg-surfaceContainer items-center justify-center">
                           <Image
-                            source={i === 0 ? FEED_IMAGES.seller1 : i === 1 ? FEED_IMAGES.seller2 : imgSource(s.avatar)}
+                            source={imgSource(s.avatar)}
                             className="w-14 h-14 rounded-full"
                           />
-                          {(s.verified || i < 2) && (
+                          {s.verified && (
                             <View
                               className="absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] rounded-full bg-surfaceContainerLowest items-center justify-center"
                               style={{ borderWidth: 1, borderColor: colors.outlineVariant }}
@@ -536,7 +673,7 @@ function FeedContent() {
                           )}
                         </View>
                         <Text className="font-inter-600 text-textPrimary mt-2" style={{ fontSize: 12, lineHeight: 16 }} numberOfLines={1}>
-                          {figmaName}
+                          {s.name}
                         </Text>
                         {promotedSellers.has(s.username) && (
                           <View className="mt-0.5 px-1.5 py-px rounded-full" style={{ backgroundColor: colors.primaryContainer }}>
@@ -546,15 +683,28 @@ function FeedContent() {
                           </View>
                         )}
                         <Text className="font-inter-400 text-secondary mt-0.5" style={{ fontSize: 9, lineHeight: 12 }}>
-                          {formatFollowers(figmaFollowers)} followers
+                          {realFollowers === 1 ? '1 follower' : `${formatFollowers(realFollowers)} followers`}
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         className="mt-2 h-6 w-[136px] rounded-figma-10 items-center justify-center"
-                        style={{ backgroundColor: colors.primaryContainer }}
+                        style={{
+                          backgroundColor: isFollowing(s.username) ? colors.surfaceContainer : colors.primaryContainer,
+                          borderWidth: isFollowing(s.username) ? 1 : 0,
+                          borderColor: colors.outlineVariant,
+                        }}
                         onPress={() => toggleFollow(s.username)}
                       >
-                        <Text className="font-inter-600 text-white" style={{ fontSize: 12, lineHeight: 15 }}>Follow</Text>
+                        <Text
+                          className="font-inter-600"
+                          style={{
+                            fontSize: 12,
+                            lineHeight: 15,
+                            color: isFollowing(s.username) ? colors.textSecondary : '#FFFFFF',
+                          }}
+                        >
+                          {isFollowing(s.username) ? 'Following' : 'Follow'}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                     );
@@ -563,39 +713,38 @@ function FeedContent() {
               </View>
             )}
 
-            {/* Hot deals — Figma: horizontal row of 169x273 cards, gap 12, image square + info below */}
-            <View className="mt-4">
-              <View className="flex-row items-center justify-between px-5">
+            {/* Hot Deals — dedicated space, airier bottom gap to posts */}
+            {dealsRail.length > 0 && (
+            <View className="mt-6 mb-2">
+              <View className="flex-row items-center px-6">
                 <Text className="text-figma-20 font-inter-600 text-textPrimary" style={{ letterSpacing: 0.2 }}>
                   Hot Deals
                 </Text>
-                <View className="flex-row items-center" style={{ gap: 5 }}>
-                  <FlameIcon size={13} color={colors.error} />
-                  <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 15, color: colors.error }}>
-                    {countdown}
-                  </Text>
-                </View>
               </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                className="mt-4"
-                contentContainerClassName="px-5"
-                contentContainerStyle={{ gap: 12 }}
+                className="mt-3"
+                contentContainerClassName="px-6"
+                contentContainerStyle={{ gap: 14, paddingBottom: 4 }}
               >
-                {[...hotDealCards, ...DEALS].map((deal, i) => (
+                {dealsRail.map((deal) => (
                   <TouchableOpacity
                     key={deal.id}
                     className="w-[169px] rounded-figma-24 bg-surfaceContainerLowest overflow-hidden"
                     style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2 }}
-                    onPress={() => router.push(`/category/${deal.cat}`)}
+                    onPress={() => router.push(`/product/${deal.id}`)}
                   >
-                    <View className="w-full bg-surfaceContainer" style={{ aspectRatio: 1 }}>
-                      <Image
-                        source={i === 0 ? FEED_IMAGES.deal1 : i === 1 ? FEED_IMAGES.deal2 : { uri: `https://picsum.photos/seed/${deal.seed}/338/338` }}
-                        className="w-full h-full"
-                        resizeMode="cover"
-                      />
+                    <View className="w-full bg-surfaceContainer" style={{ aspectRatio: 4 / 3 }}>
+                      {deal.image ? (
+                        <Image source={imgSource(deal.image)} className="w-full h-full" resizeMode="cover" />
+                      ) : (
+                        <View className="w-full h-full items-center justify-center">
+                          <Text className="font-inter-500" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
+                            {deal.name?.split('\n')[0]?.slice(0, 24) || 'Hot deal'}
+                          </Text>
+                        </View>
+                      )}
                       <View
                         className="absolute top-3 left-3 h-5 px-2 rounded-figma-full items-center justify-center"
                         style={{ backgroundColor: colors.dealBadgeBg }}
@@ -608,8 +757,12 @@ function FeedContent() {
                         className="absolute bottom-4 right-3 w-8 h-8 rounded-figma-full items-center justify-center"
                         style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        onPress={() => toggleLike(deal.id)}
                       >
-                        <HeartIcon size={15} color={colors.textPrimary} />
+                        <HeartIcon
+                          size={15}
+                          color={typeof isLiked === 'function' && isLiked(deal.id) ? colors.error : colors.textPrimary}
+                        />
                       </TouchableOpacity>
                     </View>
                     <View className="px-4 pt-2 pb-3">
@@ -620,40 +773,37 @@ function FeedContent() {
                         <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 18, lineHeight: 24 }}>
                           {formatPrice(deal.price)}
                         </Text>
-                        <Text className="font-inter-400 text-secondary line-through" style={{ fontSize: 10, lineHeight: 14 }}>
-                          {formatPrice(deal.oldPrice)}
-                        </Text>
+                        {typeof deal.oldPrice === 'number' && deal.oldPrice > deal.price && (
+                          <Text className="font-inter-400 text-secondary line-through" style={{ fontSize: 10, lineHeight: 14 }}>
+                            {formatPrice(deal.oldPrice)}
+                          </Text>
+                        )}
                       </View>
                     </View>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             </View>
+            )}
           </View>
         }
-        renderItem={({ item, index }) => (
-          <View className="pt-2">
+        renderItem={({ item }) => (
+          <View className="pt-4">
             <ProductCard
               id={item.id}
               sellerName={item.sellerName}
               sellerUsername={item.sellerUsername}
               sellerLocation={item.sellerLocation}
               verified={item.verified}
-              sponsored={index === 0 || boostedIds.has(item.id)}
+              sponsored={boostedIds.has(item.id) || spotlightIds.has(item.id)}
+              sponsoredLabel={spotlightIds.has(item.id) ? 'Spotlight' : 'Sponsored'}
               price={item.price}
               description={item.description}
               likes={item.likes}
               comments={item.comments}
               hashtags={item.hashtags}
-              productImage={
-                item.id === 'post_001'
-                  ? FEED_IMAGES.sponsoredPost
-                  : item.image ??
-                    item.images?.[0] ??
-                    productImages[item.id] ??
-                    { uri: `https://picsum.photos/seed/${item.id}/800/1000` }
-              }
-              sellerAvatar={item.id === 'post_001' ? FEED_IMAGES.sponsoredAvatar : sellerAvatars[item.id]}
+              productImage={resolveListingImage(item, item.id)}
+              sellerAvatar={resolveAvatar(item.sellerUsername)}
             />
           </View>
         )}
@@ -693,6 +843,7 @@ function FeedContent() {
                     Recently viewed
                   </Text>
                   <TouchableOpacity
+                    disabled={compareIds.length < 2}
                     onPress={() => {
                       if (compareIds.length >= 2) router.push(`/compare?ids=${compareIds.join(',')}`);
                     }}
@@ -701,7 +852,11 @@ function FeedContent() {
                       className="text-figma-12 font-inter-600"
                       style={{ letterSpacing: 0.24, color: compareIds.length >= 2 ? colors.primaryContainer : colors.textTertiary }}
                     >
-                      {compareIds.length > 0 ? `Compare (${compareIds.length})` : 'Compare'}
+                      {compareIds.length >= 2
+                        ? `Compare (${compareIds.length})`
+                        : compareIds.length === 1
+                          ? 'Select 1 more to compare'
+                          : 'Compare'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -713,7 +868,7 @@ function FeedContent() {
                 >
                   {recentlyViewed.map(({ entry, post }) => {
                     const selected = compareIds.includes(entry.postId);
-                    const image = post.image ?? productImages[entry.postId];
+                    const image = post.image;
                     return (
                       <TouchableOpacity
                         key={entry.postId}
@@ -758,21 +913,60 @@ function FeedContent() {
           </View>
         }
         ListEmptyComponent={
+          !feedLoaded ? (
+            <View className="pt-4">
+              <PostCardSkeleton />
+              <PostCardSkeleton />
+              <PostCardSkeleton />
+            </View>
+          ) : (
           <View className="items-center justify-center px-10 py-24">
-            <Text className="font-inter-500 text-textSecondary text-center" style={{ fontSize: 15, lineHeight: 22 }}>
+            <Text className="font-inter-500 text-textSecondary text-center" style={{ fontSize: 15, lineHeight:  22 }}>
               Nothing here — follow sellers to fill your feed
             </Text>
-            <View className="mt-5 flex-row items-center h-11 px-6 rounded-figma-full" style={{ backgroundColor: colors.primaryContainer }}>
+            <TouchableOpacity className="mt-5 flex-row items-center h-11 px-6 rounded-figma-full" style={{ backgroundColor: colors.primaryContainer }} onPress={() => router.push('/explore')}>
               <PlusIcon size={14} color={colors.surfaceContainerLowest} />
               <Text className="font-inter-600 ml-2" style={{ fontSize: 13, lineHeight: 16, color: colors.surfaceContainerLowest }}>
                 Follow suggestions
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
+          )
         }
         contentContainerClassName="pb-20"
         showsVerticalScrollIndicator={false}
       />
+      </Animated.View>
+      </PanGestureHandler>
+
+      {/* Progressive-reveal preview of the creation surface - slides in from
+          the left edge while dragging; pure visual, never intercepts touches. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: '#000000', transform: [{ translateX: revealX }] },
+        ]}
+      >
+        <View style={{ position: 'absolute', top: insets.top + 14, right: 24, width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: '#FFFFFFB3', fontSize: 22, lineHeight: 26 }}>✕</Text>
+        </View>
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#FFFFFF' }} />
+          </View>
+          <Text className="font-inter-600" style={{ color: '#FFFFFFB3', fontSize: 13, marginTop: 24, letterSpacing: 0.2 }}>
+            Release to open the camera
+          </Text>
+        </View>
+        <View style={{ position: 'absolute', bottom: insets.bottom + 18, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 28 }}>
+          {['POST', 'STORY', 'REEL', 'LIVE'].map((m) => (
+            <Text key={m} className="font-inter-600" style={{ color: '#FFFFFF59', fontSize: 12, letterSpacing: 1.4 }}>
+              {m}
+            </Text>
+          ))}
+        </View>
+      </Animated.View>
     </View>
   );
 }

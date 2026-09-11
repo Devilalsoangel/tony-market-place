@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, Image, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -7,7 +8,9 @@ import { ChevronLeftIcon, ChevronRightIcon, SendIcon, PlusIcon, MinusIcon, Close
 import { colors, formatCount } from '../../utils/theme';
 import { useCommunities } from '../../contexts/CommunityContext';
 import type { CommunityMessage } from '../../contexts/CommunityContext';
-import { communityChatAvatars } from '../../utils/screenImages';
+import { resolveAvatar } from '../../utils/productImages';
+import { setImmersiveNav } from '../../utils/immersiveNav';
+import { useAuth } from '../../contexts/AuthContext';
 
 export interface PollMessage {
   id: string;
@@ -55,23 +58,6 @@ const formatTime = (ts: number): string => {
   return `${hours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
 };
 
-const LIVE_POOL: { author: string; authorUsername: string; text: string }[] = [
-  { author: 'Ananya', authorUsername: 'ananya', text: 'Anyone tried the new saree collection?' },
-  { author: 'Vikram', authorUsername: 'vikram', text: 'I posted pics in the group' },
-  { author: 'Kavya', authorUsername: 'kavya', text: 'Shipping was fast for me' },
-  { author: 'Sameer', authorUsername: 'sameer', text: 'Is the 30% off still live?' },
-  { author: 'Neha', authorUsername: 'neha', text: 'The handloom pieces are selling out fast' },
-  { author: 'Arjun', authorUsername: 'arjun', text: 'Just picked up the summer drop' },
-  { author: 'Ritu', authorUsername: 'ritu', text: 'Anyone selling iPhone covers? Need two for delivery' },
-  { author: 'Imran', authorUsername: 'imran', text: 'Do sellers give GST invoice on bulk orders?' },
-  { author: 'Priya', authorUsername: 'priya', text: 'The verified badge makes such a difference, zero spam sellers now' },
-  { author: 'Dev', authorUsername: 'dev', text: 'My order came in two days, Delhi to Mumbai. Impressive' },
-  { author: 'Shreya', authorUsername: 'shreya', text: 'Set up my new kitchen with Local Foodies sellers, all at great prices' },
-  { author: 'Karan', authorUsername: 'karan', text: 'Negotiated 15% off in chat, sellers here are really responsive' },
-  { author: 'Muskaan', authorUsername: 'muskaan', text: 'Looking for a Kanjeevaram saree seller, any suggestions?' },
-  { author: 'Rohan', authorUsername: 'rohan', text: 'Just listed my old gaming console, open to offers' },
-];
-
 export default function CommunityChatScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
@@ -82,63 +68,55 @@ export default function CommunityChatScreen() {
   const community = communities.find((c) => c.id === communityId);
   const messages = messagesFor(communityId);
   const listRef = useRef<FlatList<ChatItem>>(null);
-  const [liveMessages, setLiveMessages] = useState<CommunityMessage[]>([]);
-  const [typingAuthor, setTypingAuthor] = useState<string | null>(null);
   const [pollMessages, setPollMessages] = useState<PollMessage[]>([]);
   const [showPollBuilder, setShowPollBuilder] = useState(false);
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
-  const liveId = useRef(0);
-  const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recentPicks = useRef<string[]>([]);
   const joinPromptShown = useRef(false);
-  const contextLenRef = useRef(messages.length);
+
+  // Immersive community room: hide the bottom tab bar while inside, restore
+  // it on unmount (same bridge the DM thread view uses).
+  useEffect(() => {
+    setImmersiveNav(true);
+    return () => setImmersiveNav(false);
+  }, []);
+
+  // Polls persist per community per-user so votes survive remounts (load-merge-persist).
+  const POLLS_KEY_BASE = '@susej_community_polls';
+  const POLLS_KEY = POLLS_KEY_BASE;
+  const allPollsRef = useRef<Record<string, PollMessage[]>>({});
+  const pollsLoadedRef = useRef(false);
+  const { user: authUser, tokenSeq: authTokenSeq } = useAuth();
+  const pollsKey = authUser?.username ? `${POLLS_KEY_BASE}:${authUser.username}` : POLLS_KEY_BASE;
 
   useEffect(() => {
-    contextLenRef.current = messages.length;
-  }, [messages.length]);
+    let cancelled = false;
+    pollsLoadedRef.current = false;
+    AsyncStorage.getItem(pollsKey)
+      .then(async (raw) => {
+        if (cancelled) return;
+        if (raw) {
+          try { allPollsRef.current = JSON.parse(raw) as Record<string, PollMessage[]>; } catch {}
+        } else if (pollsKey !== POLLS_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(POLLS_KEY_BASE);
+          if (!cancelled && legacy) { try { allPollsRef.current = JSON.parse(legacy) as Record<string, PollMessage[]>; try { await AsyncStorage.setItem(pollsKey, legacy); } catch {} } catch {} }
+        }
+        if (!cancelled) { setPollMessages(allPollsRef.current[communityId] ?? []); pollsLoadedRef.current = true; }
+      })
+      .catch(() => { if (!cancelled) { setPollMessages([]); pollsLoadedRef.current = true; } });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollsKey, authTokenSeq]);
 
   useEffect(() => {
-    if (!communityId || !community?.joined) return;
-    const pickSeed = () => {
-      let seed = LIVE_POOL[Math.floor(Math.random() * LIVE_POOL.length)];
-      let guard = 0;
-      while (recentPicks.current.includes(seed.authorUsername) && guard < LIVE_POOL.length) {
-        seed = LIVE_POOL[Math.floor(Math.random() * LIVE_POOL.length)];
-        guard += 1;
-      }
-      recentPicks.current = [...recentPicks.current.slice(-9), seed.authorUsername];
-      return seed;
-    };
-    const appendLive = () => {
-      const seed = pickSeed();
-      setTypingAuthor(seed.author);
-      typingTimeout.current = setTimeout(() => {
-        liveId.current += 1;
-        const msg: CommunityMessage = {
-          id: `live_${Date.now()}_${liveId.current}`,
-          communityId,
-          author: seed.author,
-          authorUsername: seed.authorUsername,
-          text: seed.text,
-          createdAt: Date.now(),
-        };
-        setTypingAuthor(null);
-        setLiveMessages((prev) => {
-          const next = [...prev, msg];
-          const drop = Math.max(0, next.length + contextLenRef.current - 40);
-          return drop > 0 ? next.slice(drop) : next;
-        });
-      }, 1000);
-    };
-    const interval = setInterval(appendLive, 8000);
-    return () => {
-      clearInterval(interval);
-      if (typingTimeout.current) clearTimeout(typingTimeout.current);
-    };
-  }, [communityId, communities, community?.joined]);
+    if (!pollsLoadedRef.current) return;
+    allPollsRef.current[communityId] = pollMessages;
+    AsyncStorage.setItem(pollsKey, JSON.stringify(allPollsRef.current)).catch(() => {});
+  }, [pollMessages, communityId, pollsKey]);
 
-  const data: ChatItem[] = [...messages, ...liveMessages, ...pollMessages].sort(
+  // Chat shows ONLY real member activity from CommunityContext — no ambient bot.
+
+  const data: ChatItem[] = [...messages, ...pollMessages].sort(
     (a, b) => a.createdAt - b.createdAt
   );
 
@@ -164,10 +142,17 @@ export default function CommunityChatScreen() {
   };
 
   const sendPoll = () => {
+    if (!community?.joined) {
+      if (!joinPromptShown.current) {
+        joinPromptShown.current = true;
+        Alert.alert('Join the community to post', 'Tap Join in the header, then create your poll.');
+      }
+      return;
+    }
     const question = pollQuestion.trim();
     const options = pollOptions.map((o) => o.trim()).filter(Boolean);
     if (!question || options.length < 2) return;
-    const seeded = options.length === 2 ? [5, 4] : options.length === 3 ? [5, 3, 2] : [5, 3, 2, 2];
+    // Honest poll: every option starts at zero votes.
     const poll: PollMessage = {
       id: `poll_${Date.now()}`,
       communityId,
@@ -176,7 +161,7 @@ export default function CommunityChatScreen() {
       kind: 'poll',
       question,
       options,
-      votes: seeded,
+      votes: options.map(() => 0),
       votedOption: null,
       createdAt: Date.now(),
     };
@@ -255,7 +240,7 @@ export default function CommunityChatScreen() {
       >
         <PeopleIcon size={14} color={colors.textSecondary} />
         <Text className="font-inter-600 mx-1.5 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
-          Members {formatCount(community?.memberCount ?? 248)}
+          Members {community ? formatCount(community.memberCount) : ''}
         </Text>
         <ChevronRightIcon size={8} color={colors.textSecondary} />
       </TouchableOpacity>
@@ -283,16 +268,7 @@ export default function CommunityChatScreen() {
             </Text>
           </View>
         }
-        ListFooterComponent={
-          typingAuthor ? (
-            <View className="flex-row items-center mb-5">
-              <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
-                {typingAuthor} is typing…
-              </Text>
-            </View>
-          ) : null
-        }
-        renderItem={({ item, index }) => {
+        renderItem={({ item }) => {
           if ('kind' in item) {
             const p = item;
             const total = p.votes.reduce((a, b) => a + b, 0);
@@ -379,7 +355,7 @@ export default function CommunityChatScreen() {
               {/* User name + time */}
               <View className={`flex-row items-center ${isSelf ? 'justify-end' : ''} mb-1`}>
                 {!isSelf ? (
-                  <Image source={communityChatAvatars[index % communityChatAvatars.length]} className="w-9 h-9 rounded-full mr-2" style={{ backgroundColor: colors.surfaceContainer }} />
+                  <Image source={resolveAvatar(item.authorUsername ?? item.author)} className="w-9 h-9 rounded-full mr-2" style={{ backgroundColor: colors.surfaceContainer }} />
                 ) : null}
                 <Text className={`font-inter-600 ${isSelf ? 'text-primaryContainer' : 'text-textPrimary'}`} style={{ fontSize: 14, lineHeight: 16 }}>
                   {item.author}

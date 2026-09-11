@@ -1060,6 +1060,7 @@ export type BroadcastCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Int
    * The data used to create many Broadcasts.
    */
   data: Prisma.BroadcastCreateManyInput | Prisma.BroadcastCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1078,6 +1079,7 @@ export type BroadcastCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exten
    * The data used to create many Broadcasts.
    */
   data: Prisma.BroadcastCreateManyInput | Prisma.BroadcastCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

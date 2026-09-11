@@ -1,93 +1,33 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, Switch, Image, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BackIcon, StarIcon, CheckIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
 import { useOrders } from '../contexts/OrderContext';
-import { productImages } from '../utils/productImages';
-import { rateReviewImages, savedCollectionImages } from '../utils/screenImages';
-
-const REVIEW_PHOTOS_KEY = '@susej_review_photos';
-
-const PHOTO_TILES = [
-  rateReviewImages.product,
-  rateReviewImages.avatar,
-  savedCollectionImages[0],
-  savedCollectionImages[1],
-  savedCollectionImages[2],
-  savedCollectionImages[3],
-];
-
-const persistPhoto = async (orderId: string, uri: string | number | null) => {
-  try {
-    const raw = await AsyncStorage.getItem(REVIEW_PHOTOS_KEY);
-    let map: Record<string, string | number> = {};
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') map = parsed;
-      } catch {
-        // corrupted data — start fresh
-      }
-    }
-    if (uri) map[orderId] = uri;
-    else delete map[orderId];
-    await AsyncStorage.setItem(REVIEW_PHOTOS_KEY, JSON.stringify(map));
-  } catch {
-    // storage unavailable — photo survives only for this session
-  }
-};
+import { resolveListingImage } from '../utils/productImages';
 
 export default function RateReviewScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const { getOrder, markReviewed } = useOrders();
   const order = params.id ? getOrder(String(params.id)) : undefined;
-  const orderId = params.id ? String(params.id) : undefined;
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [anonymous, setAnonymous] = useState(false);
-  const [photoUri, setPhotoUri] = useState<string | number | null>(null);
-  const [photosLoaded, setPhotosLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const pickedRef = useRef(false);
   const insets = useSafeAreaInsets();
 
-  const productName = order ? order.items[0].name : 'Signature Leather Tote';
-  const sellerName = order ? `Seller: ${order.sellerName}` : 'Seller: Susej Boutique';
-  const productImage = order ? (productImages[order.items[0].listingId] ?? rateReviewImages.product) : rateReviewImages.product;
-
-  useEffect(() => {
-    let active = true;
-    AsyncStorage.getItem(REVIEW_PHOTOS_KEY)
-      .then((raw) => {
-        if (!active) return;
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && orderId && typeof parsed[orderId] === 'string') {
-              if (!pickedRef.current) setPhotoUri(parsed[orderId]);
-            }
-          } catch {
-            // corrupted data — no saved photo
-          }
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setPhotosLoaded(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [orderId]);
-
-  useEffect(() => {
-    if (!photosLoaded || !orderId) return;
-    persistPhoto(orderId, photoUri);
-  }, [photoUri, photosLoaded, orderId]);
+  const productName = order ? order.items[0].name : 'Your order';
+  const sellerName = order ? `Seller: ${order.sellerName}` : '';
+  // Real ordered-item photo — never a static stock tile.
+  const productImage = order
+    ? order.items[0]?.imageUrl
+      ? { uri: order.items[0].imageUrl }
+      : resolveListingImage(null, order.items[0]?.listingId ?? order.id)
+    : null;
+  // Reviews are delivery-gated: only delivered, unreviewed orders qualify.
+  const reviewable = !!order && order.status === 'delivered' && !order.reviewed;
 
   if (!order) {
     return (
@@ -112,20 +52,38 @@ export default function RateReviewScreen() {
     );
   }
 
-  const tiles = [...PHOTO_TILES];
-  if (photoUri && !tiles.includes(photoUri)) tiles.unshift(photoUri);
+  if (!reviewable && !submitted) {
+    return (
+      <View className="flex-1 bg-surface">
+        <View className="flex-row items-center justify-between px-4" style={{ height: 52 + insets.top, paddingTop: insets.top }}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <BackIcon size={20} color={colors.primary} />
+          </TouchableOpacity>
+          <Text className="text-figma-18 font-inter-700 text-textPrimary">Write Review</Text>
+          <View className="w-5" />
+        </View>
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-figma-18 font-inter-700 text-textPrimary">
+            {order.reviewed ? 'Already reviewed' : 'Not deliverable yet'}
+          </Text>
+          <Text className="text-figma-14 font-inter-400 text-textSecondary mt-2 text-center">
+            {order.reviewed
+              ? 'You already shared feedback for this order.'
+              : 'You can rate this order once it is delivered.'}
+          </Text>
+          <TouchableOpacity className="mt-6 px-6 py-3 bg-primaryContainer rounded-figma-full" onPress={() => router.back()}>
+            <Text className="text-figma-14 font-inter-600 text-white">Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
-  const togglePhoto = (uri: string) => {
-    pickedRef.current = true;
-    setPhotoUri((prev) => (prev === uri ? null : uri));
-  };
-
-  const submit = async () => {
-    if (!order || rating === 0 || submitting) return;
+  const submit = () => {
+    if (!order || rating === 0 || submitting || !reviewable) return;
     setSubmitting(true);
     try {
-      markReviewed(order.id, rating, review);
-      if (orderId) await persistPhoto(orderId, photoUri);
+      markReviewed(order.id, rating, review, anonymous);
       setSubmitted(true);
     } finally {
       setSubmitting(false);
@@ -168,12 +126,6 @@ export default function RateReviewScreen() {
             {review.trim().length > 0 && (
               <Text className="text-figma-14 font-inter-400 text-textPrimary mb-3">{review}</Text>
             )}
-            {photoUri ? (
-              <View className="flex-row items-center gap-3">
-                <Image source={typeof photoUri === 'string' ? { uri: photoUri } : photoUri} className="w-20 h-20 rounded-figma-12" style={{ resizeMode: 'cover' }} />
-                <Text className="text-figma-12 font-inter-400 text-textTertiary">Attached photo</Text>
-              </View>
-            ) : null}
             {anonymous && (
               <Text className="text-figma-12 font-inter-400 text-textTertiary mt-3">Posted anonymously</Text>
             )}
@@ -229,42 +181,6 @@ export default function RateReviewScreen() {
               <StarIcon size={36} color={star <= rating ? '#f59e0b' : '#d1d5db'} />
             </TouchableOpacity>
           ))}
-        </View>
-
-        <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-figma-16 font-inter-500 text-textSecondary">Add a photo</Text>
-          <Text className="text-figma-12 font-inter-400 text-textTertiary">
-            {photoUri ? '1 selected' : 'Optional'}
-          </Text>
-        </View>
-
-        <View className="flex-row flex-wrap mb-6" style={{ gap: 8 }}>
-          {tiles.map((uri, i) => {
-            const selected = photoUri === uri;
-            return (
-              <TouchableOpacity
-                key={i}
-                activeOpacity={0.85}
-                onPress={() => togglePhoto(uri)}
-                className="rounded-figma-12 overflow-hidden"
-                style={{
-                  width: '23.5%',
-                  aspectRatio: 1,
-                  backgroundColor: colors.surfaceContainerLow,
-                  borderWidth: selected ? 2 : 1,
-                  borderColor: selected ? colors.primaryContainer : colors.outlineVariant,
-                }}
-              >
-                <Image source={typeof uri === 'string' ? { uri } : uri} className="w-full h-full" style={{ resizeMode: 'cover' }} />
-                <View
-                  className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full items-center justify-center"
-                  style={{ backgroundColor: selected ? colors.primaryContainer : colors.overlayLight }}
-                >
-                  {selected && <CheckIcon size={11} color={colors.onPrimaryContainer} />}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
         </View>
 
         <Text className="text-figma-16 font-inter-500 text-textSecondary mb-2">Share your thoughts</Text>

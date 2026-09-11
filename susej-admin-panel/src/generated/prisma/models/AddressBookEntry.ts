@@ -1044,6 +1044,7 @@ export type AddressBookEntryCreateManyArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many AddressBookEntries.
    */
   data: Prisma.AddressBookEntryCreateManyInput | Prisma.AddressBookEntryCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1062,6 +1063,7 @@ export type AddressBookEntryCreateManyAndReturnArgs<ExtArgs extends runtime.Type
    * The data used to create many AddressBookEntries.
    */
   data: Prisma.AddressBookEntryCreateManyInput | Prisma.AddressBookEntryCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

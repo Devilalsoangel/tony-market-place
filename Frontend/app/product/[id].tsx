@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, TextInput, Alert, Modal, Share, NativeSyntheticEvent, NativeScrollEvent, useWindowDimensions } from 'react-native';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Image, TextInput, Alert, Modal, Share, NativeSyntheticEvent, NativeScrollEvent, useWindowDimensions, FlatList } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeftIcon, ChevronRightIcon, VerifiedIcon, ShopIcon, SendIcon, BellIcon, CloseIcon, HeartIcon, ShareIcon, MapPinIcon, CheckIcon } from '../../utils/icons';
+import { ChevronLeftIcon, ChevronRightIcon, VerifiedIcon, ShopIcon, SendIcon, BellIcon, CloseIcon, HeartIcon, ShareIcon, MapPinIcon, CheckIcon, StarIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
 import { getPostFlow, formatFlowPrice } from '../../utils/categoryFlow';
 import { usePosts } from '../../contexts/PostContext';
@@ -13,24 +13,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useRecentlyViewed } from '../../contexts/RecentlyViewedContext';
 import { useBookmark } from '../../contexts/BookmarkContext';
 import { useNotifications } from '../../contexts/NotificationContext';
-import { productDetailImages } from '../../utils/screenImages';
-import { productImages } from '../../utils/productImages';
+import { hasRealImage, resolveAvatar, resolveListingImage } from '../../utils/productImages';
+import { serverApi } from '../../utils/serverApi';
+import { CommentsSheet } from '../../components/sheets/PostEngagementSheets';
 
-const FALLBACK = {
-  title: 'Aura Minimalist Satchel',
-  category: 'Accessories · New with tags',
-  price: 420,
-  description:
-    'Elevate your daily ensemble with the Aura Satchel.\nCrafted from premium Italian pebble-grain leather',
-  sellerName: 'Julianne V.',
-  sellerUsername: 'juliannev',
-  sellerLocation: '4.9 (128 reviews)',
-  verified: false,
-};
-
-const BLOCKED_KEY = '@susej_blocked';
-const SEARCHES_KEY = '@susej_saved_searches';
-const ALERTS_FIRED_KEY = '@susej_alerts_fired';
+const BLOCKED_KEY_BASE = '@susej_blocked';
+const SEARCHES_KEY_BASE = '@susej_saved_searches';
+const ALERTS_FIRED_KEY_BASE = '@susej_alerts_fired';
 
 interface SavedSearch {
   id: string;
@@ -61,7 +50,7 @@ export default function ProductDetailsScreen() {
   const postId = Array.isArray(id) ? id[0] : id ?? '';
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const { posts, addComment, reportPost, loaded } = usePosts();
+  const { posts, addComment, reportPost, loaded, hiddenPostIds = [], mutedSellers = [] } = usePosts() as unknown as { posts: import('../../contexts/PostContext').Post[]; addComment: any; reportPost: (id: string, reason: string) => Promise<boolean>; loaded: boolean; hiddenPostIds?: string[]; mutedSellers?: string[] };
   const { isFollowing, toggleFollow } = useFollow();
   const { addToCart } = useCart();
   const { user } = useAuth();
@@ -70,13 +59,85 @@ export default function ProductDetailsScreen() {
   const { addNotification } = useNotifications();
   const [commentText, setCommentText] = useState('');
   const [activeImage, setActiveImage] = useState(0);
+  // OLX-style compact sticky header: back + truncated title + price + share
+  // once the user scrolls past the gallery.
+  const [showCompactHeader, setShowCompactHeader] = useState(false);
   const [variantSelections, setVariantSelections] = useState<Record<string, string>>({});
   const [alertDrop, setAlertDrop] = useState<{ previous: number } | null>(null);
   const alertChecked = useRef<string>('');
+  const getBlockedKey = () => {
+    const u = user?.username?.trim();
+    return u ? `${BLOCKED_KEY_BASE}:${u}` : BLOCKED_KEY_BASE;
+  };
+  const getSearchesKey = () => {
+    const u = user?.username?.trim();
+    return u ? `${SEARCHES_KEY_BASE}:${u}` : SEARCHES_KEY_BASE;
+  };
+  const getAlertsKey = () => {
+    const u = user?.username?.trim();
+    return u ? `${ALERTS_FIRED_KEY_BASE}:${u}` : ALERTS_FIRED_KEY_BASE;
+  };
   const [applyVisible, setApplyVisible] = useState(false);
   const [applyName, setApplyName] = useState('');
   const [applyPhone, setApplyPhone] = useState('');
   const [applyNote, setApplyNote] = useState('');
+  // Server fallback: when the listing is not in the local cache (deep link,
+  // fresh install, other-device post), fetch it directly so we never show a
+  // false "not found" for a listing that exists (industry-standard PDP).
+  const [serverPost, setServerPost] = useState<import('../../contexts/PostContext').Post | null>(null);
+  const [sellerRating, setSellerRating] = useState<{ avg: number; count: number } | null>(null);
+  const [serverMiss, setServerMiss] = useState(false);
+  const localPost = posts.find((p) => p.id === postId);
+  useEffect(() => {
+    setServerPost(null);
+    setServerMiss(false);
+  }, [postId]);
+  useEffect(() => {
+    if (localPost || !postId || serverPost || serverMiss) return;
+    let alive = true;
+    serverApi
+      .getPost(postId)
+      .then((res) => {
+        if (!alive) return;
+        const p = res.ok ? (res.data as { post?: any } | null)?.post : null;
+        if (p && p.id) {
+          setServerPost({
+            type: (p.type as import('../../contexts/PostContext').Post['type']) ?? 'product',
+            id: String(p.id),
+            description: String(p.description ?? p.title ?? 'Untitled'),
+            price: Number(p.price ?? 0),
+            mrp: p.mrp != null && Number(p.mrp) > Number(p.price ?? 0) ? Number(p.mrp) : undefined,
+            category: String(p.category ?? 'General'),
+            subCategories: Array.isArray(p.subCategories) ? p.subCategories.map(String) : undefined,
+            hashtags: Array.isArray(p.hashtags) ? p.hashtags.map(String) : [],
+            likes: Number(p.likes ?? 0),
+            comments: Number(p.comments ?? 0),
+            createdAt: typeof p.createdAt === 'string' ? Date.parse(p.createdAt) : Number(p.createdAt ?? Date.now()),
+            image: String(p.image ?? ''),
+            images: Array.isArray(p.images) ? p.images.map(String) : [],
+            isSold: Boolean(p.isSold),
+            verified: Boolean(p.verified),
+            featured: Boolean(p.featured),
+            sellerUsername: String(p.sellerUsername ?? 'user'),
+            sellerName: String(p.sellerName ?? p.sellerUsername ?? 'susej user'),
+            sellerLocation: String(p.sellerLocation ?? ''),
+            variants: Array.isArray(p.variants) ? p.variants : undefined,
+            stockLeft: typeof p.stockLeft === 'number' ? p.stockLeft : undefined,
+            negotiable: typeof p.negotiable === 'boolean' ? p.negotiable : undefined,
+            condition: p.condition ? String(p.condition) : undefined,
+            brand: p.brand ? String(p.brand) : undefined,
+            deliveryMode: typeof p.deliveryMode === 'string' ? p.deliveryMode : undefined,
+            shippingFee: typeof p.shippingFee === 'number' ? p.shippingFee : undefined,
+          });
+        } else {
+          setServerMiss(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [localPost, postId, serverPost, serverMiss]);
   const [enquireVisible, setEnquireVisible] = useState(false);
   const [enquireNote, setEnquireNote] = useState('');
   const [enquireDay, setEnquireDay] = useState('');
@@ -84,30 +145,58 @@ export default function ProductDetailsScreen() {
   const [quoteQty, setQuoteQty] = useState('');
   const [quoteNote, setQuoteNote] = useState('');
 
+  // ── Comments bottom sheet — SHARED component (identical to feed cards) so
+  // count/list/avatars/replies can never drift between surfaces again.
+  // Delta tracks sends made through the sheet this visit so the page badge
+  // stays consistent with what the user actually sees posted.
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentDelta, setCommentDelta] = useState(0);
+  useEffect(() => {
+    setCommentDelta(0);
+  }, [postId]);
+  const openComments = () => setCommentsOpen(true);
+  const closeComments = () => setCommentsOpen(false);
+
   // Record view for the Recently Viewed rail
   useEffect(() => {
     if (postId) recordView(postId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
 
-  // Price-drop alert simulation: match saved searches (priceAlert on) against
-  // product name/description; a deterministic "previous price" (price * 1.15)
-  // models a drop. Fires once per product — consumed ids live in AsyncStorage.
+  // Price-drop alert: fires ONLY when the listing has a REAL mrp above the
+  // current price (a genuine drop). No invented previous prices. Fires once
+  // per product per user — consumed ids live in per-user AsyncStorage.
   useEffect(() => {
-    if (!postId || !post || alertChecked.current === postId) return;
-    alertChecked.current = postId;
-    const prevPrice = Math.round(price * 1.15);
+    const alertKey = `${postId}:${user?.username ?? ''}`;
+    if (!postId || !post || alertChecked.current === alertKey) return;
+    if (!(post.mrp && post.mrp > post.price)) return;
+    alertChecked.current = alertKey;
+    const prevPrice = post.mrp;
     (async () => {
       try {
-        const [rawSearches, rawFired] = await Promise.all([
-          AsyncStorage.getItem(SEARCHES_KEY),
-          AsyncStorage.getItem(ALERTS_FIRED_KEY),
+        const sKey = getSearchesKey();
+        const aKey = getAlertsKey();
+        const [rawSearches, rawFired, legacySearches, legacyFired] = await Promise.all([
+          AsyncStorage.getItem(sKey),
+          AsyncStorage.getItem(aKey),
+          sKey !== SEARCHES_KEY_BASE ? AsyncStorage.getItem(SEARCHES_KEY_BASE) : Promise.resolve(null),
+          aKey !== ALERTS_FIRED_KEY_BASE ? AsyncStorage.getItem(ALERTS_FIRED_KEY_BASE) : Promise.resolve(null),
         ]);
-        const searches = rawSearches ? (JSON.parse(rawSearches) as SavedSearch[]) : [];
+        let effSearches = rawSearches;
+        if (effSearches === null && legacySearches !== null) {
+          effSearches = legacySearches;
+          try { await AsyncStorage.setItem(sKey, legacySearches); } catch {}
+        }
+        let effFired = rawFired;
+        if (effFired === null && legacyFired !== null) {
+          effFired = legacyFired;
+          try { await AsyncStorage.setItem(aKey, legacyFired); } catch {}
+        }
+        const searches = effSearches ? (JSON.parse(effSearches) as SavedSearch[]) : [];
         let fired: string[] = [];
-        if (rawFired) {
+        if (effFired) {
           try {
-            const parsed = JSON.parse(rawFired);
+            const parsed = JSON.parse(effFired);
             if (Array.isArray(parsed)) fired = parsed as string[];
           } catch {
             // corrupted data — start fresh
@@ -124,7 +213,7 @@ export default function ProductDetailsScreen() {
         if (!match) return;
         if (prevPrice <= price) return;
         fired = [...fired, `${match.id}:${postId}`];
-        await AsyncStorage.setItem(ALERTS_FIRED_KEY, JSON.stringify(fired));
+        await AsyncStorage.setItem(getAlertsKey(), JSON.stringify(fired));
         addNotification({
           type: 'promotion',
           userName: sellerName,
@@ -138,20 +227,48 @@ export default function ProductDetailsScreen() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [postId]);
+  }, [postId, user?.username]);
 
-  const post = posts.find((p) => p.id === postId);
-  const title = post ? post.description.split('\n')[0] : FALLBACK.title;
-  const sellerName = post ? post.sellerName : FALLBACK.sellerName;
-  const sellerUsername = post ? post.sellerUsername : FALLBACK.sellerUsername;
-  const sellerLocation = post ? `${post.sellerLocation} · ${post.likes} likes` : FALLBACK.sellerLocation;
-  const price = post ? post.price : FALLBACK.price;
-  const category = post ? `${post.category}` : FALLBACK.category;
-  const description = post ? post.description : FALLBACK.description;
-  const verified = post ? post.verified : FALLBACK.verified;
+  const post = posts.find((p) => p.id === postId) ?? serverPost;
+  const title = post ? post.description.split('\n')[0] : '';
+  const sellerName = post ? post.sellerName : '';
+  const sellerUsername = post ? post.sellerUsername : '';
+  // Seller proof line: only surface likes when there is something real to show
+  const sellerLocation = post
+    ? post.likes > 0
+      ? `${post.sellerLocation} · ${post.likes} ${post.likes === 1 ? 'like' : 'likes'}`
+      : post.sellerLocation
+    : '';
+  const price = post ? post.price : 0;
+  const category = post ? `${post.category}` : '';
+  const description = post ? post.description : '';
+  const verified = post ? post.verified : false;
   const following = isFollowing(sellerUsername);
 
-  const sellerAvatar = productDetailImages.sellerAvatar;
+  // Deterministic per-seller avatar (same derivation as the feed) — never one
+  // shared stock face for every seller.
+  const sellerAvatar = sellerUsername ? resolveAvatar(sellerUsername) : null;
+  // Amazon-style trust row data: the users route aggregates EVERY delivered-order
+  // review for this seller (avgRating/reviewCount). Silent on failure — a missing
+  // rating must never block the PDP, and a seller with zero reviews shows nothing
+  // (never a fabricated score).
+  useEffect(() => {
+    setSellerRating(null);
+    if (!sellerUsername) return;
+    let alive = true;
+    serverApi
+      .getUserProfile(sellerUsername)
+      .then((res) => {
+        if (!alive) return;
+        const avg = Number(res.data?.user?.avgRating);
+        const count = Number(res.data?.user?.reviewCount);
+        if (Number.isFinite(avg) && avg > 0 && count > 0) setSellerRating({ avg, count });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sellerUsername]);
   const flow = getPostFlow(post ?? {});
   const isFood = post?.type === 'food_item';
 
@@ -159,16 +276,15 @@ export default function ProductDetailsScreen() {
   const mrp = post?.mrp && post.mrp > price ? post.mrp : null;
   const offPct = mrp ? Math.round(((mrp - price) / mrp) * 100) : null;
   const stockLeft = post?.stockLeft;
-  const deliveryCity = user?.location?.split(',')[0].trim() || 'your area';
-  const arrival = new Date(Date.now() + 3 * 86400000).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 
-  // Real post media first, canned figma assets as fallback — never fake per-item images.
-  const resolveImage = (p: { image?: string; images?: string[] } | undefined, pid: string) =>
-    p?.image ?? p?.images?.[0] ?? productImages[pid] ?? { uri: `https://picsum.photos/seed/${pid}/800/1000` };
+  // Real post media first, deterministic seeded fallback last — never fake per-item images.
+  const resolveImage = (p: { image?: string; images?: string[] } | undefined, pid: string) => ({
+    uri: p?.image ?? p?.images?.[0] ?? resolveListingImage(p, pid).uri,
+  });
 
   const recentProducts = recents
     .map((r) => posts.find((p) => p.id === r.postId))
-    .filter((p): p is (typeof posts)[number] => Boolean(p && p.id !== postId))
+    .filter((p): p is (typeof posts)[number] => Boolean(p && p.id !== postId && !hiddenPostIds.includes(p.id) && !mutedSellers.includes(p.sellerUsername) && hasRealImage(p)))
     .slice(0, 8);
 
   const handleToggleSave = () => {
@@ -191,14 +307,14 @@ export default function ProductDetailsScreen() {
     Share.share({ message: `${title} — ${formatPrice(effectivePrice)} on susej` }).catch(() => {});
   };
 
-  // Multi-photo gallery: real post media first (industry), Figma pager as fallback.
-  // Honest volume: only show dots when the post actually has >1 photo.
+  // Multi-photo gallery: real post media first; a per-item seed keeps
+  // imageless listings stable without canned figma assets.
   const gallery =
     post?.images && post.images.length > 0
       ? post.images.map((uri) => ({ uri }))
       : post?.image
         ? [{ uri: post.image }]
-        : productDetailImages.gallery;
+        : [{ uri: `https://picsum.photos/seed/${postId || 'item'}/800/1000` }];
   const showCarousel = gallery.length > 1;
 
   // Variant selection → adjusted price
@@ -215,8 +331,9 @@ export default function ProductDetailsScreen() {
 
   const similarItems = (() => {
     if (!post) return [];
-    const sameCat = posts.filter((p) => p.id !== post.id && p.category === post.category);
-    const rest = posts.filter((p) => p.id !== post.id && p.category !== post.category);
+    const base = posts.filter((p) => !hiddenPostIds.includes(p.id) && !mutedSellers.includes(p.sellerUsername) && hasRealImage(p));
+    const sameCat = base.filter((p) => p.id !== post.id && p.category === post.category);
+    const rest = base.filter((p) => p.id !== post.id && p.category !== post.category);
     return [...sameCat, ...rest].slice(0, 4);
   })();
 
@@ -225,18 +342,55 @@ export default function ProductDetailsScreen() {
       case 'goods':
       case 'food':
         if (!post) return;
-        addToCart({
+        // Industry-standard: sold-out listings cannot enter the cart.
+        if (post.isSold) {
+          Alert.alert('Sold out', 'This listing is no longer available.');
+          return;
+        }
+        if (typeof stockLeft === 'number' && stockLeft <= 0) {
+          Alert.alert('Out of stock', 'This listing is out of stock right now.');
+          return;
+        }
+        // Per-variant stock: a selected value at 0 cannot be bought.
+        const oosVariant = (post.variants ?? []).find((v) => {
+          const chosen = variantSelections[v.name];
+          if (!chosen) return false;
+          const match = v.values.find((val) => val.label === chosen);
+          return !!match && typeof match.stock === 'number' && match.stock <= 0;
+        });
+        if (oosVariant) {
+          Alert.alert('Out of stock', `“${variantSelections[oosVariant.name]}” is out of stock. Please choose another option.`);
+          return;
+        }
+        // Single-seller cart: explain instead of silently landing on an
+        // unchanged cart (CartContext.addToCart returns false on reject).
+        // Variant choices travel with the item so the server can reject a
+        // selection that went out of stock after this page loaded.
+        const variantLabel = Object.entries(variantSelections)
+          .filter(([, label]) => label)
+          .map(([group, label]) => `${group}:${label}`)
+          .join(', ');
+        const added = addToCart({
           listingId: post.id,
           type: flow.archetype === 'food' ? 'food_item' : 'product',
           name: title,
           price: effectivePrice,
           seller: post.sellerName,
           sellerUsername: post.sellerUsername,
+          ...(variantLabel ? { variantLabel } : {}),
         });
+        if (!added) {
+          Alert.alert(
+            'Cart belongs to another seller',
+            'Your cart already has items from a different store. Checkout or clear it before adding this item.'
+          );
+          return;
+        }
         router.push('/cart');
         return;
       case 'service':
-        router.push('/book-service');
+        // Carry the listing context so booking knows WHAT is being booked.
+        router.push(`/book-service?listingId=${encodeURIComponent(post?.id ?? '')}&title=${encodeURIComponent(title)}`);
         return;
       case 'job':
         setApplyName(user?.name ?? '');
@@ -275,16 +429,15 @@ export default function ProductDetailsScreen() {
     router.push(`/(tabs)/chat?to=${encodeURIComponent(sellerUsername)}&msg=${encodeURIComponent(msg)}`);
   };
 
-  const handleSendComment = () => {
-    const text = commentText.trim();
-    if (!post || !text) return;
-    addComment(post.id, { author: user?.name || 'You', text });
-    setCommentText('');
-  };
-
   const handleBlockSeller = async () => {
     try {
-      const raw = await AsyncStorage.getItem(BLOCKED_KEY);
+      const bKey = getBlockedKey();
+      const legacyRaw = bKey !== BLOCKED_KEY_BASE ? await AsyncStorage.getItem(BLOCKED_KEY_BASE) : null;
+      let raw: string | null = await AsyncStorage.getItem(bKey);
+      if (raw === null && legacyRaw !== null) {
+        raw = legacyRaw;
+        try { await AsyncStorage.setItem(bKey, legacyRaw); } catch {}
+      }
       let list: BlockedUser[] = [];
       if (raw) {
         try {
@@ -296,7 +449,7 @@ export default function ProductDetailsScreen() {
       }
       if (!list.some((b) => b.username === sellerUsername)) {
         list = [...list, { username: sellerUsername, name: sellerName }];
-        await AsyncStorage.setItem(BLOCKED_KEY, JSON.stringify(list));
+        await AsyncStorage.setItem(getBlockedKey(), JSON.stringify(list));
       }
       Alert.alert('User blocked', `@${sellerUsername} can no longer see your profile, posts or message you.`);
     } catch {
@@ -310,16 +463,23 @@ export default function ProductDetailsScreen() {
       { text: 'Block seller', style: 'destructive', onPress: handleBlockSeller },
       {
         text: 'Report',
-        onPress: () => {
-          if (postId) reportPost(postId, 'Reported from product page');
-          Alert.alert('Report submitted', 'We will review this listing and take action within 24 hours.');
+        onPress: async () => {
+          if (!postId) return;
+          const filed = await reportPost(postId, 'Reported from product page');
+          Alert.alert(
+            filed ? 'Report submitted' : 'Report not sent',
+            filed
+              ? 'Our team will review this report.'
+              : 'Check your connection and try again — nothing was filed.'
+          );
         },
       },
     ]);
   };
 
-  // Honest states: spinner while loading, not-found instead of a fake fallback product
-  if (postId && !loaded) {
+  // Honest states: spinner while loading, not-found for unknown/missing ids —
+  // never a fake fallback product.
+  if (!loaded || (!post && !serverMiss)) {
     return (
       <View className="flex-1 items-center justify-center" style={{ backgroundColor: colors.surface }}>
         <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 14, lineHeight: 20 }}>
@@ -329,7 +489,7 @@ export default function ProductDetailsScreen() {
     );
   }
 
-  if (postId && loaded && !post) {
+  if (!post) {
     return (
       <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: colors.surface }}>
         <TouchableOpacity
@@ -361,22 +521,73 @@ export default function ProductDetailsScreen() {
     );
   }
 
+  // Industry standard: imageless listings hidden from everyone (even seller in user feed) — only in seller dashboard under review until image added
+  const noImage = !hasRealImage(post);
+  if (noImage) {
+    return (
+      <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: colors.surface }}>
+        <TouchableOpacity className="absolute flex-row items-center" style={{ top: insets.top + 16, left: 20 }} onPress={() => router.back()}>
+          <ChevronLeftIcon size={18} color={colors.primary} />
+        </TouchableOpacity>
+        <View className="w-16 h-16 rounded-full items-center justify-center mb-4" style={{ backgroundColor: '#fef2f2', borderWidth: 1, borderColor: colors.error }}>
+          <Text style={{ fontSize: 28 }}>⚠</Text>
+        </View>
+        <Text className="font-inter-700 text-center" style={{ fontSize: 18, lineHeight: 24, color: colors.textPrimary }}>Listing hidden</Text>
+        <Text className="font-inter-400 text-center mt-2" style={{ fontSize: 13, lineHeight: 19, color: colors.textSecondary }}>
+          This listing has no image and is hidden from the feed until the seller adds one. Sellers can fix it in My Listings → Needs Image.
+        </Text>
+        <TouchableOpacity className="mt-6 px-6 h-12 items-center justify-center rounded-figma-16" style={{ backgroundColor: colors.primaryContainer }} onPress={() => router.replace('/(tabs)/feed')}>
+          <Text className="font-inter-600" style={{ fontSize: 14, color: '#fff' }}>Back to feed</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1" style={{ backgroundColor: colors.surfaceContainerLowest }}>
-      {/* Header */}
+      {/* Header — collapses from brand logo to OLX-style detail header
+          (back + truncated title + price + share) once scrolled past the gallery */}
       <View className="flex-row items-center justify-between px-5" style={{ backgroundColor: colors.surface, height: 64 + insets.top, paddingTop: insets.top }}>
         <TouchableOpacity onPress={() => router.back()}>
           <ChevronLeftIcon size={18} color={colors.primary} />
         </TouchableOpacity>
-        <Text className="font-inter-700 text-primary" style={{ fontSize: 32, lineHeight: 40, letterSpacing: -0.8 }}>
-          susej
-        </Text>
-        <TouchableOpacity onPress={() => router.push('/cart')}>
-          <ShopIcon size={22} color={colors.secondary} />
-        </TouchableOpacity>
+        {showCompactHeader ? (
+          <>
+            <Text className="flex-1 font-inter-600 text-textPrimary text-center mx-3" style={{ fontSize: 14, lineHeight: 20 }} numberOfLines={1}>
+              {title}
+            </Text>
+            {flow.archetype === 'goods' ? (
+              <Text className="font-inter-700 text-primary mr-3" style={{ fontSize: 15, lineHeight: 20 }}>
+                {formatPrice(effectivePrice)}
+              </Text>
+            ) : (
+              <View className="mr-3" />
+            )}
+            <TouchableOpacity onPress={handleShare}>
+              <ShareIcon size={18} color={colors.secondary} />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text className="font-inter-700 text-primary" style={{ fontSize: 32, lineHeight: 40, letterSpacing: -0.8 }}>
+              susej
+            </Text>
+            <TouchableOpacity onPress={() => router.push('/cart')}>
+              <ShopIcon size={22} color={colors.secondary} />
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}
+        scrollEventThrottle={16}
+        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+          const past = e.nativeEvent.contentOffset.y > 360;
+          if (past !== showCompactHeader) setShowCompactHeader(past);
+        }}
+      >
         {/* Price alert banner */}
         {alertDrop ? (
           <View
@@ -430,16 +641,20 @@ export default function ProductDetailsScreen() {
               <Image source={gallery[0]} className="w-full h-full" resizeMode="cover" />
             )
           ) : null}
-          {/* Price overlay */}
-          <View className="absolute top-4 right-4 z-10">
-            <View className="bg-primaryContainer rounded-full px-3 py-1">
-              <Text className="font-inter-700 text-white" style={{ fontSize: 14, lineHeight: 20 }}>
-                {flow.archetype === 'goods'
-                  ? formatPrice(effectivePrice)
-                  : `${flow.priceLabel} ${formatFlowPrice(effectivePrice, flow.priceSuffix)}`}
+          {/* Amazon-style circular discount badge on the image */}
+          {offPct ? (
+            <View
+              className="absolute top-4 left-4 z-10 w-11 h-11 rounded-full items-center justify-center"
+              style={{ backgroundColor: colors.primaryContainer }}
+            >
+              <Text className="font-inter-700 text-white" style={{ fontSize: 12, lineHeight: 15 }}>
+                {offPct}%
+              </Text>
+              <Text className="font-inter-500 text-white" style={{ fontSize: 8, lineHeight: 10, letterSpacing: 0.5 }}>
+                OFF
               </Text>
             </View>
-          </View>
+          ) : null}
 
           {/* Save + Share gallery controls (industry-standard) */}
           <View className="absolute bottom-4 right-4 z-10 flex-row" style={{ gap: 8 }}>
@@ -473,117 +688,30 @@ export default function ProductDetailsScreen() {
             </Text>
             {flow.archetype === 'goods' ? (
               <View className="flex-row items-center" style={{ gap: 6 }}>
-                <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 18, lineHeight: 24 }}>
+                <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 24, lineHeight: 30 }}>
                   {formatPrice(effectivePrice)}
                 </Text>
                 {mrp ? (
-                  <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 13, lineHeight: 18, textDecorationLine: 'line-through' }}>
+                  <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 14, lineHeight: 18, textDecorationLine: 'line-through' }}>
                     {formatPrice(mrp)}
                   </Text>
                 ) : null}
                 {offPct ? (
-                  <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: colors.success }}>
+                  <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: colors.success }}>
                     {offPct}% off
                   </Text>
                 ) : null}
               </View>
             ) : (
-              <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 16, lineHeight: 24 }}>
+              <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 20, lineHeight: 26 }}>
                 {flow.priceLabel} {formatFlowPrice(effectivePrice, flow.priceSuffix)}
               </Text>
             )}
           </View>
 
-          {/* Stock scarcity hint */}
-          {stockLeft != null && stockLeft <= 5 ? (
-            <Text className="font-inter-500 mb-3" style={{ fontSize: 12, lineHeight: 16, color: colors.tertiary }}>
-              Only {stockLeft} left in stock — order soon
-            </Text>
-          ) : null}
-
-          {/* Delivery card (goods only — food shows ETA below, services book via calendar) */}
-          {flow.archetype === 'goods' ? (
-            <View className="flex-row items-center mb-3 px-4 py-3 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
-              <MapPinIcon size={16} color={colors.primaryContainer} />
-              <View className="flex-1 ml-2">
-                <View className="flex-row items-center">
-                  <Text className="font-inter-500 text-textPrimary" style={{ fontSize: 13, lineHeight: 18 }}>
-                    Deliver to {deliveryCity}
-                  </Text>
-                  {post?.delivery !== false ? (
-                    <Text className="font-inter-600 ml-2" style={{ fontSize: 12, lineHeight: 16, color: colors.success }}>
-                      Free
-                    </Text>
-                  ) : null}
-                </View>
-                <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
-                  Arrives by {arrival}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-
-          {/* Trust strip */}
-          <View className="flex-row items-center justify-between mb-4 px-4 py-3 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
-            {['Verified Seller', 'Secure Payment', 'Easy Returns'].map((label) => (
-              <View key={label} className="flex-row items-center" style={{ gap: 4 }}>
-                <CheckIcon size={12} color={colors.primaryContainer} />
-                <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 11, lineHeight: 14 }}>
-                  {label}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Variant selector */}
-          {post?.variants && post.variants.length > 0 ? (
-            post.variants.map((v) => {
-              const selected = variantSelections[v.name];
-              return (
-                <View key={v.name} className="mb-4">
-                  <Text className="font-inter-500 mb-2" style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24, color: colors.textSecondary }}>
-                    {v.name.toUpperCase()}
-                  </Text>
-                  <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                    {v.values.map((val) => {
-                      const active = selected === val.label;
-                      return (
-                        <TouchableOpacity
-                          key={val.label}
-                          className="px-4 py-2 rounded-full"
-                          style={{ backgroundColor: active ? colors.primaryContainer : colors.surfaceContainer }}
-                          onPress={() =>
-                            setVariantSelections((prev) => ({ ...prev, [v.name]: active ? '' : val.label }))
-                          }
-                        >
-                          <Text
-                            className="font-inter-600"
-                            style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24, color: active ? colors.onPrimaryContainer : colors.textSecondary }}
-                          >
-                            {val.label}
-                            {val.priceDelta ? `  +${formatPrice(val.priceDelta)}` : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-            })
-          ) : null}
-
-          {/* Food delivery ETA */}
-          {isFood ? (
-            <View className="flex-row items-center mb-4">
-              <View className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: colors.success }} />
-              <Text className="font-inter-500" style={{ fontSize: 12, lineHeight: 14, color: colors.success }}>
-                Arriving in 30–40 min
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Seller Info */}
-          <View className="flex-row items-center mb-6 px-4 py-3 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
+          {/* Seller identity — Amazon-style progressive trust funnel: who sells
+              it is established right after what it costs, before the buy decision */}
+          <View className="flex-row items-center mb-4 px-4 py-3 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
             <TouchableOpacity
               className="flex-row items-center flex-1"
               onPress={() => router.push(`/seller/${sellerUsername}`)}
@@ -605,9 +733,6 @@ export default function ProductDetailsScreen() {
                 <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 12, lineHeight: 16 }}>
                   {sellerLocation}
                 </Text>
-                <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
-                  Replies in ~1 hour
-                </Text>
               </View>
               <ChevronRightIcon size={14} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -622,8 +747,134 @@ export default function ProductDetailsScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Seller rating — REAL aggregate from the users route (Amazon trust row);
+              hidden entirely when the seller has no reviews yet (never fabricated) */}
+          {sellerRating && (
+            <TouchableOpacity
+              className="flex-row items-center mb-3 px-4 py-2 rounded-figma-16"
+              style={{ backgroundColor: colors.surfaceContainerLow }}
+              onPress={() => router.push(`/seller/${sellerUsername}`)}
+              accessibilityRole="button"
+              accessibilityLabel={'Seller rating ' + sellerRating.avg + ' out of 5 from ' + sellerRating.count + ' reviews'}
+            >
+              <StarIcon size={14} color="#f59e0b" />
+              <Text className="font-inter-600 text-textPrimary ml-1.5" style={{ fontSize: 13, lineHeight: 16 }}>
+                {sellerRating.avg}
+              </Text>
+              <Text className="font-inter-400 text-textSecondary ml-1" style={{ fontSize: 12, lineHeight: 16 }}>
+                ({sellerRating.count} review{sellerRating.count === 1 ? '' : 's'})
+              </Text>
+              <View className="flex-1" />
+              <Text className="font-inter-400" style={{ fontSize: 12, lineHeight: 16, color: colors.tertiary }}>
+                See reviews
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Stock scarcity hint */}
+          {stockLeft != null && stockLeft <= 5 ? (
+            <Text className="font-inter-500 mb-3" style={{ fontSize: 12, lineHeight: 16, color: colors.tertiary }}>
+              Only {stockLeft} left in stock — order soon
+            </Text>
+          ) : null}
+
+          {/* Delivery card (goods only — food shows ETA below, services book via calendar) */}
+          {flow.archetype === 'goods' ? (
+            <View className="flex-row items-center mb-3 px-4 py-3 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
+              <MapPinIcon size={16} color={colors.primaryContainer} />
+              <View className="flex-1 ml-2">
+                <Text className="font-inter-500 text-textPrimary" style={{ fontSize: 13, lineHeight: 18 }} numberOfLines={1}>
+                  {post?.deliveryMode === 'pickup'
+                    ? `Pickup from ${post.sellerLocation || post.listingLocation || 'seller'}`
+                    : post?.deliveryMode === 'shipping'
+                      ? `Ships from ${post.sellerLocation || post.listingLocation || 'seller'}`
+                      : post?.deliveryMode === 'local'
+                        ? `Local delivery${post.listingLocation || post.sellerLocation ? ` in ${post.listingLocation || post.sellerLocation}` : ' in your area'}`
+                        : post?.listingLocation ? `Selling from ${post.listingLocation}` : 'Deliver to your area'}
+                </Text>
+                <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
+                  {post?.deliveryMode === 'pickup'
+                    ? 'Arrange pickup with the seller'
+                    : post?.deliveryMode === 'shipping'
+                      ? (typeof post.shippingFee === 'number' ? `Shipping ${formatPrice(post.shippingFee)}` : 'Shipping calculated at checkout')
+                      : post?.deliveryMode === 'local'
+                        ? 'Local delivery · calculated at checkout'
+                        : 'Delivery calculated at checkout'}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Trust strip — 'Verified Seller' only when the seller really is */}
+          <View className="flex-row items-center justify-between mb-4 px-4 py-3 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
+            {[
+              ...(verified ? ['Verified Seller'] : []),
+              'Wallet & COD',
+              'Refund support',
+            ].map((label) => (
+              <View key={label} className="flex-row items-center" style={{ gap: 4 }}>
+                <CheckIcon size={12} color={colors.primaryContainer} />
+                <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 11, lineHeight: 14 }}>
+                  {label}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Variant selector */}
+          {post?.variants && post.variants.length > 0 ? (
+            post.variants.map((v) => {
+              const selected = variantSelections[v.name];
+              return (
+                <View key={v.name} className="mb-4">
+                  <Text className="font-inter-500 mb-2" style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24, color: colors.textSecondary }}>
+                    {v.name.toUpperCase()}
+                  </Text>
+                  <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                    {v.values.map((val) => {
+                      const active = selected === val.label;
+                      // Per-value stock: 0 = sold out (dimmed, still tappable
+                      // so the buyer sees WHY it can't be added).
+                      const oos = typeof val.stock === 'number' && val.stock <= 0;
+                      return (
+                        <TouchableOpacity
+                          key={val.label}
+                          className="px-4 py-2 rounded-full"
+                          style={{ backgroundColor: active ? colors.primaryContainer : colors.surfaceContainer, opacity: oos && !active ? 0.45 : 1 }}
+                          onPress={() =>
+                            setVariantSelections((prev) => ({ ...prev, [v.name]: active ? '' : val.label }))
+                          }
+                        >
+                          <Text
+                            className="font-inter-600"
+                            style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24, color: active ? colors.onPrimaryContainer : colors.textSecondary }}
+                          >
+                            {val.label}
+                            {val.priceDelta ? `  +${formatPrice(val.priceDelta)}` : ''}
+                            {oos ? ' · out' : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            })
+          ) : null}
+
+          {/* Food timing — no logistics integration exists, so no invented
+              ETA. Timing is arranged with the seller (chat CTA below). */}
+          {isFood ? (
+            <View className="flex-row items-center mb-4">
+              <View className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: colors.success }} />
+              <Text className="font-inter-500" style={{ fontSize: 12, lineHeight: 14, color: colors.success }}>
+                Food order · delivery time confirmed in chat
+              </Text>
+            </View>
+          ) : null}
+
           {/* Report link */}
-          <TouchableOpacity className="self-end -mt-4 mb-6" onPress={handleReport}>
+          <TouchableOpacity className="self-end mb-6" onPress={handleReport}>
             <Text className="font-inter-500" style={{ fontSize: 12, lineHeight: 14, color: colors.textSecondary }}>
               Report listing
             </Text>
@@ -637,61 +888,27 @@ export default function ProductDetailsScreen() {
             {description}
           </Text>
 
-          {/* Comments */}
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 16, lineHeight: 24 }}>
-              Comments
-            </Text>
-            <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 14 }}>
-              {post ? post.comments : 0}
-            </Text>
-          </View>
-
-          {comments.length === 0 ? (
-            <View className="items-center py-6 mb-4 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
-              <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 14, lineHeight: 20 }}>
-                No comments yet — be the first
+          {/* Comments — IG pattern: summary row opens the bottom-sheet thread */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={openComments}
+            className="flex-row items-center justify-between mb-4 px-4 py-3.5 rounded-figma-16"
+            style={{ backgroundColor: colors.surfaceContainerLow }}
+          >
+            <View className="flex-row items-center">
+              <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 15, lineHeight: 20 }}>
+                Comments
               </Text>
-            </View>
-          ) : (
-            comments.map((c, i) => (
-              <View key={`${c.time}_${i}`} className="mb-4">
-                <View className="flex-row items-center mb-1">
-                  <View className="w-8 h-8 rounded-full mr-2" style={{ backgroundColor: colors.surfaceContainer }} />
-                  <Text className="font-inter-600 text-textPrimary flex-1" style={{ fontSize: 13, lineHeight: 16 }}>
-                    {c.author}
-                  </Text>
-                  <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 11, lineHeight: 14 }}>
-                    {formatCommentTime(c.time)}
-                  </Text>
-                </View>
-                <Text className="font-inter-400 text-textPrimary ml-10" style={{ fontSize: 14, lineHeight: 20 }}>
-                  {c.text}
+              <View className="ml-2 min-w-[22px] h-[22px] px-1.5 rounded-full items-center justify-center" style={{ backgroundColor: colors.surfaceContainer }}>
+                <Text className="font-inter-600 text-textSecondary" style={{ fontSize: 11, lineHeight: 14 }}>
+                  {(postId.startsWith('post_') ? (Array.isArray(post?.commentList) ? post.commentList.length : 0) : post ? post.comments : 0) + commentDelta}
                 </Text>
               </View>
-            ))
-          )}
-
-          {/* Comment composer */}
-          <View className="flex-row items-center mb-8">
-            <TextInput
-              className="flex-1 h-12 px-4 mr-3 rounded-figma-16"
-              style={{ backgroundColor: colors.surfaceContainerLow, color: colors.textPrimary }}
-              placeholder="Add a comment…"
-              placeholderTextColor={colors.secondary}
-              value={commentText}
-              onChangeText={setCommentText}
-              onSubmitEditing={handleSendComment}
-              returnKeyType="send"
-            />
-            <TouchableOpacity
-              className="w-12 h-12 items-center justify-center rounded-figma-full"
-              style={{ backgroundColor: commentText.trim() ? colors.primaryContainer : colors.surfaceContainer }}
-              onPress={handleSendComment}
-            >
-              <SendIcon size={20} color={commentText.trim() ? colors.onPrimary : colors.secondary} />
-            </TouchableOpacity>
-          </View>
+            </View>
+            <Text className="font-inter-500 text-primary" style={{ fontSize: 13, lineHeight: 16 }}>
+              View all
+            </Text>
+          </TouchableOpacity>
 
           {/* Similar Items Header */}
           <View className="flex-row items-center justify-between mb-4">
@@ -800,7 +1017,11 @@ export default function ProductDetailsScreen() {
           <TouchableOpacity
             className="flex-1 h-14 items-center justify-center rounded-figma-12 border"
             style={{ borderColor: colors.outlineVariant }}
-            onPress={() => router.push(`/(tabs)/chat?seller=${encodeURIComponent(sellerUsername)}`)}
+            onPress={() =>
+              router.push(
+                `/(tabs)/chat?seller=${encodeURIComponent(sellerUsername)}&product=${encodeURIComponent(title)}&listing=${encodeURIComponent(String(id))}`
+              )
+            }
           >
             <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 16, lineHeight: 24 }}>
               {flow.secondaryCta}
@@ -994,6 +1215,17 @@ export default function ProductDetailsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Comments bottom sheet — SHARED with feed cards (single implementation:
+          real thread fetch, avatar images, per-comment like, replies) */}
+      <CommentsSheet
+        visible={commentsOpen}
+        postId={postId ?? ''}
+        onClose={closeComments}
+        onCountChange={(d) => setCommentDelta((x) => x + d)}
+        fallbackComments={Array.isArray(post?.commentList) ? post.commentList : []}
+      />
     </View>
   );
 }
+

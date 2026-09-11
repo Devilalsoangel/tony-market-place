@@ -1,46 +1,32 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
-import { getCategories, getPosts, getProducts, getSellers } from "@/services/home-records";
+import { fetchPosts, fetchProducts, fetchSellers } from "@/services/home-records";
 import { useHomeManagement } from "@/home-management/context";
 import { SECTION_CONFIG, type SectionKind } from "./section-config";
-import { ImageUpload } from "./image-upload";
 import { SearchableSelect, type SearchableOption } from "./searchable-select";
 import type {
-  FeaturedCategory,
-  FeaturedPost,
-  HeroBanner,
   HotDeal,
+  StorefrontBanner,
   TopSeller,
 } from "@/types/home-management";
 
-type AnyItem = HeroBanner | FeaturedCategory | TopSeller | HotDeal | FeaturedPost;
+type AnyItem = TopSeller | HotDeal | StorefrontBanner;
 type FormState = Record<string, string | number | boolean>;
 
 const ID_PREFIX: Record<SectionKind, string> = {
-  "hero-banners": "hb",
-  "featured-categories": "fc",
   "top-sellers": "ts",
   "hot-deals": "hd",
-  "featured-posts": "fp",
+  "storefront-banners": "sb",
 };
 
 const newId = (prefix: string) => `${prefix}-${Date.now()}`;
 
 const STATUS_OPTIONS: Record<SectionKind, { label: string; value: string }[]> = {
-  "hero-banners": [
-    { label: "Active", value: "active" },
-    { label: "Scheduled", value: "scheduled" },
-    { label: "Inactive", value: "inactive" },
-  ],
-  "featured-categories": [
-    { label: "Active", value: "active" },
-    { label: "Inactive", value: "inactive" },
-  ],
   "top-sellers": [
     { label: "Active", value: "active" },
     { label: "Inactive", value: "inactive" },
@@ -50,51 +36,16 @@ const STATUS_OPTIONS: Record<SectionKind, { label: string; value: string }[]> = 
     { label: "Expired", value: "expired" },
     { label: "Inactive", value: "inactive" },
   ],
-  "featured-posts": [
+  "storefront-banners": [
     { label: "Active", value: "active" },
     { label: "Inactive", value: "inactive" },
   ],
 };
 
-const ACTION_OPTIONS = [
-  { label: "Product", value: "product" },
-  { label: "Category", value: "category" },
-  { label: "Seller", value: "seller" },
-  { label: "External link", value: "external" },
-];
-
-const RECORD_OPTIONS: Record<string, SearchableOption[]> = {
-  product: getProducts().map((p) => ({ label: p.title, value: p.id, image: p.images[0] })),
-  category: getCategories().map((c) => ({ label: c.name, value: c.id, image: c.bannerImage || undefined })),
-  seller: getSellers().map((s) => ({ label: s.businessName, value: s.id, image: s.logo || undefined })),
-  post: getPosts().map((p) => ({ label: p.title, value: p.id, image: p.imageUrl })),
-};
-
 const REQUIRED_FIELDS: Record<SectionKind, string[]> = {
-  "hero-banners": ["title", "buttonText"],
-  "featured-categories": ["categoryName"],
   "top-sellers": ["sellerName"],
   "hot-deals": ["productName"],
-  "featured-posts": ["title"],
-};
-
-const ACTION_LABEL: Record<string, string> = {
-  product: "Product",
-  category: "Category",
-  seller: "Seller",
-};
-
-const findRecord = (kind: "product" | "category" | "seller" | "post", id: string) => {
-  switch (kind) {
-    case "product":
-      return getProducts().find((r) => r.id === id);
-    case "category":
-      return getCategories().find((r) => r.id === id);
-    case "seller":
-      return getSellers().find((r) => r.id === id);
-    case "post":
-      return getPosts().find((r) => r.id === id);
-  }
+  "storefront-banners": ["title", "sellerUsername"],
 };
 
 function Field({
@@ -149,15 +100,11 @@ export function ItemFormPage({
   const config = SECTION_CONFIG[kind];
 
   const items: AnyItem[] =
-    kind === "hero-banners"
-      ? state.heroBanners
-      : kind === "featured-categories"
-        ? state.featuredCategories
-        : kind === "top-sellers"
-          ? state.topSellers
-          : kind === "hot-deals"
-            ? state.hotDeals
-            : state.featuredPosts;
+    kind === "top-sellers"
+      ? state.topSellers
+      : kind === "hot-deals"
+        ? state.hotDeals
+        : state.storefrontBanners;
 
   const editingItem = editingId ? items.find((i) => i.id === editingId) : undefined;
 
@@ -171,21 +118,6 @@ export function ItemFormPage({
   const emptyForm = (): FormState => {
     const position = items.length + 1;
     switch (kind) {
-      case "hero-banners":
-        return {
-          title: "",
-          subtitle: "",
-          imageUrl: "",
-          buttonText: "Shop Now",
-          buttonAction: "product",
-          destinationId: "",
-          destinationUrl: "",
-          startDate: "",
-          endDate: "",
-          status: "active",
-        };
-      case "featured-categories":
-        return { categoryName: "", categoryId: newId("cat"), imageUrl: "", position, status: "active" };
       case "top-sellers":
         return {
           sellerName: "",
@@ -211,23 +143,50 @@ export function ItemFormPage({
           priority: position,
           status: "active",
         };
-      case "featured-posts":
+      case "storefront-banners":
         return {
-          postId: newId("post"),
+          sellerUsername: "",
+          sellerName: "",
           title: "",
-          excerpt: "",
+          subtitle: "",
+          ctaLabel: "",
           imageUrl: "",
-          position,
-          isPinned: false,
           status: "active",
-          startDate: "",
-          endDate: "",
         };
     }
   };
 
   const [form, setForm] = useState<FormState>(() => (editingItem ? itemToForm(editingItem) : emptyForm()));
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Live records for the destination pickers — fetched from the real DB.
+  const [recordData, setRecordData] = useState<{
+    products: Awaited<ReturnType<typeof fetchProducts>>;
+    sellers: Awaited<ReturnType<typeof fetchSellers>>;
+    posts: Awaited<ReturnType<typeof fetchPosts>>;
+  } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([fetchProducts(), fetchSellers(), fetchPosts()])
+      .then(([products, sellers, posts]) => {
+        if (alive) setRecordData({ products, sellers, posts });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const EMPTY_OPTIONS: Record<string, SearchableOption[]> = useMemo(() => ({ product: [], seller: [], post: [] }), []);
+  const recordOptions: Record<string, SearchableOption[]> = useMemo(() => {
+    if (!recordData) return EMPTY_OPTIONS;
+    return {
+      product: recordData.products.map((p) => ({ label: p.title, value: p.id, image: p.images[0] })),
+      seller: recordData.sellers.map((s) => ({ label: s.businessName, value: s.id, image: s.logo || undefined })),
+      post: recordData.posts.map((p) => ({ label: p.title, value: p.id, image: p.imageUrl })),
+    };
+  }, [recordData, EMPTY_OPTIONS]);
 
   if (editingId && !editingItem) {
     return (
@@ -246,46 +205,24 @@ export function ItemFormPage({
   const str = (key: string) => String(form[key] ?? "");
   const num = (key: string) => Number(form[key] ?? 0);
 
-  const pickCategory = (id: string) => {
-    const rec = getCategories().find((c) => c.id === id);
-    setField("categoryId", id);
-    setField("categoryName", rec?.name ?? "");
-    setField("imageUrl", rec?.bannerImage ?? "");
-  };
-
   const pickSeller = (id: string) => {
-    const rec = getSellers().find((s) => s.id === id);
+    const rec = recordData?.sellers.find((s) => s.id === id);
     setField("sellerId", id);
     setField("sellerName", rec?.businessName ?? "");
     setField("sellerLogo", rec?.logo ?? "");
   };
 
   const pickProduct = (id: string) => {
-    const rec = getProducts().find((p) => p.id === id);
+    const rec = recordData?.products.find((p) => p.id === id);
     setField("productId", id);
     setField("productName", rec?.title ?? "");
     setField("productImage", rec?.images[0] ?? "");
-  };
-
-  const pickPost = (id: string) => {
-    const rec = getPosts().find((p) => p.id === id);
-    setField("postId", id);
-    setField("title", rec?.title ?? "");
-    setField("excerpt", rec?.excerpt ?? "");
-    setField("imageUrl", rec?.imageUrl ?? "");
   };
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     for (const key of REQUIRED_FIELDS[kind]) {
       if (!str(key).trim()) errs[key] = "This field is required";
-    }
-    if (kind === "hero-banners") {
-      if (str("buttonAction") === "external") {
-        if (!str("destinationUrl").trim()) errs.destinationUrl = "Enter the destination URL";
-      } else if (!str("destinationId")) {
-        errs.destinationId = "Choose a destination";
-      }
     }
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
@@ -314,39 +251,6 @@ export function ItemFormPage({
     const now = new Date().toISOString();
     let item: AnyItem;
     switch (kind) {
-      case "hero-banners":
-        item = {
-          id,
-          title: str("title"),
-          subtitle: str("subtitle"),
-          imageUrl: str("imageUrl"),
-          buttonText: str("buttonText"),
-          buttonAction: str("buttonAction") as HeroBanner["buttonAction"],
-          destinationId: str("destinationId"),
-          destinationUrl: str("destinationUrl"),
-          startDate: str("startDate"),
-          endDate: str("endDate"),
-          status: str("status") as HeroBanner["status"],
-          createdAt: now,
-          updatedAt: now,
-        } as HeroBanner;
-        if (editingId) await actions.updateHeroBanner(id, item as HeroBanner);
-        else await actions.addHeroBanner(item as HeroBanner);
-        break;
-      case "featured-categories":
-        item = {
-          id,
-          categoryId: str("categoryId"),
-          categoryName: str("categoryName"),
-          imageUrl: str("imageUrl"),
-          position: num("position"),
-          status: str("status") as FeaturedCategory["status"],
-          createdAt: now,
-          updatedAt: now,
-        } as FeaturedCategory;
-        if (editingId) await actions.updateFeaturedCategory(id, item as FeaturedCategory);
-        else await actions.addFeaturedCategory(item as FeaturedCategory);
-        break;
       case "top-sellers":
         item = {
           id,
@@ -387,23 +291,21 @@ export function ItemFormPage({
         if (editingId) await actions.updateHotDeal(id, item as HotDeal);
         else await actions.addHotDeal(item as HotDeal);
         break;
-      case "featured-posts":
+      case "storefront-banners":
         item = {
           id,
-          postId: str("postId"),
+          sellerUsername: str("sellerUsername"),
+          sellerName: str("sellerName"),
           title: str("title"),
-          excerpt: str("excerpt"),
+          subtitle: str("subtitle"),
+          ctaLabel: str("ctaLabel"),
           imageUrl: str("imageUrl"),
-          position: num("position"),
-          isPinned: Boolean(form.isPinned),
-          status: str("status") as FeaturedPost["status"],
-          startDate: str("startDate"),
-          endDate: str("endDate"),
+          status: str("status") as StorefrontBanner["status"],
           createdAt: now,
           updatedAt: now,
-        } as FeaturedPost;
-        if (editingId) await actions.updateFeaturedPost(id, item as FeaturedPost);
-        else await actions.addFeaturedPost(item as FeaturedPost);
+        } as StorefrontBanner;
+        if (editingId) await actions.updateStorefrontBanner(id, item as StorefrontBanner);
+        // No add for banners — they sync from seller app
         break;
     }
     toast.success(`${editingId ? "Updated" : "Added"} ${config.singular} successfully`);
@@ -426,94 +328,11 @@ export function ItemFormPage({
         <p className="mt-1 text-sm text-gray-500">{config.title} Â· home page</p>
 
         <div className="mt-5 space-y-3">
-          {kind === "hero-banners" && (
-            <>
-              <Field label="Title" error={errors.title} fieldKey="title">
-                <Input value={str("title")} onChange={(e) => setField("title", e.target.value)} />
-              </Field>
-              <Field label="Subtitle">
-                <Input value={str("subtitle")} onChange={(e) => setField("subtitle", e.target.value)} />
-              </Field>
-              <Field label="Banner image">
-                <ImageUpload value={str("imageUrl")} onChange={(v) => setField("imageUrl", v)} label="banner image" />
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Button text" error={errors.buttonText} fieldKey="buttonText">
-                  <Input value={str("buttonText")} onChange={(e) => setField("buttonText", e.target.value)} />
-                </Field>
-                <Field label="Button action">
-                  <Select
-                    options={ACTION_OPTIONS}
-                    value={str("buttonAction")}
-                    onChange={(e) => {
-                      setField("buttonAction", e.target.value);
-                      setField("destinationId", "");
-                      setField("destinationUrl", "");
-                    }}
-                  />
-                </Field>
-              </div>
-              {str("buttonAction") === "external" ? (
-                <Field label="Destination URL" error={errors.destinationUrl} fieldKey="destinationUrl">
-                  <Input value={str("destinationUrl")} onChange={(e) => setField("destinationUrl", e.target.value)} placeholder="https://..." />
-                </Field>
-              ) : (
-                <Field label={`Link to ${ACTION_LABEL[str("buttonAction")]}`} error={errors.destinationId} fieldKey="destinationId">
-                  <SearchableSelect
-                    options={RECORD_OPTIONS[str("buttonAction")] ?? []}
-                    value={str("destinationId")}
-                    onChange={(v) => setField("destinationId", v)}
-                    placeholder={`Choose a ${ACTION_LABEL[str("buttonAction")]}...`}
-                    emptyText="No matching records"
-                  />
-                </Field>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Start date">
-                  <Input type="date" value={str("startDate")} onChange={(e) => setField("startDate", e.target.value)} />
-                </Field>
-                <Field label="End date">
-                  <Input type="date" value={str("endDate")} onChange={(e) => setField("endDate", e.target.value)} />
-                </Field>
-              </div>
-            </>
-          )}
-
-          {kind === "featured-categories" && (
-            <>
-              <Field label="Category" error={errors.categoryName} fieldKey="categoryName">
-                <SearchableSelect
-                  options={RECORD_OPTIONS.category}
-                  value={str("categoryId")}
-                  onChange={pickCategory}
-                  fallbackLabel={str("categoryName")}
-                  placeholder="Search categories..."
-                  emptyText="No matching categories"
-                />
-              </Field>
-              <Field label="Category image">
-                <ImageUpload
-                  value={str("imageUrl")}
-                  onChange={(v) => setField("imageUrl", v)}
-                  label="category image"
-                />
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Position">
-                  <Input type="number" min={1} value={String(num("position"))} onChange={(e) => setField("position", Number(e.target.value))} />
-                </Field>
-                <Field label="Status">
-                  <Select options={STATUS_OPTIONS[kind]} value={str("status")} onChange={(e) => setField("status", e.target.value)} />
-                </Field>
-              </div>
-            </>
-          )}
-
           {kind === "top-sellers" && (
             <>
               <Field label="Seller" error={errors.sellerName} fieldKey="sellerName">
                 <SearchableSelect
-                  options={RECORD_OPTIONS.seller}
+                  options={recordOptions.seller}
                   value={str("sellerId")}
                   onChange={pickSeller}
                   fallbackLabel={str("sellerName")}
@@ -559,7 +378,7 @@ export function ItemFormPage({
             <>
               <Field label="Product" error={errors.productName} fieldKey="productName">
                 <SearchableSelect
-                  options={RECORD_OPTIONS.product}
+                  options={recordOptions.product}
                   value={str("productId")}
                   onChange={pickProduct}
                   fallbackLabel={str("productName")}
@@ -571,10 +390,10 @@ export function ItemFormPage({
                 <RecordPreview src={str("productImage")} label="product image" />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Original price ($)">
+                <Field label="Original price (₹)">
                   <Input type="number" min={0} step={0.01} value={String(num("originalPrice"))} onChange={(e) => setField("originalPrice", Number(e.target.value))} />
                 </Field>
-                <Field label="Discounted price ($)">
+                <Field label="Discounted price (₹)">
                   <Input type="number" min={0} step={0.01} value={String(num("discountedPrice"))} onChange={(e) => setField("discountedPrice", Number(e.target.value))} />
                 </Field>
               </div>
@@ -605,54 +424,29 @@ export function ItemFormPage({
             </>
           )}
 
-          {kind === "featured-posts" && (
+          {kind === "storefront-banners" && (
             <>
-              <Field label="Post" error={errors.title} fieldKey="title">
-                <SearchableSelect
-                  options={RECORD_OPTIONS.post}
-                  value={str("postId")}
-                  onChange={pickPost}
-                  fallbackLabel={str("title")}
-                  placeholder="Search posts..."
-                  emptyText="No matching posts"
-                />
+              <Field label="Seller username" error={errors.sellerUsername} fieldKey="sellerUsername">
+                <Input value={str("sellerUsername")} onChange={(e) => setField("sellerUsername", e.target.value)} />
               </Field>
-              <Field label="Title" error={errors.title}>
+              <Field label="Seller name">
+                <Input value={str("sellerName")} onChange={(e) => setField("sellerName", e.target.value)} />
+              </Field>
+              <Field label="Banner title" error={errors.title} fieldKey="title">
                 <Input value={str("title")} onChange={(e) => setField("title", e.target.value)} />
               </Field>
-              <Field label="Excerpt">
-                <Input value={str("excerpt")} onChange={(e) => setField("excerpt", e.target.value)} />
+              <Field label="Subtitle">
+                <Input value={str("subtitle")} onChange={(e) => setField("subtitle", e.target.value)} />
               </Field>
-              <Field label="Cover image">
-                <RecordPreview src={str("imageUrl")} label="cover image" />
+              <Field label="CTA label">
+                <Input value={str("ctaLabel")} onChange={(e) => setField("ctaLabel", e.target.value)} />
               </Field>
-              <Field label="Position">
-                <Input type="number" min={1} value={String(num("position"))} onChange={(e) => setField("position", Number(e.target.value))} />
+              <Field label="Banner image">
+                <RecordPreview src={str("imageUrl")} label="banner image" />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Start date">
-                  <Input type="date" value={str("startDate")} onChange={(e) => setField("startDate", e.target.value)} />
-                </Field>
-                <Field label="End date">
-                  <Input type="date" value={str("endDate")} onChange={(e) => setField("endDate", e.target.value)} />
-                </Field>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Status">
-                  <Select options={STATUS_OPTIONS[kind]} value={str("status")} onChange={(e) => setField("status", e.target.value)} />
-                </Field>
-                <div className="flex items-end pb-3">
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 ">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-[#6C3BFF]"
-                      checked={Boolean(form.isPinned)}
-                      onChange={(e) => setField("isPinned", e.target.checked)}
-                    />
-                    Pinned
-                  </label>
-                </div>
-              </div>
+              <Field label="Status">
+                <Select options={STATUS_OPTIONS[kind]} value={str("status")} onChange={(e) => setField("status", e.target.value)} />
+              </Field>
             </>
           )}
 

@@ -1044,6 +1044,7 @@ export type SupportTicketCreateManyArgs<ExtArgs extends runtime.Types.Extensions
    * The data used to create many SupportTickets.
    */
   data: Prisma.SupportTicketCreateManyInput | Prisma.SupportTicketCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1062,6 +1063,7 @@ export type SupportTicketCreateManyAndReturnArgs<ExtArgs extends runtime.Types.E
    * The data used to create many SupportTickets.
    */
   data: Prisma.SupportTicketCreateManyInput | Prisma.SupportTicketCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

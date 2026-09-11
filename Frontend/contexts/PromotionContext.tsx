@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
 import { getPackage, type PromotionKind } from '../utils/marketplace';
+import { serverApi } from '../utils/serverApi';
 
-const PROMOTIONS_KEY = '@susej_promotions';
+const PROMOTIONS_KEY_BASE = '@susej_promotions';
 
 export type PromotionStatus = 'pending_payment' | 'active' | 'expired' | 'refunded';
 
@@ -23,71 +25,6 @@ export interface Promotion {
   views: number;
   clicks: number;
 }
-
-const SEED_PROMOTIONS: Promotion[] = [
-  {
-    id: 'PRM-1001',
-    packageId: 'featured-post-30',
-    kind: 'featuredPost',
-    packageName: 'Boost Post · 30 days',
-    amountPaid: 999,
-    durationDays: 30,
-    sellerUsername: 'luxe',
-    postId: 'post_001',
-    productTitle: 'Velvet Streetwear Hoodie',
-    status: 'active',
-    startsAt: Date.now() - 4 * 864e5,
-    endsAt: Date.now() + 26 * 864e5,
-    views: 12840,
-    clicks: 412,
-  },
-  {
-    id: 'PRM-1002',
-    packageId: 'top-seller-7',
-    kind: 'topSeller',
-    packageName: 'Top Seller Spotlight · 7 days',
-    amountPaid: 599,
-    durationDays: 7,
-    sellerUsername: 'luxe',
-    status: 'active',
-    startsAt: Date.now() - 2 * 864e5,
-    endsAt: Date.now() + 5 * 864e5,
-    views: 42100,
-    clicks: 1890,
-  },
-  {
-    id: 'PRM-1003',
-    packageId: 'hot-deal-7',
-    kind: 'hotDeal',
-    packageName: 'Hot Deal · 7 days',
-    amountPaid: 499,
-    durationDays: 7,
-    sellerUsername: 'luxe',
-    postId: 'post_002',
-    productTitle: 'Chunky Knit Cardigan',
-    status: 'active',
-    startsAt: Date.now() - 1 * 864e5,
-    endsAt: Date.now() + 6 * 864e5,
-    views: 9800,
-    clicks: 520,
-  },
-  {
-    id: 'PRM-1004',
-    packageId: 'featured-post-7',
-    kind: 'featuredPost',
-    packageName: 'Boost Post · 7 days',
-    amountPaid: 349,
-    durationDays: 7,
-    sellerUsername: 'luxe',
-    postId: 'post_003',
-    productTitle: 'Oversized Denim Jacket',
-    status: 'expired',
-    startsAt: Date.now() - 12 * 864e5,
-    endsAt: Date.now() - 5 * 864e5,
-    views: 5400,
-    clicks: 210,
-  },
-];
 
 interface PromotionContextValue {
   promotions: Promotion[];
@@ -110,48 +47,75 @@ const PromotionContext = createContext<PromotionContextValue>({
 });
 
 export function PromotionProvider({ children }: { children: React.ReactNode }) {
+  const { user, tokenSeq } = useAuth();
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loaded, setLoaded] = useState(false);
   const loadedRef = useRef(false);
 
+  const getKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${PROMOTIONS_KEY_BASE}:${u}` : PROMOTIONS_KEY_BASE;
+  }, [user?.username]);
+
+  // Reset on account switch to prevent cross-account campaign leak.
   useEffect(() => {
+    setPromotions([]);
+    loadedRef.current = false;
+    setLoaded(false);
+  }, [tokenSeq]);
+
+  useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(PROMOTIONS_KEY);
+        const key = getKey();
+        let raw = await AsyncStorage.getItem(key);
+        // Migrate legacy global key on first per-user load.
+        if (!raw && key !== PROMOTIONS_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(PROMOTIONS_KEY_BASE);
+          if (legacy) raw = legacy;
+        }
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
+          if (!cancelled && Array.isArray(parsed)) {
             const now = Date.now();
+            const real = parsed.filter(
+              (p: Promotion) => p && !/^PRM-100[1-4]$/.test(String(p.id))
+            );
+            // Keep only promotions belonging to current user (safety when migrating).
+            const u = user?.username?.trim();
+            const owned = u ? real.filter((p: Promotion) => !p.sellerUsername || p.sellerUsername === u) : real;
             setPromotions(
-              parsed.map((p: Promotion) =>
+              owned.map((p: Promotion) =>
                 p && p.status === 'active' && p.endsAt && p.endsAt < now ? { ...p, status: 'expired' } : p
               )
             );
           }
-        } else {
-          await AsyncStorage.setItem(PROMOTIONS_KEY, JSON.stringify(SEED_PROMOTIONS));
-          setPromotions(SEED_PROMOTIONS);
         }
       } catch {
-        setPromotions(SEED_PROMOTIONS);
+        // corrupted cache — start empty
       }
-      loadedRef.current = true;
-      setLoaded(true);
+      if (!cancelled) {
+        loadedRef.current = true;
+        setLoaded(true);
+      }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [getKey, tokenSeq, user?.username]);
 
   useEffect(() => {
     if (!loadedRef.current) return;
-    AsyncStorage.setItem(PROMOTIONS_KEY, JSON.stringify(promotions)).catch(() => {});
-  }, [promotions]);
+    AsyncStorage.setItem(getKey(), JSON.stringify(promotions)).catch(() => {});
+  }, [promotions, getKey]);
 
   const createPromotion = useCallback(
     (input: { packageId: string; postId?: string; productTitle?: string; sellerUsername: string }): Promotion | null => {
+      if (input.sellerUsername !== user?.username) return null;
       const pkg = getPackage(input.packageId);
       if (!pkg) return null;
       const now = Date.now();
       const promo: Promotion = {
-        id: `PRM-${now}${String(promotions.length).padStart(2, '0')}`,
+        id: `PRM-${now}-${Math.random().toString(36).slice(2, 6)}`,
         packageId: pkg.id,
         kind: pkg.kind,
         packageName: pkg.name,
@@ -169,11 +133,26 @@ export function PromotionProvider({ children }: { children: React.ReactNode }) {
       setPromotions((prev) => [promo, ...prev]);
       return promo;
     },
-    [promotions.length]
+    [user?.username]
   );
 
   const endPromotion = useCallback((id: string) => {
-    setPromotions((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'expired' } : p)));
+    const target = { id, postId: undefined as string | undefined };
+    setPromotions((prev) => {
+      const row = prev.find((p) => p.id === id);
+      if (row?.postId) target.postId = row.postId;
+      return prev.map((p) => (p.id === id ? { ...p, status: 'expired' } : p));
+    });
+    // Server owns billing time: ending must deactivate the paid placement
+    // there too. Roll back the local mirror on refusal/offline so the two
+    // never disagree about what is still running (and billing).
+    serverApi.endPromotion(id, target.postId).then((res) => {
+      if (!res.ok) {
+        setPromotions((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'active' } : p)));
+      }
+    }).catch(() => {
+      setPromotions((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'active' } : p)));
+    });
   }, []);
 
   return (

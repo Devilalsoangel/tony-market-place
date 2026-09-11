@@ -13,10 +13,13 @@ export function formatDate(date: Date | string, format: "short" | "long" | "rela
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     if (days === 0) return "Today";
     if (days === 1) return "Yesterday";
-    if (days < 7) return `${days} days ago`;
-    if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
-    if (days < 365) return `${Math.floor(days / 30)} months ago`;
-    return `${Math.floor(days / 365)} years ago`;
+    if (days < 7) return days === 1 ? '1 day ago' : `${days} days ago`;
+    const weeks = Math.floor(days / 7);
+    if (days < 30) return weeks === 1 ? '1 week ago' : `${weeks} weeks ago`;
+    const months = Math.floor(days / 30);
+    if (days < 365) return months === 1 ? '1 month ago' : `${months} months ago`;
+    const years = Math.floor(days / 365);
+    return years === 1 ? '1 year ago' : `${years} years ago`;
   }
   return d.toLocaleDateString("en-US", {
     month: format === "long" ? "long" : "short",
@@ -26,9 +29,10 @@ export function formatDate(date: Date | string, format: "short" | "long" | "rela
 }
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
+  // susej is an Indian marketplace — every money column renders INR.
+  return new Intl.NumberFormat("en-IN", {
     style: "currency",
-    currency: "USD",
+    currency: "INR",
   }).format(amount);
 }
 

@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, CloseIcon, VerifiedIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
-import { productImages } from '../../utils/productImages';
+import { serverApi } from '../../utils/serverApi';
 
 const AUCTIONS_KEY = '@susej_auctions';
 const MIN_INCREMENT = 100;
@@ -35,59 +35,6 @@ interface Auction {
   bids: AuctionBid[];
 }
 
-const SEED_AUCTIONS: Auction[] = [
-  {
-    id: 'auc_001',
-    title: 'Vintage Leather Watch',
-    seller: 'RetroRiches',
-    verified: true,
-    startPrice: 2000,
-    currentBid: 3450,
-    endTime: Date.now() + 2 * 60 * 60 * 1000 + 14 * 60 * 1000,
-    bidsCount: 12,
-    status: 'live',
-    imageKey: 'post_002',
-    bids: [
-      { id: 'b1', bidder: '@rahul_shah', amount: 3350, time: '5m ago' },
-      { id: 'b2', bidder: '@meera_k', amount: 3250, time: '12m ago' },
-      { id: 'b3', bidder: '@arjun_p', amount: 3100, time: '28m ago' },
-      { id: 'b4', bidder: '@sneha_d', amount: 2900, time: '1h ago' },
-    ],
-  },
-  {
-    id: 'auc_002',
-    title: 'Limited Edition Sneakers',
-    seller: 'HypeVault',
-    verified: true,
-    startPrice: 4000,
-    currentBid: 5200,
-    endTime: Date.now() + 60 * 60 * 1000 + 5 * 60 * 1000,
-    bidsCount: 8,
-    status: 'live',
-    imageKey: 'auc_002',
-    bids: [
-      { id: 'b1', bidder: '@vishal_k', amount: 5050, time: '4m ago' },
-      { id: 'b2', bidder: '@meera_k', amount: 4900, time: '15m ago' },
-      { id: 'b3', bidder: '@arjun_p', amount: 4600, time: '40m ago' },
-      { id: 'b4', bidder: '@sneha_d', amount: 4300, time: '1h ago' },
-    ],
-  },
-  {
-    id: 'auc_003',
-    title: 'DSLR Camera Body',
-    seller: 'ShutterSnap',
-    verified: false,
-    startPrice: 12000,
-    currentBid: 0,
-    endTime: 0,
-    bidsCount: 0,
-    status: 'upcoming',
-    imageKey: 'auc_003',
-    startsLabel: 'Starts tomorrow, 7:00 PM',
-    bids: [],
-  },
-];
-
 function normalizeAuction(a: any): Auction {
   return {
     id: String(a.id),
@@ -106,34 +53,26 @@ function normalizeAuction(a: any): Auction {
   };
 }
 
-// Seed auctions bake `Date.now() + 2h` at module scope and get persisted on
-// first load — after an app restart their endTime is in the past and the
-// auction shows ENDED. Re-baseline seed ids that expired so demo stays alive.
-function rebaseSeedEndTime(a: Auction): Auction {
-  if (a.status !== 'live' || a.endTime <= 0 || a.endTime > Date.now()) return a;
-  if (!SEED_AUCTIONS.some((s) => s.id === a.id)) return a;
-  return { ...a, endTime: Date.now() + 2 * 60 * 60 * 1000 };
-}
-
 function findAuction(data: string | null, auctionId: string): Auction | null {
   if (data) {
     try {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
-        const hit = parsed.find((a: any) => a && a.id === auctionId);
-        if (hit) return rebaseSeedEndTime(normalizeAuction(hit));
+        // Real auctions only — legacy demo seeds (auc_001..004) are ignored.
+        const hit = parsed.find(
+          (a: any) => a && a.id === auctionId && !/^auc_00[1-4]$/.test(String(a.id))
+        );
+        if (hit) return normalizeAuction(hit);
       }
     } catch {
-      // corrupted data — fall through to seed
+      // corrupted cache — server sync repopulates
     }
   }
-  const seed = SEED_AUCTIONS.find((a) => a.id === auctionId);
-  return seed ? { ...seed, bids: [...seed.bids] } : null;
+  return null;
 }
 
 function auctionImage(key: string) {
-  const cached = productImages[key];
-  return cached ?? { uri: `https://picsum.photos/seed/${key}/600/600` };
+  return { uri: `https://picsum.photos/seed/${key}/600/600` };
 }
 
 function formatCountdown(ms: number): string {
@@ -238,6 +177,11 @@ export default function AuctionDetailScreen() {
     setAuction(updated);
     setShowBidInput(false);
     persistAuction(updated);
+    // Real bid on the shared backend for server auctions (cuid ids) — the
+    // seller + all bidders see the same current price.
+    if (!auction.id.startsWith('auc_')) {
+      serverApi.placeBid(auction.id, amount).catch(() => {});
+    }
   };
 
   return (

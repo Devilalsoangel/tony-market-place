@@ -1116,6 +1116,7 @@ export type ReportedMessageCreateManyArgs<ExtArgs extends runtime.Types.Extensio
    * The data used to create many ReportedMessages.
    */
   data: Prisma.ReportedMessageCreateManyInput | Prisma.ReportedMessageCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1134,6 +1135,7 @@ export type ReportedMessageCreateManyAndReturnArgs<ExtArgs extends runtime.Types
    * The data used to create many ReportedMessages.
    */
   data: Prisma.ReportedMessageCreateManyInput | Prisma.ReportedMessageCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

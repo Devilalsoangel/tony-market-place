@@ -1094,6 +1094,7 @@ export type FoodHubItemCreateManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * The data used to create many FoodHubItems.
    */
   data: Prisma.FoodHubItemCreateManyInput | Prisma.FoodHubItemCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1112,6 +1113,7 @@ export type FoodHubItemCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ext
    * The data used to create many FoodHubItems.
    */
   data: Prisma.FoodHubItemCreateManyInput | Prisma.FoodHubItemCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

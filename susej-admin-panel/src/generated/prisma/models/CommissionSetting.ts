@@ -1038,6 +1038,7 @@ export type CommissionSettingCreateManyArgs<ExtArgs extends runtime.Types.Extens
    * The data used to create many CommissionSettings.
    */
   data: Prisma.CommissionSettingCreateManyInput | Prisma.CommissionSettingCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1056,6 +1057,7 @@ export type CommissionSettingCreateManyAndReturnArgs<ExtArgs extends runtime.Typ
    * The data used to create many CommissionSettings.
    */
   data: Prisma.CommissionSettingCreateManyInput | Prisma.CommissionSettingCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

@@ -12,36 +12,27 @@ export const a11yLabels = {
   chatTab: 'Chat, double tap to send messages',
   storiesTab: 'Stories, double tap to view stories',
   profileTab: 'Profile, double tap to view your profile',
-  stocksTab: 'Market, double tap to view and trade stocks',
-  forexTab: 'Forex, double tap to trade currency pairs',
-  
+
   // Actions
   likePost: 'Like post',
   commentPost: 'Reply to post',
   sharePost: 'Share post',
-  buyStock: 'Buy shares',
-  sellStock: 'Sell shares',
-  addToWatchlist: 'Add to watchlist',
-  removeFromWatchlist: 'Remove from watchlist',
-  
+
   // Auth
   login: 'Log in to your account',
   signup: 'Create a new account',
   logout: 'Log out',
   forgotPassword: 'Reset your password',
-  
+
   // Controls
   toggleTheme: 'Toggle between light and dark mode',
-  toggleWatchlist: 'Filter by watchlist',
   toggleMiniApps: 'Open mini applications',
-  
+
   // Inputs
   emailInput: 'Email address input',
   passwordInput: 'Password input, content hidden',
   searchInput: 'Search input',
   messageInput: 'Message input field',
-  quantityInput: 'Number of shares to trade',
-  priceInput: 'Price per share',
 };
 
 /**

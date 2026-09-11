@@ -52,9 +52,17 @@ const cColumn = createColumnHelper<Carrier>();
 
 const makeCarrierColumns = (onToggle: (c: Carrier) => void, onDelete: (c: Carrier) => void) => [
   cColumn.accessor("name", { header: "Carrier", cell: (info) => <span className="font-medium">{info.getValue()}</span> }),
-  cColumn.accessor("rate", { header: "Rate", cell: (info) => <span className="tabular-nums">${info.getValue().toFixed(2)}</span> }),
+  cColumn.accessor("rate", { header: "Rate", cell: (info) => <span className="tabular-nums">₹{info.getValue().toFixed(2)}</span> }),
   cColumn.accessor("avgDeliveryDays", { header: "Avg days" }),
-  cColumn.accessor("onTimeRate", { header: "On-time", cell: (info) => <span className="tabular-nums text-[#16A34A]">{info.getValue()}%</span> }),
+  cColumn.accessor("onTimeRate", {
+    header: "On-time",
+    cell: (info) => {
+      const v = info.getValue();
+      return v === null
+        ? <span className="tabular-nums text-[#71717A]">—</span>
+        : <span className="tabular-nums text-[#16A34A]">{v}%</span>;
+    },
+  }),
   cColumn.accessor("shipments", { header: "Shipments" }),
   cColumn.accessor("active", {
     header: "Status",
@@ -84,7 +92,7 @@ const zColumn = createColumnHelper<DeliveryZone>();
 const makeZoneColumns = (onToggle: (z: DeliveryZone) => void, onDelete: (z: DeliveryZone) => void) => [
   zColumn.accessor("name", { header: "Zone", cell: (info) => <span className="font-medium">{info.getValue()}</span> }),
   zColumn.accessor("region", { header: "Region", cell: (info) => <span className="text-[#71717A]">{info.getValue()}</span> }),
-  zColumn.accessor("rate", { header: "Rate", cell: (info) => <span className="tabular-nums">${info.getValue().toFixed(2)}</span> }),
+  zColumn.accessor("rate", { header: "Rate", cell: (info) => <span className="tabular-nums">₹{info.getValue().toFixed(2)}</span> }),
   zColumn.accessor("eta", { header: "ETA" }),
   zColumn.accessor("coverage", { header: "Coverage", cell: (info) => <span className="font-medium">{info.getValue()}%</span> }),
   zColumn.accessor("active", {
@@ -137,6 +145,7 @@ export default function ShippingPage() {
     fetch(`/api/data/${resource}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id, data }),
     }).finally(refresh);
   }
@@ -162,6 +171,7 @@ export default function ShippingPage() {
     fetch(`/api/data/${resource}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: deleteTarget.id }),
     }).finally(() => {
       setDeleteTarget(null);
@@ -176,7 +186,7 @@ export default function ShippingPage() {
       name: carrierForm.name,
       rate: Number(carrierForm.rate) || 0,
       avgDeliveryDays: Number(carrierForm.avgDeliveryDays) || 3,
-      onTimeRate: 95,
+      onTimeRate: null,
       shipments: 0,
       active: true,
     };
@@ -184,6 +194,7 @@ export default function ShippingPage() {
     fetch("/api/data/carriers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(payload),
     }).finally(() => {
       setNewCarrier(false);
@@ -206,6 +217,7 @@ export default function ShippingPage() {
     fetch("/api/data/delivery-zones", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(payload),
     }).finally(() => {
       setNewZone(false);
@@ -319,7 +331,7 @@ export default function ShippingPage() {
           {(
             [
               { key: "name", label: "Name", placeholder: "BlueDart Express" },
-              { key: "rate", label: "Rate ($)", placeholder: "4.5" },
+              { key: "rate", label: "Rate (₹)", placeholder: "4.5" },
               { key: "avgDeliveryDays", label: "Avg delivery (days)", placeholder: "3" },
             ] as const
           ).map((f) => (
@@ -349,7 +361,7 @@ export default function ShippingPage() {
             [
               { key: "name", label: "Zone name", placeholder: "North Region" },
               { key: "region", label: "Region", placeholder: "Maharashtra, Gujarat..." },
-              { key: "rate", label: "Rate ($)", placeholder: "5.0" },
+              { key: "rate", label: "Rate (₹)", placeholder: "5.0" },
               { key: "eta", label: "ETA", placeholder: "2-3 days" },
             ] as const
           ).map((f) => (

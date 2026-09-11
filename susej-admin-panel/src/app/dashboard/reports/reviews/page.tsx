@@ -66,7 +66,10 @@ export default function ReportedReviewsPage() {
 
   const reported = useMemo(() => items ?? [], [items]);
 
-  async function resolveReview(r: Review, status: "approved") {
+  // Dismiss drops the REPORT without endorsing the review: back to pending
+  // moderation, NOT approved. (Was wired to "approved" — dismissing a report
+  // silently approved the review under it.)
+  async function resolveReview(r: Review, status: "approved" | "pending") {
     try {
       await apiPatch("reviews", r.id, { status });
     } catch (e) {
@@ -113,7 +116,7 @@ export default function ReportedReviewsPage() {
             columns={makeColumns(
               deleteReview,
               (r) => resolveReview(r, "approved"),
-              (r) => resolveReview(r, "approved")
+              (r) => resolveReview(r, "pending")
             )}
             data={reported}
             searchable

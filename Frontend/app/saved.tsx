@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,14 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookmarkIcon, ChevronLeftIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
-import { useBookmark } from '../contexts/BookmarkContext';
-import { productImages } from '../utils/productImages';
-import { savedCollectionImages } from '../utils/screenImages';
+import { useBookmark, type BookmarkedProduct } from '../contexts/BookmarkContext';
+import { resolveAvatar, resolveListingImage } from '../utils/productImages';
+import { useAuth } from '../contexts/AuthContext';
 
 type Tab = 'collections' | 'items';
 
@@ -26,20 +27,13 @@ interface Collection {
   itemIds?: string[];
 }
 
-const initialCollections: Collection[] = [
-  { id: 'c1', name: 'Wishlist', count: 42, itemIds: ['post_001', 'post_002', 'post_003'] },
-  { id: 'c2', name: 'Home Decor', count: 18, itemIds: ['post_003', 'post_007'] },
-  { id: 'c3', name: 'Gifts for Family', count: 12, itemIds: ['post_001', 'post_005'] },
-  { id: 'c4', name: 'Travel Gear', count: 9, itemIds: ['post_002'] },
-  { id: 'c5', name: 'Desk Setup', count: 15, itemIds: ['post_002', 'post_006'] },
-  { id: 'c6', name: 'Cozy Nights', count: 7, itemIds: ['post_003'] },
-  { id: 'c7', name: 'Fitness Kit', count: 11, itemIds: ['post_005'] },
-  { id: 'c8', name: 'Book Club', count: 24, itemIds: ['post_010'] },
-];
+// Collections start EMPTY — users create their own. No seeded fake collections.
+const COLLECTIONS_KEY_BASE = '@susej_saved_collections';
 
 export default function SavedScreen() {
   const [tab, setTab] = useState<Tab>('collections');
-  const [collections, setCollections] = useState<Collection[]>(initialCollections);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [collectionsLoaded, setCollectionsLoaded] = useState(false);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [activeCollection, setActiveCollection] = useState<Collection | null>(null);
   const [newModalVisible, setNewModalVisible] = useState(false);
@@ -47,6 +41,37 @@ export default function SavedScreen() {
   const [renameTarget, setRenameTarget] = useState<Collection | null>(null);
   const { bookmarksList, bookmarkCount } = useBookmark();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const collectionsKey = user?.username ? `${COLLECTIONS_KEY_BASE}:${user.username}` : COLLECTIONS_KEY_BASE;
+
+  // Collections persist per-user (no cross-account leak).
+  useEffect(() => {
+    let cancelled = false;
+    setCollectionsLoaded(false);
+    AsyncStorage.getItem(collectionsKey)
+      .then((raw) => {
+        if (cancelled) return;
+        if (raw) {
+          try {
+            const saved = JSON.parse(raw) as Collection[];
+            if (Array.isArray(saved)) setCollections(saved.filter((c) => c && c.id && c.name));
+            else setCollections([]);
+          } catch {
+            if (!cancelled) setCollections([]);
+          }
+        } else {
+          setCollections([]);
+        }
+        if (!cancelled) setCollectionsLoaded(true);
+      })
+      .catch(() => { if (!cancelled) setCollectionsLoaded(true); });
+    return () => { cancelled = true; };
+  }, [collectionsKey]);
+
+  useEffect(() => {
+    if (!collectionsLoaded) return;
+    AsyncStorage.setItem(collectionsKey, JSON.stringify(collections)).catch(() => {});
+  }, [collections, collectionsLoaded, collectionsKey]);
 
   const openCollection = (collection: Collection) => {
     setSelectedCollectionId(collection.id);
@@ -106,14 +131,14 @@ export default function SavedScreen() {
     ? bookmarksList.filter((b) => (activeCollection.itemIds ?? []).includes(b.productId))
     : [];
 
-  const renderBookmarkTile = (itemId: string, index: number) => (
+  const renderBookmarkTile = (p: BookmarkedProduct) => (
     <TouchableOpacity
       className="flex-1 overflow-hidden"
       style={{ aspectRatio: 1, backgroundColor: colors.surfaceContainer, borderRadius: 8 }}
-      onPress={() => router.push(`/product/${itemId}`)}
+      onPress={() => router.push(`/product/${p.productId}`)}
     >
       <Image
-        source={productImages[itemId] ?? savedCollectionImages[index % savedCollectionImages.length]}
+        source={resolveListingImage({ image: p.imageUrl }, p.productId)}
         className="w-full h-full"
         resizeMode="cover"
       />
@@ -205,7 +230,7 @@ export default function SavedScreen() {
               </TouchableOpacity>
             </View>
           }
-          renderItem={({ item, index }) => {
+          renderItem={({ item }) => {
             const isSelected = selectedCollectionId === item.id;
             return (
               <TouchableOpacity
@@ -224,7 +249,7 @@ export default function SavedScreen() {
                 onLongPress={() => openManageCollection(item)}
               >
                 <View className="w-full h-[112px] rounded-figma-8 mb-3 bg-surfaceContainer overflow-hidden">
-                  <Image source={savedCollectionImages[index % savedCollectionImages.length]} className="w-full h-full" resizeMode="cover" />
+                  <Image source={resolveAvatar(item.id)} className="w-full h-full" resizeMode="cover" />
                 </View>
                 <Text className="font-inter-600 text-textPrimary mb-0.5" style={{ fontSize: 14, lineHeight: 16 }}>
                   {item.name}
@@ -255,7 +280,7 @@ export default function SavedScreen() {
           numColumns={3}
           columnWrapperStyle={{ gap: 4 }}
           contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: 100 + insets.bottom }}
-          renderItem={({ item, index }) => renderBookmarkTile(item.productId, index)}
+          renderItem={({ item }) => renderBookmarkTile(item)}
         />
       )}
     </>
@@ -298,7 +323,7 @@ export default function SavedScreen() {
               </Text>
             </View>
           }
-          renderItem={({ item, index }) => renderBookmarkTile(item.productId, index)}
+          renderItem={({ item }) => renderBookmarkTile(item)}
         />
       </>
     );

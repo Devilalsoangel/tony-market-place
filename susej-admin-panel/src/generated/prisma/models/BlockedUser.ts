@@ -1044,6 +1044,7 @@ export type BlockedUserCreateManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * The data used to create many BlockedUsers.
    */
   data: Prisma.BlockedUserCreateManyInput | Prisma.BlockedUserCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1062,6 +1063,7 @@ export type BlockedUserCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ext
    * The data used to create many BlockedUsers.
    */
   data: Prisma.BlockedUserCreateManyInput | Prisma.BlockedUserCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

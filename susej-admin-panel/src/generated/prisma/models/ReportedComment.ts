@@ -1116,6 +1116,7 @@ export type ReportedCommentCreateManyArgs<ExtArgs extends runtime.Types.Extensio
    * The data used to create many ReportedComments.
    */
   data: Prisma.ReportedCommentCreateManyInput | Prisma.ReportedCommentCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1134,6 +1135,7 @@ export type ReportedCommentCreateManyAndReturnArgs<ExtArgs extends runtime.Types
    * The data used to create many ReportedComments.
    */
   data: Prisma.ReportedCommentCreateManyInput | Prisma.ReportedCommentCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

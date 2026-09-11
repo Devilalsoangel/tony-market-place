@@ -40,6 +40,9 @@ export type ReelMinAggregateOutputType = {
   id: string | null
   title: string | null
   creatorName: string | null
+  creatorUsername: string | null
+  mediaUrl: string | null
+  caption: string | null
   views: number | null
   likes: number | null
   status: string | null
@@ -50,6 +53,9 @@ export type ReelMaxAggregateOutputType = {
   id: string | null
   title: string | null
   creatorName: string | null
+  creatorUsername: string | null
+  mediaUrl: string | null
+  caption: string | null
   views: number | null
   likes: number | null
   status: string | null
@@ -60,6 +66,9 @@ export type ReelCountAggregateOutputType = {
   id: number
   title: number
   creatorName: number
+  creatorUsername: number
+  mediaUrl: number
+  caption: number
   views: number
   likes: number
   status: number
@@ -82,6 +91,9 @@ export type ReelMinAggregateInputType = {
   id?: true
   title?: true
   creatorName?: true
+  creatorUsername?: true
+  mediaUrl?: true
+  caption?: true
   views?: true
   likes?: true
   status?: true
@@ -92,6 +104,9 @@ export type ReelMaxAggregateInputType = {
   id?: true
   title?: true
   creatorName?: true
+  creatorUsername?: true
+  mediaUrl?: true
+  caption?: true
   views?: true
   likes?: true
   status?: true
@@ -102,6 +117,9 @@ export type ReelCountAggregateInputType = {
   id?: true
   title?: true
   creatorName?: true
+  creatorUsername?: true
+  mediaUrl?: true
+  caption?: true
   views?: true
   likes?: true
   status?: true
@@ -199,6 +217,9 @@ export type ReelGroupByOutputType = {
   id: string
   title: string
   creatorName: string
+  creatorUsername: string | null
+  mediaUrl: string | null
+  caption: string | null
   views: number
   likes: number
   status: string
@@ -232,6 +253,9 @@ export type ReelWhereInput = {
   id?: Prisma.StringFilter<"Reel"> | string
   title?: Prisma.StringFilter<"Reel"> | string
   creatorName?: Prisma.StringFilter<"Reel"> | string
+  creatorUsername?: Prisma.StringNullableFilter<"Reel"> | string | null
+  mediaUrl?: Prisma.StringNullableFilter<"Reel"> | string | null
+  caption?: Prisma.StringNullableFilter<"Reel"> | string | null
   views?: Prisma.IntFilter<"Reel"> | number
   likes?: Prisma.IntFilter<"Reel"> | number
   status?: Prisma.StringFilter<"Reel"> | string
@@ -242,6 +266,9 @@ export type ReelOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  creatorUsername?: Prisma.SortOrderInput | Prisma.SortOrder
+  mediaUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  caption?: Prisma.SortOrderInput | Prisma.SortOrder
   views?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   status?: Prisma.SortOrder
@@ -255,6 +282,9 @@ export type ReelWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.ReelWhereInput | Prisma.ReelWhereInput[]
   title?: Prisma.StringFilter<"Reel"> | string
   creatorName?: Prisma.StringFilter<"Reel"> | string
+  creatorUsername?: Prisma.StringNullableFilter<"Reel"> | string | null
+  mediaUrl?: Prisma.StringNullableFilter<"Reel"> | string | null
+  caption?: Prisma.StringNullableFilter<"Reel"> | string | null
   views?: Prisma.IntFilter<"Reel"> | number
   likes?: Prisma.IntFilter<"Reel"> | number
   status?: Prisma.StringFilter<"Reel"> | string
@@ -265,6 +295,9 @@ export type ReelOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  creatorUsername?: Prisma.SortOrderInput | Prisma.SortOrder
+  mediaUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  caption?: Prisma.SortOrderInput | Prisma.SortOrder
   views?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   status?: Prisma.SortOrder
@@ -283,6 +316,9 @@ export type ReelScalarWhereWithAggregatesInput = {
   id?: Prisma.StringWithAggregatesFilter<"Reel"> | string
   title?: Prisma.StringWithAggregatesFilter<"Reel"> | string
   creatorName?: Prisma.StringWithAggregatesFilter<"Reel"> | string
+  creatorUsername?: Prisma.StringNullableWithAggregatesFilter<"Reel"> | string | null
+  mediaUrl?: Prisma.StringNullableWithAggregatesFilter<"Reel"> | string | null
+  caption?: Prisma.StringNullableWithAggregatesFilter<"Reel"> | string | null
   views?: Prisma.IntWithAggregatesFilter<"Reel"> | number
   likes?: Prisma.IntWithAggregatesFilter<"Reel"> | number
   status?: Prisma.StringWithAggregatesFilter<"Reel"> | string
@@ -293,6 +329,9 @@ export type ReelCreateInput = {
   id?: string
   title: string
   creatorName: string
+  creatorUsername?: string | null
+  mediaUrl?: string | null
+  caption?: string | null
   views: number
   likes: number
   status: string
@@ -303,6 +342,9 @@ export type ReelUncheckedCreateInput = {
   id?: string
   title: string
   creatorName: string
+  creatorUsername?: string | null
+  mediaUrl?: string | null
+  caption?: string | null
   views: number
   likes: number
   status: string
@@ -313,6 +355,9 @@ export type ReelUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   creatorName?: Prisma.StringFieldUpdateOperationsInput | string
+  creatorUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mediaUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  caption?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   views?: Prisma.IntFieldUpdateOperationsInput | number
   likes?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
@@ -323,6 +368,9 @@ export type ReelUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   creatorName?: Prisma.StringFieldUpdateOperationsInput | string
+  creatorUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mediaUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  caption?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   views?: Prisma.IntFieldUpdateOperationsInput | number
   likes?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
@@ -333,6 +381,9 @@ export type ReelCreateManyInput = {
   id?: string
   title: string
   creatorName: string
+  creatorUsername?: string | null
+  mediaUrl?: string | null
+  caption?: string | null
   views: number
   likes: number
   status: string
@@ -343,6 +394,9 @@ export type ReelUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   creatorName?: Prisma.StringFieldUpdateOperationsInput | string
+  creatorUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mediaUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  caption?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   views?: Prisma.IntFieldUpdateOperationsInput | number
   likes?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
@@ -353,6 +407,9 @@ export type ReelUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   creatorName?: Prisma.StringFieldUpdateOperationsInput | string
+  creatorUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mediaUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  caption?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   views?: Prisma.IntFieldUpdateOperationsInput | number
   likes?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
@@ -363,6 +420,9 @@ export type ReelCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  creatorUsername?: Prisma.SortOrder
+  mediaUrl?: Prisma.SortOrder
+  caption?: Prisma.SortOrder
   views?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   status?: Prisma.SortOrder
@@ -378,6 +438,9 @@ export type ReelMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  creatorUsername?: Prisma.SortOrder
+  mediaUrl?: Prisma.SortOrder
+  caption?: Prisma.SortOrder
   views?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   status?: Prisma.SortOrder
@@ -388,6 +451,9 @@ export type ReelMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  creatorUsername?: Prisma.SortOrder
+  mediaUrl?: Prisma.SortOrder
+  caption?: Prisma.SortOrder
   views?: Prisma.SortOrder
   likes?: Prisma.SortOrder
   status?: Prisma.SortOrder
@@ -405,6 +471,9 @@ export type ReelSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   id?: boolean
   title?: boolean
   creatorName?: boolean
+  creatorUsername?: boolean
+  mediaUrl?: boolean
+  caption?: boolean
   views?: boolean
   likes?: boolean
   status?: boolean
@@ -415,6 +484,9 @@ export type ReelSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   title?: boolean
   creatorName?: boolean
+  creatorUsername?: boolean
+  mediaUrl?: boolean
+  caption?: boolean
   views?: boolean
   likes?: boolean
   status?: boolean
@@ -425,6 +497,9 @@ export type ReelSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   title?: boolean
   creatorName?: boolean
+  creatorUsername?: boolean
+  mediaUrl?: boolean
+  caption?: boolean
   views?: boolean
   likes?: boolean
   status?: boolean
@@ -435,13 +510,16 @@ export type ReelSelectScalar = {
   id?: boolean
   title?: boolean
   creatorName?: boolean
+  creatorUsername?: boolean
+  mediaUrl?: boolean
+  caption?: boolean
   views?: boolean
   likes?: boolean
   status?: boolean
   createdAt?: boolean
 }
 
-export type ReelOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "creatorName" | "views" | "likes" | "status" | "createdAt", ExtArgs["result"]["reel"]>
+export type ReelOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "creatorName" | "creatorUsername" | "mediaUrl" | "caption" | "views" | "likes" | "status" | "createdAt", ExtArgs["result"]["reel"]>
 
 export type $ReelPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Reel"
@@ -450,6 +528,9 @@ export type $ReelPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     id: string
     title: string
     creatorName: string
+    creatorUsername: string | null
+    mediaUrl: string | null
+    caption: string | null
     views: number
     likes: number
     status: string
@@ -880,6 +961,9 @@ export interface ReelFieldRefs {
   readonly id: Prisma.FieldRef<"Reel", 'String'>
   readonly title: Prisma.FieldRef<"Reel", 'String'>
   readonly creatorName: Prisma.FieldRef<"Reel", 'String'>
+  readonly creatorUsername: Prisma.FieldRef<"Reel", 'String'>
+  readonly mediaUrl: Prisma.FieldRef<"Reel", 'String'>
+  readonly caption: Prisma.FieldRef<"Reel", 'String'>
   readonly views: Prisma.FieldRef<"Reel", 'Int'>
   readonly likes: Prisma.FieldRef<"Reel", 'Int'>
   readonly status: Prisma.FieldRef<"Reel", 'String'>
@@ -1094,6 +1178,7 @@ export type ReelCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Internal
    * The data used to create many Reels.
    */
   data: Prisma.ReelCreateManyInput | Prisma.ReelCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1112,6 +1197,7 @@ export type ReelCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensions
    * The data used to create many Reels.
    */
   data: Prisma.ReelCreateManyInput | Prisma.ReelCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

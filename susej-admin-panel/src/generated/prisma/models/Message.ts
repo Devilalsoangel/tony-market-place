@@ -1016,6 +1016,7 @@ export type MessageCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * The data used to create many Messages.
    */
   data: Prisma.MessageCreateManyInput | Prisma.MessageCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1034,6 +1035,7 @@ export type MessageCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many Messages.
    */
   data: Prisma.MessageCreateManyInput | Prisma.MessageCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

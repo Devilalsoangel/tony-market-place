@@ -21,12 +21,10 @@ export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
   const prisma = await getPrisma();
   if (!prisma) {
-    return NextResponse.json({
-      success: true,
-      demo: true,
-      devCode: randomOtp(),
-      message: "Demo mode (no database): use the dev code shown on the next screen.",
-    });
+    return NextResponse.json(
+      { error: "Database unavailable. Password reset is disabled." },
+      { status: 503 },
+    );
   }
 
   const admin = await prisma.admin.findFirst({ where: { email } });

@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiDelete } from "@/lib/api-mutate";
 import { formatDate } from "@/lib/utils";
 import { Ban, RotateCcw } from "lucide-react";
-import type { MockBlockedUser } from "@/services/mock-data";
+import type { MockBlockedUser } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockBlockedUser>();
 
@@ -70,7 +70,10 @@ export default function BlockedPage() {
         <StatTile label="Blocked (temporary)" value={(items ?? []).filter((u) => u.kind === "blocked").length} tone="amber" />
         <StatTile label="Most common reason" value={(() => {
           const counts = new Map<string, number>();
-          (items ?? []).forEach((u) => counts.set(u.reason.split(" ")[0], (counts.get(u.reason.split(" ")[0]) ?? 0) + 1));
+          (items ?? []).forEach((u) => {
+            const key = (u.reason || "Unknown").trim();
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+          });
           let best = "—";
           let bestN = 0;
           counts.forEach((n, r) => { if (n > bestN) { bestN = n; best = r; } });

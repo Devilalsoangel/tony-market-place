@@ -1,4 +1,4 @@
-export type PromotionKind = "topSeller" | "hotDeal" | "featuredPost";
+export type PromotionKind = "topSeller" | "hotDeal" | "featuredPost" | "spotlight";
 
 export interface PromotionPackage {
   id: string;
@@ -79,7 +79,42 @@ export const PROMOTION_PACKAGES: PromotionPackage[] = [
     pinned: false,
     positionPreference: "auto",
   },
+  {
+    id: "spotlight-24h",
+    kind: "spotlight",
+    name: "Feed Spotlight - 24 hours",
+    description: "Your listing pinned at the very top of buyer feeds for 24 hours.",
+    price: 49,
+    currency: "INR",
+    durationDays: 1,
+    pinned: true,
+    positionPreference: "auto",
+  },
 ];
+
+/** Pinned-chat VAS (OLX Elite pattern) - sold inside the app chat threads. */
+export const DEFAULT_CHAT_PIN = { price: 79, days: 7 } as const;
+
+/**
+ * Admin-editable price overrides live in an AppSetting row (key "promoPrices")
+ * as a flat JSON map: { "<packageId>": price, "chatPin": price }. Everything
+ * not listed keeps its code default below, so new packages never break.
+ */
+export function applyPriceOverrides(
+  overrides: Record<string, unknown> | null | undefined
+): PromotionPackage[] {
+  if (!overrides) return PROMOTION_PACKAGES;
+  return PROMOTION_PACKAGES.map((p) => {
+    const raw = overrides[p.id];
+    const price = typeof raw === "number" && raw >= 0 && Number.isFinite(raw) ? Math.round(raw) : p.price;
+    return price === p.price ? p : { ...p, price };
+  });
+}
+
+export function getChatPinPrice(overrides: Record<string, unknown> | null | undefined): number {
+  const raw = overrides?.chatPin;
+  return typeof raw === "number" && raw >= 0 && Number.isFinite(raw) ? Math.round(raw) : DEFAULT_CHAT_PIN.price;
+}
 
 export function getPackage(packageId: string): PromotionPackage | undefined {
   return PROMOTION_PACKAGES.find((p) => p.id === packageId);

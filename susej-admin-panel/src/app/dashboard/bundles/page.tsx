@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch } from "@/lib/api-mutate";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Boxes, CheckCircle2, XCircle } from "lucide-react";
-import type { MockBundle } from "@/services/mock-data";
+import type { MockBundle } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockBundle>();
 

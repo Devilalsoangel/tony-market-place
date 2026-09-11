@@ -1066,6 +1066,7 @@ export type HashtagCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * The data used to create many Hashtags.
    */
   data: Prisma.HashtagCreateManyInput | Prisma.HashtagCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1084,6 +1085,7 @@ export type HashtagCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many Hashtags.
    */
   data: Prisma.HashtagCreateManyInput | Prisma.HashtagCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

@@ -1,34 +1,38 @@
-import { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Modal, FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronLeftIcon, PhoneIcon, LockArrowIcon } from '../../utils/icons';
 import { colors } from '../../utils/theme';
 import { useAuth } from '../../contexts/AuthContext';
+import { serverApi, transportMessage } from '../../utils/serverApi';
+
+const COUNTRIES = [
+  { code: '+91', name: 'India', flag: '🇮🇳' },
+  { code: '+1', name: 'United States', flag: '🇺🇸' },
+  { code: '+44', name: 'United Kingdom', flag: '🇬🇧' },
+  { code: '+971', name: 'UAE', flag: '🇦🇪' },
+  { code: '+65', name: 'Singapore', flag: '🇸🇬' },
+  { code: '+61', name: 'Australia', flag: '🇦🇺' },
+  { code: '+81', name: 'Japan', flag: '🇯🇵' },
+];
 
 const OTP_LENGTH = 6;
 
-// Demo OTP — same fixed code as login.tsx and the admin panel 2FA.
-const DEMO_OTP = '123456';
-
 export default function OtpScreen() {
   const insets = useSafeAreaInsets();
-  const { updateUser, login } = useAuth();
+  const { updateUser, login, serverLogin } = useAuth();
   const [phone, setPhone] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [code, setCode] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [verifying, setVerifying] = useState(false);
+  const [sending, setSending] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState('');
-  const inputsRef = useRef<(TextInput | null)[]>([]);
-
+  const [devHint, setDevHint] = useState('');
+  const [countryCode, setCountryCode] = useState('+91');
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const codeComplete = code.every((d) => d !== '');
-
-  useEffect(() => {
-    if (!otpSent) return;
-    const t = setTimeout(() => inputsRef.current[0]?.focus(), 200);
-    return () => clearTimeout(t);
-  }, [otpSent]);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -36,49 +40,77 @@ export default function OtpScreen() {
     return () => clearTimeout(t);
   }, [resendIn]);
 
-  const handleSendOtp = () => {
-    updateUser({ phone: phone.trim() });
-    setCode(Array(OTP_LENGTH).fill(''));
-    setError('');
-    setResendIn(30);
-    setOtpSent(true);
-  };
+  // Industry standard (E.164): the selected country code is part of the
+  // identity. Sending bare national digits made the picker decorative and
+  // let two countries' identical digits collide into one account.
+  const fullPhone = () => countryCode.replace(/\D/g, '') + phone.replace(/\D/g, '');
 
-  const handleChangeDigit = (i: number, text: string) => {
-    const digit = text.replace(/\D/g, '').slice(-1);
-    const next = [...code];
-    next[i] = digit;
-    setCode(next);
-    if (error) setError('');
-    if (digit && i < OTP_LENGTH - 1) {
-      inputsRef.current[i + 1]?.focus();
-    }
-  };
-
-  const handleKeyPress = (i: number, key: string) => {
-    if (key === 'Backspace' && !code[i] && i > 0) {
-      inputsRef.current[i - 1]?.focus();
-    }
-  };
-
-  const handleResend = () => {
-    setCode(Array(OTP_LENGTH).fill(''));
-    setError('');
-    setResendIn(30);
-    inputsRef.current[0]?.focus();
-  };
-
-  const handleVerify = async () => {
-    if (!codeComplete || verifying) return;
-    if (code.join('') !== DEMO_OTP) {
-      setError(`Incorrect code. For this demo, use ${DEMO_OTP}.`);
+  const handleSendOtp = async () => {
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10) {
+      setError('Enter a valid 10-digit phone number');
       return;
     }
+    const full = fullPhone();
+    updateUser({ phone: full });
+    setError('');
+    setSending(true);
+    try {
+      // Real server-side code issuance (hashed, expiring, single-use).
+      const res = await serverApi.sendOtp(full);
+      if (!res.ok) {
+        setError(transportMessage(res.error, 'try again'));
+        return;
+      }
+      setDevHint(res.data?.devCode ? `Dev code: ${res.data.devCode}` : '');
+      setCode(Array(OTP_LENGTH).fill(''));
+      setResendIn(45); // match server RESEND_COOLDOWN_MS (45s)
+      setOtpSent(true);
+    } catch (e) {
+      setError('Could not send the code. Check your connection.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleOtpChange = (text: string) => {
+    const digits = text.replace(/\D/g, '').slice(0, OTP_LENGTH).split('');
+    while (digits.length < OTP_LENGTH) digits.push('');
+    setCode(digits);
+    if (error) setError('');
+    // Auto-submit once all 6 digits are entered (industry standard). Pass the
+    // fresh digits explicitly: handleVerify reads state, which is still the
+    // previous render's value inside this handler (stale closure = the 6th
+    // digit never auto-submitted, only the manual button worked).
+    if (text.replace(/\D/g, '').length === OTP_LENGTH) {
+      const freshCode = digits.join('');
+      setTimeout(() => { handleVerify(freshCode); }, 150);
+    }
+  };
+
+  const otpCode = code.join('');
+
+  const handleResend = () => {
+    handleSendOtp();
+  };
+
+  // NOTE: the Verify button calls this as () => handleVerify() (never bare
+  // onPress={handleVerify}) — the press event must not land in codeOverride.
+  const handleVerify = async (codeOverride?: string) => {
+    const finalCode = typeof codeOverride === 'string' ? codeOverride : otpCode;
+    if (finalCode.length !== OTP_LENGTH || verifying) return;
     setVerifying(true);
     setError('');
     try {
-      await login({ name: 'New User', username: 'user', phone: phone.trim() });
-      router.push('/(onboarding)/location');
+      // Server-first login — real user row on the shared backend.
+      const res = await serverLogin(fullPhone(), finalCode);
+      if (res.ok) {
+        router.push('/(onboarding)/location');
+      } else {
+        setError(transportMessage(res.error, 'try again'));
+      }
+    } catch (e) {
+      setError('Sign-in is unavailable. Try again once you are back online.');
     } finally {
       setVerifying(false);
     }
@@ -121,7 +153,7 @@ export default function OtpScreen() {
           style={{ fontSize: 16, lineHeight: 24, color: colors.textSecondary }}
         >
           {otpSent
-            ? `We've sent a verification code to\n+91 ${phone || 'your number'}.`
+            ? `We've sent a verification code to\n${countryCode} ${phone || 'your number'}.`
             : "We'll send a 6-digit verification code to\nsecure your account."}
         </Text>
 
@@ -130,18 +162,19 @@ export default function OtpScreen() {
             {/* Phone Input Row */}
             <View className="flex-row items-center mb-6" style={{ gap: 8 }}>
               {/* Country Code */}
-              <View
+              <TouchableOpacity
                 className="h-14 px-4 rounded-figma-16 flex-row items-center"
                 style={{ backgroundColor: colors.surfaceContainer }}
+                onPress={() => setShowCountryPicker(true)}
               >
                 <Text
                   className="font-inter-400"
                   style={{ fontSize: 16, lineHeight: 24, color: colors.textPrimary }}
                 >
-                  +91
+                  {countryCode}
                 </Text>
                 <Text style={{ fontSize: 10, marginLeft: 4, color: colors.textSecondary }}>▼</Text>
-              </View>
+              </TouchableOpacity>
               {/* Phone Input */}
               <View
                 className="flex-1 h-14 px-4 rounded-figma-16 justify-center"
@@ -159,17 +192,23 @@ export default function OtpScreen() {
               </View>
             </View>
 
+            {error && !otpSent ? (
+              <Text className="font-inter-500 mb-3" style={{ fontSize: 13, lineHeight: 18, color: colors.error }}>
+                {error}
+              </Text>
+            ) : null}
             {/* Send OTP Button */}
             <TouchableOpacity
               className="w-full h-14 flex-row items-center justify-center rounded-figma-16 mb-8"
-              style={{ backgroundColor: colors.primary }}
+              style={{ backgroundColor: phone.replace(/\D/g, '').length >= 10 && !sending ? colors.primary : 'rgba(93,95,239,0.2)' }}
               onPress={handleSendOtp}
+              disabled={sending}
             >
               <Text
                 className="font-inter-600"
-                style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: '#FFFFFF' }}
+                style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: phone.replace(/\D/g, '').length >= 10 && !sending ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}
               >
-                Send OTP
+                {sending ? 'Sending...' : 'Send OTP'}
               </Text>
             </TouchableOpacity>
           </>
@@ -183,32 +222,32 @@ export default function OtpScreen() {
             ) : null}
             <View className="flex-row mb-6" style={{ gap: 8 }}>
               {code.map((d, i) => (
-                <TextInput
+                <View
                   key={i}
-                  ref={(el) => {
-                    inputsRef.current[i] = el;
-                  }}
-                  className="flex-1 h-14 rounded-figma-16 font-inter-600"
+                  className="flex-1 h-14 rounded-figma-16 items-center justify-center"
                   style={{
                     backgroundColor: colors.surfaceContainer,
-                    textAlign: 'center',
-                    fontSize: 20,
-                    lineHeight: 24,
-                    color: colors.textPrimary,
                     borderWidth: d ? 1.5 : 0,
                     borderColor: d ? colors.primaryContainer : 'transparent',
                   }}
-                  value={d}
-                  onChangeText={(t) => handleChangeDigit(i, t)}
-                  onKeyPress={(e) => handleKeyPress(i, e.nativeEvent.key)}
-                  keyboardType="number-pad"
-                  maxLength={1}
-                  caretHidden
-                  selectTextOnFocus
-                  textContentType="oneTimeCode"
-                />
+                >
+                  <Text className="font-inter-600" style={{ fontSize: 20, lineHeight: 24, color: colors.textPrimary }}>
+                    {d}
+                  </Text>
+                </View>
               ))}
             </View>
+            <TextInput
+              value={otpCode}
+              onChangeText={handleOtpChange}
+              keyboardType="number-pad"
+              maxLength={6}
+              caretHidden
+              autoFocus={otpSent}
+              className="absolute opacity-0"
+              style={{ width: 1, height: 1, top: -9999 }}
+              textContentType="oneTimeCode"
+            />
 
             {/* Verify Button */}
             <TouchableOpacity
@@ -217,7 +256,7 @@ export default function OtpScreen() {
                 backgroundColor: codeComplete && !verifying ? colors.primary : 'rgba(93,95,239,0.2)',
               }}
               disabled={!codeComplete || verifying}
-              onPress={handleVerify}
+              onPress={() => handleVerify()}
             >
               <Text
                 className="font-inter-600"
@@ -253,14 +292,33 @@ export default function OtpScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-            <Text
-              className="font-inter-400 text-center mt-3"
-              style={{ fontSize: 11, lineHeight: 15, color: colors.textTertiary }}
-            >
-              Demo: the code is always {DEMO_OTP}
-            </Text>
+            {devHint && !error ? (
+              <Text
+                className="font-inter-500 text-center mt-3"
+                style={{ fontSize: 12, lineHeight: 16, color: colors.tertiary }}
+              >
+                {devHint}
+              </Text>
+            ) : null}
           </>
         )}
+
+      <Modal visible={showCountryPicker} transparent animationType="fade" onRequestClose={() => setShowCountryPicker(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowCountryPicker(false)}>
+          <View style={{ backgroundColor: colors.surfaceContainerLowest, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: 380, paddingTop: 12 }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.outlineVariant, alignSelf: 'center', marginBottom: 12 }} />
+            <Text className="font-inter-600" style={{ fontSize: 16, textAlign: 'center', marginBottom: 12, color: colors.textPrimary }}>Select country</Text>
+            <FlatList data={COUNTRIES} keyExtractor={(i) => i.code} renderItem={({ item }) => (
+              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 14, backgroundColor: countryCode === item.code ? colors.surfaceContainer : 'transparent' }} onPress={() => { setCountryCode(item.code); setShowCountryPicker(false); }}>
+                <Text style={{ fontSize: 20, marginRight: 12 }}>{item.flag}</Text>
+                <Text className="font-inter-400" style={{ flex: 1, fontSize: 15, color: colors.textPrimary }}>{item.name}</Text>
+                <Text className="font-inter-600" style={{ fontSize: 15, color: colors.textPrimary }}>{item.code}</Text>
+              </TouchableOpacity>
+            )} />
+            <View style={{ height: 24 }} />
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
         {/* Spacer */}
         <View className="flex-1" />
@@ -273,18 +331,18 @@ export default function OtpScreen() {
               className="font-inter-500 ml-2"
               style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.6, color: 'rgba(70,69,85,0.4)' }}
             >
-              SECURED BY AES-256 ENCRYPTION
+              YOUR DATA IS ENCRYPTED IN TRANSIT
             </Text>
           </View>
-          {/* Pagination dots - step 3 of 6 */}
-          <View className="flex-row gap-1.5">
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <View
-                key={i}
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: i < 3 ? colors.primaryContainer : 'rgba(26,26,46,0.08)' }}
-              />
-            ))}
+            {/* Pagination dots - step 3 (phone) or 4 (OTP sent) of 7 */}
+            <View className="flex-row gap-1.5">
+              {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                <View
+                  key={i}
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: i < (otpSent ? 4 : 3) ? colors.primaryContainer : 'rgba(26,26,46,0.08)' }}
+                />
+              ))}
           </View>
         </View>
       </View>

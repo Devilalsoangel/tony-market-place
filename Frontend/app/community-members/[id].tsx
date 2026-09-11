@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
-import { View, Text, Image, FlatList, TouchableOpacity, Share, ActivityIndicator } from 'react-native';
+import { View, Text, Image, FlatList, TouchableOpacity, Share } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { BackIcon, VerifiedIcon } from '../../utils/icons';
 import { colors, formatCount } from '../../utils/theme';
 import { useCommunities } from '../../contexts/CommunityContext';
-import { storyAvatars } from '../../utils/productImages';
+import { useAuth } from '../../contexts/AuthContext';
 
 type Role = 'Admin' | 'Moderator' | 'Member';
 
@@ -15,26 +14,8 @@ interface SeedMember {
   role: Role;
   verified: boolean;
   joinedDays: number;
-  avatar: any;
+  avatar?: { uri: string };
 }
-
-const SEED_MEMBERS: SeedMember[] = [
-  { name: 'Elara Moda', username: 'elara_mod', role: 'Admin', verified: true, joinedDays: 210, avatar: storyAvatars['1'] },
-  { name: 'Arc Design Studio', username: 'arc_design', role: 'Admin', verified: true, joinedDays: 186, avatar: storyAvatars['2'] },
-  { name: 'Lux Gems', username: 'lux_gems', role: 'Moderator', verified: true, joinedDays: 142, avatar: storyAvatars['3'] },
-  { name: 'Hype Vault', username: 'hype_vault', role: 'Moderator', verified: false, joinedDays: 118, avatar: storyAvatars['4'] },
-  { name: 'Ananya Rao', username: 'ananya', role: 'Member', verified: false, joinedDays: 96, avatar: { uri: 'https://picsum.photos/seed/ananya/200/200' } },
-  { name: 'Vikram Mehta', username: 'vikram', role: 'Member', verified: false, joinedDays: 88, avatar: { uri: 'https://picsum.photos/seed/vikram/200/200' } },
-  { name: 'Kavya Sharma', username: 'kavya', role: 'Member', verified: false, joinedDays: 74, avatar: { uri: 'https://picsum.photos/seed/kavya/200/200' } },
-  { name: 'Sameer Khan', username: 'sameer', role: 'Member', verified: false, joinedDays: 61, avatar: { uri: 'https://picsum.photos/seed/sameer/200/200' } },
-  { name: 'Neha Gupta', username: 'neha', role: 'Member', verified: true, joinedDays: 52, avatar: { uri: 'https://picsum.photos/seed/neha/200/200' } },
-  { name: 'Arjun Nair', username: 'arjun', role: 'Member', verified: false, joinedDays: 47, avatar: { uri: 'https://picsum.photos/seed/arjun/200/200' } },
-  { name: 'Priya Verma', username: 'priya', role: 'Member', verified: false, joinedDays: 39, avatar: { uri: 'https://picsum.photos/seed/priya/200/200' } },
-  { name: 'Rohit Malhotra', username: 'rohit', role: 'Member', verified: false, joinedDays: 33, avatar: { uri: 'https://picsum.photos/seed/rohit/200/200' } },
-  { name: 'Sneha Iyer', username: 'sneha', role: 'Member', verified: true, joinedDays: 28, avatar: { uri: 'https://picsum.photos/seed/sneha/200/200' } },
-  { name: 'Aditya Bose', username: 'aditya', role: 'Member', verified: false, joinedDays: 19, avatar: { uri: 'https://picsum.photos/seed/aditya/200/200' } },
-  { name: 'Farah Sheikh', username: 'farah', role: 'Member', verified: false, joinedDays: 12, avatar: { uri: 'https://picsum.photos/seed/farah/200/200' } },
-];
 
 const ROLE_STYLE: Record<Role, { bg: string; text: string }> = {
   Admin: { bg: colors.primaryContainer, text: colors.onPrimary },
@@ -47,23 +28,40 @@ export default function CommunityMembersScreen() {
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const communityId = Array.isArray(id) ? id[0] : id ?? '';
   const { communities } = useCommunities();
+  const { user } = useAuth();
   const community = communities.find((c) => c.id === communityId);
 
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 450);
-    return () => clearTimeout(t);
-  }, []);
-
-  const admins = SEED_MEMBERS.filter((m) => m.role !== 'Member');
-  const members = SEED_MEMBERS.filter((m) => m.role === 'Member');
-  const count = community?.memberCount ?? SEED_MEMBERS.length;
+  // Real roster: server-resolved member profiles for this community.
+  // Falls back to the signed-in user row when the roster hasn't synced yet.
+  // Never fabricated — unresolvable handles are skipped server-side.
+  const serverMembers: SeedMember[] = (community?.members ?? []).map((m) => ({
+    name: m.name || m.username,
+    username: m.username,
+    role: (community?.ownerName && (m.name === community.ownerName || m.username === community.ownerName) ? 'Admin' : 'Member') as Role,
+    verified: !!m.verified,
+    joinedDays: 0,
+    avatar: m.avatar ? { uri: m.avatar } : undefined,
+  }));
+  const selfRow: SeedMember[] =
+    serverMembers.length === 0 && community?.joined && user?.username
+      ? [
+          {
+            name: user.name || user.username,
+            username: user.username,
+            role: 'Member' as Role,
+            verified: user.verification === 'approved',
+            joinedDays: 0,
+            avatar: user.avatar ? { uri: user.avatar } : undefined,
+          },
+        ]
+      : [];
+  const members: SeedMember[] = serverMembers.length > 0 ? serverMembers : selfRow;
+  const admins = members.filter((m) => m.role !== 'Member');
+  const count = community?.memberCount ?? members.length;
 
   const handleInvite = () => {
-    const link = `https://susej.app/c/${communityId || 'community'}`;
     Share.share({
-      message: `Join "${community?.name ?? 'the community'}" on susej — ${formatCount(count)} members and counting. ${link}`,
+      message: `Join "${community?.name ?? 'the community'}" on SUSEJ — search for it in the Communities tab.`,
     }).catch(() => {});
   };
 
@@ -74,8 +72,14 @@ export default function CommunityMembersScreen() {
         className="flex-row items-center px-5 py-3"
         onPress={() => router.push(`/seller/${m.username}`)}
       >
-        <View className="w-12 h-12 rounded-full overflow-hidden mr-3" style={{ backgroundColor: colors.surfaceContainer }}>
-          <Image source={m.avatar} className="w-full h-full" resizeMode="cover" />
+        <View className="w-12 h-12 rounded-full overflow-hidden mr-3 items-center justify-center" style={{ backgroundColor: colors.surfaceContainer }}>
+          {m.avatar ? (
+            <Image source={m.avatar} className="w-full h-full" resizeMode="cover" />
+          ) : (
+            <Text className="font-inter-700" style={{ fontSize: 18, lineHeight: 22, color: colors.primaryContainer }}>
+              {m.name.charAt(0).toUpperCase()}
+            </Text>
+          )}
         </View>
         <View className="flex-1 pr-2">
           <View className="flex-row items-center" style={{ gap: 4 }}>
@@ -94,7 +98,7 @@ export default function CommunityMembersScreen() {
           </Text>
         </View>
         <Text className="font-inter-500" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
-          Joined {m.joinedDays} days ago
+          {m.joinedDays > 0 ? `Joined ${m.joinedDays} days ago` : 'New member'}
         </Text>
       </TouchableOpacity>
     );
@@ -129,14 +133,7 @@ export default function CommunityMembersScreen() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color={colors.primaryContainer} />
-          <Text className="font-inter-500 mt-3 text-textSecondary" style={{ fontSize: 13, lineHeight: 18 }}>
-            Loading members…
-          </Text>
-        </View>
-      ) : SEED_MEMBERS.length === 0 || !communityId ? (
+      {members.length === 0 || !communityId ? (
         <View className="flex-1 items-center justify-center px-8">
           <Text className="font-inter-500 text-textSecondary text-center" style={{ fontSize: 14, lineHeight: 20 }}>
             {communityId ? 'No members yet. Invite people to join the community.' : 'Community not found.'}
@@ -148,21 +145,23 @@ export default function CommunityMembersScreen() {
           keyExtractor={(item) => item.username}
           contentContainerClassName="pb-24"
           ListHeaderComponent={
-            <View>
-              <Text
-                className="font-inter-600 mt-2 mb-1 px-5"
-                style={{ fontSize: 13, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.textSecondary }}
-              >
-                Admins &amp; Moderators
-              </Text>
-              {admins.map((m) => <View key={m.username}>{renderRow(m)}</View>)}
-              <Text
-                className="font-inter-600 mt-3 mb-1 px-5"
-                style={{ fontSize: 13, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.textSecondary }}
-              >
-                Members
-              </Text>
-            </View>
+            admins.length > 0 ? (
+              <View>
+                <Text
+                  className="font-inter-600 mt-2 mb-1 px-5"
+                  style={{ fontSize: 13, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.textSecondary }}
+                >
+                  Admins &amp; Moderators
+                </Text>
+                {admins.map((m) => <View key={m.username}>{renderRow(m)}</View>)}
+                <Text
+                  className="font-inter-600 mt-3 mb-1 px-5"
+                  style={{ fontSize: 13, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.textSecondary }}
+                >
+                  Members
+                </Text>
+              </View>
+            ) : null
           }
           renderItem={({ item }) => renderRow(item)}
         />

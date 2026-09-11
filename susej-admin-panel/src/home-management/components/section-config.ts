@@ -1,9 +1,7 @@
 import {
-  Image,
-  Grid2x2,
   TrendingUp,
   Flame,
-  MessageSquare,
+  Image as ImageIcon,
   type LucideIcon,
 } from "lucide-react";
 import type { HomeSection } from "@/types/home-management";
@@ -20,22 +18,11 @@ export const SECTION_CONFIG: Record<
     count: (s: HomeManagementState) => number;
     max?: number;
     maxMessage?: string;
+    autoCompute?: boolean;
+    /** When true, admin cannot manually add items — they sync from the seller app. */
+    syncFromApp?: boolean;
   }
 > = {
-  "hero-banners": {
-    title: "Hero Banners",
-    singular: "Hero Banner",
-    icon: Image,
-    count: (s) => s.heroBanners.length,
-  },
-  "featured-categories": {
-    title: "Featured Categories",
-    singular: "Featured Category",
-    icon: Grid2x2,
-    count: (s) => s.featuredCategories.length,
-    max: 4,
-    maxMessage: "The mobile app shows at most 4 featured categories.",
-  },
   "top-sellers": {
     title: "Top Sellers",
     singular: "Top Seller",
@@ -43,6 +30,7 @@ export const SECTION_CONFIG: Record<
     count: (s) => s.topSellers.length,
     max: 3,
     maxMessage: "The mobile app shows at most 3 top sellers.",
+    autoCompute: true,
   },
   "hot-deals": {
     title: "Hot Deals",
@@ -51,13 +39,16 @@ export const SECTION_CONFIG: Record<
     count: (s) => s.hotDeals.length,
     max: 3,
     maxMessage: "The mobile app shows at most 3 hot deals.",
+    autoCompute: true,
   },
-  "featured-posts": {
-    title: "Featured Posts",
-    singular: "Featured Post",
-    icon: MessageSquare,
-    count: (s) => s.featuredPosts.length,
-    max: 2,
-    maxMessage: "The mobile app shows 1–2 featured posts.",
+  // Marketing Banners - banner-image marketing synced FROM the seller dashboard
+  // (seller uploads the image + picks the banner size). The app feed hero renders
+  // these. Post marketing (featured-posts) was removed - posts are NOT banners.
+  "storefront-banners": {
+    title: "Marketing Banners",
+    singular: "Marketing Banner",
+    icon: ImageIcon,
+    count: (s) => s.storefrontBanners.length,
+    syncFromApp: true,
   },
 };

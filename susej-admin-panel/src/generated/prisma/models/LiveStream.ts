@@ -38,27 +38,33 @@ export type LiveStreamMinAggregateOutputType = {
   id: string | null
   title: string | null
   hostName: string | null
+  hostUsername: string | null
   viewers: number | null
   status: string | null
   startedAt: Date | null
+  endedAt: Date | null
 }
 
 export type LiveStreamMaxAggregateOutputType = {
   id: string | null
   title: string | null
   hostName: string | null
+  hostUsername: string | null
   viewers: number | null
   status: string | null
   startedAt: Date | null
+  endedAt: Date | null
 }
 
 export type LiveStreamCountAggregateOutputType = {
   id: number
   title: number
   hostName: number
+  hostUsername: number
   viewers: number
   status: number
   startedAt: number
+  endedAt: number
   _all: number
 }
 
@@ -75,27 +81,33 @@ export type LiveStreamMinAggregateInputType = {
   id?: true
   title?: true
   hostName?: true
+  hostUsername?: true
   viewers?: true
   status?: true
   startedAt?: true
+  endedAt?: true
 }
 
 export type LiveStreamMaxAggregateInputType = {
   id?: true
   title?: true
   hostName?: true
+  hostUsername?: true
   viewers?: true
   status?: true
   startedAt?: true
+  endedAt?: true
 }
 
 export type LiveStreamCountAggregateInputType = {
   id?: true
   title?: true
   hostName?: true
+  hostUsername?: true
   viewers?: true
   status?: true
   startedAt?: true
+  endedAt?: true
   _all?: true
 }
 
@@ -189,9 +201,11 @@ export type LiveStreamGroupByOutputType = {
   id: string
   title: string
   hostName: string
+  hostUsername: string
   viewers: number
   status: string
   startedAt: Date
+  endedAt: Date | null
   _count: LiveStreamCountAggregateOutputType | null
   _avg: LiveStreamAvgAggregateOutputType | null
   _sum: LiveStreamSumAggregateOutputType | null
@@ -221,18 +235,22 @@ export type LiveStreamWhereInput = {
   id?: Prisma.StringFilter<"LiveStream"> | string
   title?: Prisma.StringFilter<"LiveStream"> | string
   hostName?: Prisma.StringFilter<"LiveStream"> | string
+  hostUsername?: Prisma.StringFilter<"LiveStream"> | string
   viewers?: Prisma.IntFilter<"LiveStream"> | number
   status?: Prisma.StringFilter<"LiveStream"> | string
   startedAt?: Prisma.DateTimeFilter<"LiveStream"> | Date | string
+  endedAt?: Prisma.DateTimeNullableFilter<"LiveStream"> | Date | string | null
 }
 
 export type LiveStreamOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   hostName?: Prisma.SortOrder
+  hostUsername?: Prisma.SortOrder
   viewers?: Prisma.SortOrder
   status?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
+  endedAt?: Prisma.SortOrderInput | Prisma.SortOrder
 }
 
 export type LiveStreamWhereUniqueInput = Prisma.AtLeast<{
@@ -242,18 +260,22 @@ export type LiveStreamWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.LiveStreamWhereInput | Prisma.LiveStreamWhereInput[]
   title?: Prisma.StringFilter<"LiveStream"> | string
   hostName?: Prisma.StringFilter<"LiveStream"> | string
+  hostUsername?: Prisma.StringFilter<"LiveStream"> | string
   viewers?: Prisma.IntFilter<"LiveStream"> | number
   status?: Prisma.StringFilter<"LiveStream"> | string
   startedAt?: Prisma.DateTimeFilter<"LiveStream"> | Date | string
+  endedAt?: Prisma.DateTimeNullableFilter<"LiveStream"> | Date | string | null
 }, "id">
 
 export type LiveStreamOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   hostName?: Prisma.SortOrder
+  hostUsername?: Prisma.SortOrder
   viewers?: Prisma.SortOrder
   status?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
+  endedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.LiveStreamCountOrderByAggregateInput
   _avg?: Prisma.LiveStreamAvgOrderByAggregateInput
   _max?: Prisma.LiveStreamMaxOrderByAggregateInput
@@ -268,81 +290,99 @@ export type LiveStreamScalarWhereWithAggregatesInput = {
   id?: Prisma.StringWithAggregatesFilter<"LiveStream"> | string
   title?: Prisma.StringWithAggregatesFilter<"LiveStream"> | string
   hostName?: Prisma.StringWithAggregatesFilter<"LiveStream"> | string
+  hostUsername?: Prisma.StringWithAggregatesFilter<"LiveStream"> | string
   viewers?: Prisma.IntWithAggregatesFilter<"LiveStream"> | number
   status?: Prisma.StringWithAggregatesFilter<"LiveStream"> | string
   startedAt?: Prisma.DateTimeWithAggregatesFilter<"LiveStream"> | Date | string
+  endedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LiveStream"> | Date | string | null
 }
 
 export type LiveStreamCreateInput = {
   id?: string
   title: string
   hostName: string
+  hostUsername?: string
   viewers: number
   status: string
   startedAt: Date | string
+  endedAt?: Date | string | null
 }
 
 export type LiveStreamUncheckedCreateInput = {
   id?: string
   title: string
   hostName: string
+  hostUsername?: string
   viewers: number
   status: string
   startedAt: Date | string
+  endedAt?: Date | string | null
 }
 
 export type LiveStreamUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   hostName?: Prisma.StringFieldUpdateOperationsInput | string
+  hostUsername?: Prisma.StringFieldUpdateOperationsInput | string
   viewers?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  endedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type LiveStreamUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   hostName?: Prisma.StringFieldUpdateOperationsInput | string
+  hostUsername?: Prisma.StringFieldUpdateOperationsInput | string
   viewers?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  endedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type LiveStreamCreateManyInput = {
   id?: string
   title: string
   hostName: string
+  hostUsername?: string
   viewers: number
   status: string
   startedAt: Date | string
+  endedAt?: Date | string | null
 }
 
 export type LiveStreamUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   hostName?: Prisma.StringFieldUpdateOperationsInput | string
+  hostUsername?: Prisma.StringFieldUpdateOperationsInput | string
   viewers?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  endedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type LiveStreamUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
   hostName?: Prisma.StringFieldUpdateOperationsInput | string
+  hostUsername?: Prisma.StringFieldUpdateOperationsInput | string
   viewers?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  endedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type LiveStreamCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   hostName?: Prisma.SortOrder
+  hostUsername?: Prisma.SortOrder
   viewers?: Prisma.SortOrder
   status?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
+  endedAt?: Prisma.SortOrder
 }
 
 export type LiveStreamAvgOrderByAggregateInput = {
@@ -353,18 +393,22 @@ export type LiveStreamMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   hostName?: Prisma.SortOrder
+  hostUsername?: Prisma.SortOrder
   viewers?: Prisma.SortOrder
   status?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
+  endedAt?: Prisma.SortOrder
 }
 
 export type LiveStreamMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   title?: Prisma.SortOrder
   hostName?: Prisma.SortOrder
+  hostUsername?: Prisma.SortOrder
   viewers?: Prisma.SortOrder
   status?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
+  endedAt?: Prisma.SortOrder
 }
 
 export type LiveStreamSumOrderByAggregateInput = {
@@ -377,39 +421,47 @@ export type LiveStreamSelect<ExtArgs extends runtime.Types.Extensions.InternalAr
   id?: boolean
   title?: boolean
   hostName?: boolean
+  hostUsername?: boolean
   viewers?: boolean
   status?: boolean
   startedAt?: boolean
+  endedAt?: boolean
 }, ExtArgs["result"]["liveStream"]>
 
 export type LiveStreamSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   title?: boolean
   hostName?: boolean
+  hostUsername?: boolean
   viewers?: boolean
   status?: boolean
   startedAt?: boolean
+  endedAt?: boolean
 }, ExtArgs["result"]["liveStream"]>
 
 export type LiveStreamSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   title?: boolean
   hostName?: boolean
+  hostUsername?: boolean
   viewers?: boolean
   status?: boolean
   startedAt?: boolean
+  endedAt?: boolean
 }, ExtArgs["result"]["liveStream"]>
 
 export type LiveStreamSelectScalar = {
   id?: boolean
   title?: boolean
   hostName?: boolean
+  hostUsername?: boolean
   viewers?: boolean
   status?: boolean
   startedAt?: boolean
+  endedAt?: boolean
 }
 
-export type LiveStreamOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "hostName" | "viewers" | "status" | "startedAt", ExtArgs["result"]["liveStream"]>
+export type LiveStreamOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "hostName" | "hostUsername" | "viewers" | "status" | "startedAt" | "endedAt", ExtArgs["result"]["liveStream"]>
 
 export type $LiveStreamPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "LiveStream"
@@ -418,9 +470,11 @@ export type $LiveStreamPayload<ExtArgs extends runtime.Types.Extensions.Internal
     id: string
     title: string
     hostName: string
+    hostUsername: string
     viewers: number
     status: string
     startedAt: Date
+    endedAt: Date | null
   }, ExtArgs["result"]["liveStream"]>
   composites: {}
 }
@@ -847,9 +901,11 @@ export interface LiveStreamFieldRefs {
   readonly id: Prisma.FieldRef<"LiveStream", 'String'>
   readonly title: Prisma.FieldRef<"LiveStream", 'String'>
   readonly hostName: Prisma.FieldRef<"LiveStream", 'String'>
+  readonly hostUsername: Prisma.FieldRef<"LiveStream", 'String'>
   readonly viewers: Prisma.FieldRef<"LiveStream", 'Int'>
   readonly status: Prisma.FieldRef<"LiveStream", 'String'>
   readonly startedAt: Prisma.FieldRef<"LiveStream", 'DateTime'>
+  readonly endedAt: Prisma.FieldRef<"LiveStream", 'DateTime'>
 }
     
 
@@ -1060,6 +1116,7 @@ export type LiveStreamCreateManyArgs<ExtArgs extends runtime.Types.Extensions.In
    * The data used to create many LiveStreams.
    */
   data: Prisma.LiveStreamCreateManyInput | Prisma.LiveStreamCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1078,6 +1135,7 @@ export type LiveStreamCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exte
    * The data used to create many LiveStreams.
    */
   data: Prisma.LiveStreamCreateManyInput | Prisma.LiveStreamCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

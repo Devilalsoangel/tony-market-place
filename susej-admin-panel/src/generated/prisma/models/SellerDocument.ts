@@ -452,6 +452,7 @@ export type SellerDocumentCreateOrConnectWithoutSellerInput = {
 
 export type SellerDocumentCreateManySellerInputEnvelope = {
   data: Prisma.SellerDocumentCreateManySellerInput | Prisma.SellerDocumentCreateManySellerInput[]
+  skipDuplicates?: boolean
 }
 
 export type SellerDocumentUpsertWithWhereUniqueWithoutSellerInput = {
@@ -1264,6 +1265,7 @@ export type SellerDocumentCreateManyArgs<ExtArgs extends runtime.Types.Extension
    * The data used to create many SellerDocuments.
    */
   data: Prisma.SellerDocumentCreateManyInput | Prisma.SellerDocumentCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1282,6 +1284,7 @@ export type SellerDocumentCreateManyAndReturnArgs<ExtArgs extends runtime.Types.
    * The data used to create many SellerDocuments.
    */
   data: Prisma.SellerDocumentCreateManyInput | Prisma.SellerDocumentCreateManyInput[]
+  skipDuplicates?: boolean
   /**
    * Choose, which related nodes to fetch as well
    */

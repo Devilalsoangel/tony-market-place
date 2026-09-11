@@ -15,8 +15,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, ChevronRightIcon, SendIcon } from '../utils/icons';
 import { colors, shadows } from '../utils/theme';
+import { useAuth } from '../contexts/AuthContext';
 
-const TICKETS_KEY = '@susej_tickets';
+const TICKETS_KEY_BASE = '@susej_tickets';
+const TICKETS_KEY = TICKETS_KEY_BASE;
 
 export interface SupportTicket {
   id: string;
@@ -30,46 +32,6 @@ export interface SupportTicket {
 
 const CATEGORIES = ['Order', 'Payment', 'Account', 'Selling', 'Other'] as const;
 const PRIORITIES = ['low', 'medium', 'high'] as const;
-
-const SEED_TICKETS: SupportTicket[] = [
-  {
-    id: 'SJ-TK-1002',
-    subject: 'Refund not showing in wallet',
-    category: 'Payment',
-    priority: 'high',
-    status: 'open',
-    createdAt: 'Aug 13',
-    messages: [
-      { id: 1, from: 'me', text: 'My refund for order ORD-1004 was approved but the money is not in my wallet yet.', time: 'Aug 13, 10:12' },
-    ],
-  },
-  {
-    id: 'SJ-TK-0991',
-    subject: 'How do I list an item as an auction?',
-    category: 'Selling',
-    priority: 'low',
-    status: 'resolved',
-    createdAt: 'Aug 11',
-    messages: [
-      { id: 1, from: 'me', text: 'I want to sell a watch as an auction. Which option should I pick in Create Post?', time: 'Aug 11, 18:40' },
-      { id: 2, from: 'support', text: 'Hi! Head to your Seller Dashboard → Auctions → Start Auction. Pick the listing, set a starting price and duration, and it goes live immediately.', time: 'Aug 11, 19:02' },
-      { id: 3, from: 'me', text: 'That worked, thanks!', time: 'Aug 11, 19:15' },
-    ],
-  },
-  {
-    id: 'SJ-TK-0980',
-    subject: 'Wrong size delivered — order closed',
-    category: 'Order',
-    priority: 'medium',
-    status: 'closed',
-    createdAt: 'Aug 9',
-    messages: [
-      { id: 1, from: 'me', text: 'My order ORD-0988 arrived in the wrong size. Please help.', time: 'Aug 9, 09:05' },
-      { id: 2, from: 'support', text: 'Sorry about that! We have raised a return request with the seller and sent you a prepaid label via email.', time: 'Aug 9, 10:30' },
-      { id: 3, from: 'support', text: 'Return picked up and refund issued on Aug 11. This ticket is now closed. Reach out if you need anything else!', time: 'Aug 11, 14:20' },
-    ],
-  },
-];
 
 function LifeBuoyIcon({ size = 22, color = colors.primary }: { size?: number; color?: string }) {
   return (
@@ -95,6 +57,7 @@ const PRIORITY_COLOR: Record<SupportTicket['priority'], string> = {
 
 export default function SupportScreen() {
   const insets = useSafeAreaInsets();
+  const { user, tokenSeq } = useAuth();
   const [loaded, setLoaded] = useState(false);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [formOpen, setFormOpen] = useState(false);
@@ -103,35 +66,50 @@ export default function SupportScreen() {
   const [priority, setPriority] = useState<SupportTicket['priority']>('medium');
   const [message, setMessage] = useState('');
   const [justRaised, setJustRaised] = useState(false);
+  const ticketsKey = user?.username ? `${TICKETS_KEY_BASE}:${user.username}` : TICKETS_KEY_BASE;
 
   useEffect(() => {
-    AsyncStorage.getItem(TICKETS_KEY)
-      .then((data) => {
+    let cancelled = false;
+    setLoaded(false);
+    AsyncStorage.getItem(ticketsKey)
+      .then(async (data) => {
+        if (cancelled) return;
         if (data) {
           try {
             const parsed = JSON.parse(data);
             if (Array.isArray(parsed)) {
-              setTickets(parsed);
+              const real = (parsed as SupportTicket[]).filter((t) => t && !/^SJ-TK-09\d\d$/.test(String(t.id)));
+              setTickets(real);
               setLoaded(true);
               return;
             }
-          } catch {
-            // corrupted data — fall through to seed
+          } catch {}
+        }
+        if (ticketsKey !== TICKETS_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(TICKETS_KEY_BASE);
+          if (!cancelled && legacy) {
+            try {
+              const parsed = JSON.parse(legacy);
+              if (Array.isArray(parsed)) {
+                const real = (parsed as SupportTicket[]).filter((t) => t && !/^SJ-TK-09\d\d$/.test(String(t.id)));
+                setTickets(real);
+                try { await AsyncStorage.setItem(ticketsKey, JSON.stringify(real)); } catch {}
+                setLoaded(true);
+                return;
+              }
+            } catch {}
           }
         }
-        setTickets(SEED_TICKETS);
-        setLoaded(true);
+        if (!cancelled) { setTickets([]); setLoaded(true); }
       })
-      .catch(() => {
-        setTickets(SEED_TICKETS);
-        setLoaded(true);
-      });
-  }, []);
+      .catch(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [ticketsKey, tokenSeq]);
 
   useEffect(() => {
     if (!loaded) return;
-    AsyncStorage.setItem(TICKETS_KEY, JSON.stringify(tickets)).catch(() => {});
-  }, [tickets, loaded]);
+    AsyncStorage.setItem(ticketsKey, JSON.stringify(tickets)).catch(() => {});
+  }, [tickets, loaded, ticketsKey]);
 
   const openCount = tickets.filter((t) => t.status === 'open').length;
 
@@ -141,7 +119,10 @@ export default function SupportScreen() {
     if (!title || !text) return;
     const now = new Date();
     const ticket: SupportTicket = {
-      id: `SJ-TK-${1000 + tickets.length + 1}`,
+      // Collision-proof id AND legacy-safe: the leading "1" guarantees the
+      // suffix can never start with "09", which is exactly what the legacy
+      // seed-drop filter above targets — user tickets can never be filtered.
+      id: `SJ-TK-1${Date.now().toString().slice(-7)}`,
       subject: title,
       category,
       priority,
@@ -258,7 +239,7 @@ export default function SupportScreen() {
                     How can we help?
                   </Text>
                   <Text className="font-inter-400 mt-0.5" style={{ fontSize: 12, lineHeight: 15, color: colors.onPrimary + 'CC' }}>
-                    Tickets go to the susej support desk — average reply under 24h.
+                    Tickets go to the susej support desk.
                   </Text>
                 </View>
               </View>
@@ -278,7 +259,7 @@ export default function SupportScreen() {
             {justRaised && (
               <View className="mx-5 mt-3 px-4 py-3" style={{ borderRadius: 12, backgroundColor: colors.primaryFixed }}>
                 <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 15, color: colors.onPrimary }}>
-                  Ticket raised — our team will get back to you within 24 hours.
+                  Ticket raised — our support team will reply here.
                 </Text>
               </View>
             )}

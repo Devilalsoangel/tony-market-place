@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch } from "@/lib/api-mutate";
 import { formatDate, formatNumber } from "@/lib/utils";
 import { Newspaper, EyeOff, RotateCcw, CheckCircle2 } from "lucide-react";
-import type { MockFeedPost } from "@/services/mock-data";
+import type { MockFeedPost } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockFeedPost>();
 

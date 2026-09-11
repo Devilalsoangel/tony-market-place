@@ -1032,6 +1032,7 @@ export type HomeSectionCreateManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * The data used to create many HomeSections.
    */
   data: Prisma.HomeSectionCreateManyInput | Prisma.HomeSectionCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1050,6 +1051,7 @@ export type HomeSectionCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ext
    * The data used to create many HomeSections.
    */
   data: Prisma.HomeSectionCreateManyInput | Prisma.HomeSectionCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

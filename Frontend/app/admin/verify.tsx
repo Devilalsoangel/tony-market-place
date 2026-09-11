@@ -20,40 +20,8 @@ interface PendingSeller {
   docs: string[];
 }
 
-const SEED_SELLERS: PendingSeller[] = [
-  {
-    username: 'ananya_knits',
-    name: 'Ananya Sharma',
-    businessName: 'Luxe Thread Studio',
-    category: 'Fashion',
-    submitted: '2h ago',
-    docs: ['Aadhaar', 'GST', 'PAN'],
-  },
-  {
-    username: 'techvault_in',
-    name: 'Rohan Mehta',
-    businessName: 'TechVault',
-    category: 'Electronics',
-    submitted: '5h ago',
-    docs: ['Aadhaar', 'GST'],
-  },
-  {
-    username: 'urban_nest',
-    name: 'Priya Rao',
-    businessName: 'Urban Nest Interiors',
-    category: 'Home Services',
-    submitted: '1d ago',
-    docs: ['Aadhaar', 'GST', 'PAN'],
-  },
-  {
-    username: 'farm_fresh_goa',
-    name: 'Arjun Desai',
-    businessName: 'Farm Fresh Goa',
-    category: 'Agriculture',
-    submitted: '2d ago',
-    docs: ['Aadhaar'],
-  },
-];
+// Real applications only — sellers who actually applied via become-seller.
+// No fabricated seed queue.
 
 export default function AdminVerifyScreen() {
   const insets = useSafeAreaInsets();
@@ -168,12 +136,11 @@ export default function AdminVerifyScreen() {
     }
   };
 
-  const pending = [
-    ...applicants,
-    ...SEED_SELLERS.filter((s) => !applicants.some((a) => a.username === s.username)),
-  ].filter((s) => !verified.includes(s.username) && !rejected.includes(s.username));
-  const approvedList = SEED_SELLERS.filter((s) => verified.includes(s.username));
-  const rejectedList = SEED_SELLERS.filter((s) => rejected.includes(s.username));
+  const pending = applicants.filter(
+    (s) => !verified.includes(s.username) && !rejected.includes(s.username)
+  );
+  const approvedList = applicants.filter((s) => verified.includes(s.username));
+  const rejectedList = applicants.filter((s) => rejected.includes(s.username));
 
   return (
     <View className="flex-1 bg-surface">

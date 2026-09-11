@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,8 +6,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon, SendIcon, CheckIcon } from '../../utils/icons';
 import { colors } from '../../utils/theme';
 import type { Dispute, DisputeTimelineEntry } from '../disputes';
+import { useAuth } from '../../contexts/AuthContext';
 
-const DISPUTES_KEY = '@susej_disputes';
+const DISPUTES_KEY_BASE = '@susej_disputes';
 
 const AUTHOR_LABELS: Record<DisputeTimelineEntry['author'], string> = {
   you: 'You',
@@ -30,27 +31,46 @@ export default function DisputeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const disputeId = Array.isArray(id) ? id[0] : id ?? '';
   const insets = useSafeAreaInsets();
+  const { user, tokenSeq } = useAuth();
+  const getKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${DISPUTES_KEY_BASE}:${u}` : DISPUTES_KEY_BASE;
+  }, [user?.username]);
   const [loaded, setLoaded] = useState(false);
   const [dispute, setDispute] = useState<Dispute | null>(null);
   const [response, setResponse] = useState('');
 
   useEffect(() => {
-    AsyncStorage.getItem(DISPUTES_KEY)
-      .then((data) => {
+    let cancelled = false;
+    const key = getKey();
+    setLoaded(false);
+    AsyncStorage.getItem(key)
+      .then(async (data) => {
+        if (cancelled) return;
+        let found: Dispute | null = null;
         if (data) {
           try {
             const parsed = JSON.parse(data);
-            if (Array.isArray(parsed)) {
-              setDispute((parsed as Dispute[]).find((d) => d.id === disputeId) ?? null);
-            }
-          } catch {
-            // corrupted data — treat as not found
-          }
+            // Match temp id OR adopted server id (create adopts async).
+            if (Array.isArray(parsed)) found = (parsed as Dispute[]).find((d) => d.id === disputeId || d.serverId === disputeId) ?? null;
+          } catch {}
         }
-        setLoaded(true);
+        if (!found && key !== DISPUTES_KEY_BASE) {
+          try {
+            const legacy = await AsyncStorage.getItem(DISPUTES_KEY_BASE);
+            if (!cancelled && legacy) {
+              try {
+                const parsed = JSON.parse(legacy);
+                if (Array.isArray(parsed)) found = (parsed as Dispute[]).find((d) => d.id === disputeId || d.serverId === disputeId) ?? null;
+              } catch {}
+            }
+          } catch {}
+        }
+        if (!cancelled) { setDispute(found); setLoaded(true); }
       })
-      .catch(() => setLoaded(true));
-  }, [disputeId]);
+      .catch(() => { if (!cancelled) { setDispute(null); setLoaded(true); } });
+    return () => { cancelled = true; };
+  }, [disputeId, getKey, tokenSeq]);
 
   const sendResponse = () => {
     const text = response.trim();
@@ -64,18 +84,17 @@ export default function DisputeDetailScreen() {
     const next = { ...dispute, timeline: [...dispute.timeline, entry] };
     setDispute(next);
     setResponse('');
-    AsyncStorage.getItem(DISPUTES_KEY)
+    const key = getKey();
+    AsyncStorage.getItem(key)
       .then((data) => {
         if (!data) return;
         try {
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             const updated = parsed.map((d: Dispute) => (d.id === dispute.id ? next : d));
-            AsyncStorage.setItem(DISPUTES_KEY, JSON.stringify(updated)).catch(() => {});
+            AsyncStorage.setItem(key, JSON.stringify(updated)).catch(() => {});
           }
-        } catch {
-          // ignore persistence errors
-        }
+        } catch {}
       })
       .catch(() => {});
   };

@@ -1350,6 +1350,7 @@ export type CommunityCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Int
    * The data used to create many Communities.
    */
   data: Prisma.CommunityCreateManyInput | Prisma.CommunityCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1368,6 +1369,7 @@ export type CommunityCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exten
    * The data used to create many Communities.
    */
   data: Prisma.CommunityCreateManyInput | Prisma.CommunityCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

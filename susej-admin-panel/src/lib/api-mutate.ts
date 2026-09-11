@@ -6,9 +6,11 @@
  * guaranteed to hit the server (SQLite when live) - no more dummy UIs.
  */
 
-async function request(resource: string, method: "PATCH" | "POST" | "DELETE", body: unknown) {  const res = await fetch(`/api/data/${resource}`, {
+async function request(resource: string, method: "PATCH" | "POST" | "DELETE", body: unknown) {
+  const res = await fetch(`/api/data/${resource}`, {
     method,
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(body),
   });
   let payload: { error?: string } | null = null;

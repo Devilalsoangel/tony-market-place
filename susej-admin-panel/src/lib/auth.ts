@@ -1,7 +1,21 @@
 import { randomBytes, scryptSync, timingSafeEqual, createHmac, createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
 
-const SECRET = process.env.JWT_SECRET ?? "dev-only-secret-change-in-production";
+// Signing key MUST come from env. A hardcoded fallback would let anyone who
+// reads the repo forge admin sessions, so without env we fall back to an
+// ephemeral per-boot secret (sessions die on restart - safe but loud).
+const SECRET =
+  process.env.JWT_SECRET ??
+  (() => {
+    if (process.env.NODE_ENV === "production" || process.env.NEXT_PHASE?.includes("build")) {
+      // During build there is no runtime to warn to; keep silent.
+      return randomBytes(48).toString("hex");
+    }
+    console.warn(
+      "[auth] JWT_SECRET not set - using an EPHEMERAL per-boot secret. All sessions invalidate on restart. Set JWT_SECRET in .env."
+    );
+    return randomBytes(48).toString("hex");
+  })();
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");

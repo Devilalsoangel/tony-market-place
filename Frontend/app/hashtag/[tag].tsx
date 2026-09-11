@@ -6,8 +6,7 @@ import { HeartIcon, BackIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
 import { usePosts } from '../../contexts/PostContext';
 import { useHashtags } from '../../contexts/HashtagContext';
-import { productImages } from '../../utils/productImages';
-import { hashtagImages } from '../../utils/screenImages';
+import { resolveAvatar, resolveListingImage } from '../../utils/productImages';
 
 const { width } = Dimensions.get('window');
 const COL = (width - 44) / 2;
@@ -71,7 +70,7 @@ function HashtagDetailContent() {
               {taggedPosts.length} {taggedPosts.length === 1 ? 'Post' : 'Posts'}
             </Text>
 
-            {/* Follow + Distance */}
+            {/* Follow */}
             <View className="flex-row items-center gap-3 mb-5">
               <TouchableOpacity
                 className={`px-6 py-2.5 rounded-figma-full ${following ? 'bg-surfaceContainerLow' : 'bg-primaryContainer'}`}
@@ -81,44 +80,21 @@ function HashtagDetailContent() {
                   {following ? 'Following' : 'Follow'}
                 </Text>
               </TouchableOpacity>
-              <Text className="text-figma-12 font-inter-400 text-textSecondary">Distance: 5km</Text>
-            </View>
-
-            {/* Filter Row */}
-            <View className="flex-row gap-4 mb-5">
-              <View className="flex-row items-center gap-2">
-                <Text className="text-figma-12 font-inter-400 text-secondary">Price</Text>
-                <Text className="text-figma-12 font-inter-600 text-textPrimary">{formatPrice(0)} - {formatPrice(500)}</Text>
-              </View>
-              <View className="flex-row items-center gap-2">
-                <Text className="text-figma-12 font-inter-400 text-secondary">Condition</Text>
-                <Text className="text-figma-12 font-inter-600 text-textPrimary">Like New</Text>
-              </View>
             </View>
           </View>
         }
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <TouchableOpacity
             className="bg-surfaceContainerLowest rounded-figma-12 overflow-hidden mb-2"
             style={{ width: COL, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }}
             onPress={() => router.push(`/product/${item.id}`)}
           >
             <View className="w-full aspect-square bg-surfaceContainer">
-              {productImages[item.id] ? (
-                <Image source={productImages[item.id]} className="w-full h-full" resizeMode="cover" />
-              ) : (
-                <Image source={hashtagImages.products[index % hashtagImages.products.length]} className="w-full h-full" resizeMode="cover" />
-              )}
-              {/* Figma 1:2026: "NEW DROP" tag on first card */}
-              {index === 0 ? (
-                <View className="absolute top-2 left-2 px-2 py-0.5 rounded-figma-4" style={{ backgroundColor: colors.inverseSurface }}>
-                  <Text className="text-figma-10 font-inter-400 text-white">NEW DROP</Text>
-                </View>
-              ) : null}
+              <Image source={resolveListingImage(item, item.id)} className="w-full h-full" resizeMode="cover" />
             </View>
             <View className="px-2.5 pt-2 pb-2.5">
               <View className="flex-row items-center gap-1.5 mb-1">
-                <Image source={hashtagImages.avatars[index % hashtagImages.avatars.length]} className="w-4 h-4 rounded-full" />
+                <Image source={resolveAvatar(item.sellerUsername)} className="w-4 h-4 rounded-full" />
                 <Text className="text-figma-10 font-inter-400 text-textSecondary flex-1" numberOfLines={1}>{item.sellerName}</Text>
               </View>
               <Text className="text-figma-12 font-inter-500 text-textPrimary mb-0.5" numberOfLines={1}>{item.description}</Text>
@@ -133,23 +109,6 @@ function HashtagDetailContent() {
           </TouchableOpacity>
         )}
       />
-
-      {/* Bottom Nav — Figma: 56px, #fcf8ff at 0.8, 5 tabs */}
-      <View className="absolute bottom-0 left-0 right-0 h-14 bg-surface/80 flex-row items-center justify-around px-2" style={{ height: 56 + insets.bottom, paddingBottom: insets.bottom }}>
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            className="items-center justify-center py-1"
-            style={{ width: 75, height: 40 }}
-            onPress={() => router.replace(tab.route)}
-          >
-            <Text className={`text-figma-16 mb-0.5 ${tab.active ? 'text-primary' : 'text-secondary/40'}`}>{tab.icon}</Text>
-            <Text className={`text-figma-12 ${tab.active ? 'text-primary font-inter-600' : 'text-secondary/40 font-inter-400'}`}>
-              {tab.key}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </View>
   );
 }

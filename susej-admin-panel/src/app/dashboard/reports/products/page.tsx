@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch, apiDelete } from "@/lib/api-mutate";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { PackageX, EyeOff, CheckCircle2 } from "lucide-react";
-import type { ReportedProductRow } from "@/services/mock-data";
+import type { ReportedProductRow } from "@/types/admin-rows";
 import type { Product } from "@/types";
 
 const column = createColumnHelper<ReportedProductRow>();

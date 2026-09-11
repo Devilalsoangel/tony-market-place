@@ -1044,6 +1044,7 @@ export type NotificationTemplateCreateManyArgs<ExtArgs extends runtime.Types.Ext
    * The data used to create many NotificationTemplates.
    */
   data: Prisma.NotificationTemplateCreateManyInput | Prisma.NotificationTemplateCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1062,6 +1063,7 @@ export type NotificationTemplateCreateManyAndReturnArgs<ExtArgs extends runtime.
    * The data used to create many NotificationTemplates.
    */
   data: Prisma.NotificationTemplateCreateManyInput | Prisma.NotificationTemplateCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

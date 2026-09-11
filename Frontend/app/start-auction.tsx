@@ -7,7 +7,7 @@ import { ChevronLeftIcon, CheckIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePosts } from '../contexts/PostContext';
-import { productImages } from '../utils/productImages';
+import { resolveListingImage } from '../utils/productImages';
 import type { Auction } from './auctions';
 
 // Start Auction (seller tool) — creates a live auction persisted to the same
@@ -29,16 +29,29 @@ export default function StartAuctionScreen() {
 
   const username = user?.username || 'user';
   const sellerName = user?.businessName || user?.name || username;
+  const isSeller = !!user?.isSeller;
   const myPosts = useMemo(() => posts.filter((p) => p.sellerUsername === username), [posts, username]);
 
   const [title, setTitle] = useState('');
   const [startPrice, setStartPrice] = useState('');
   const [duration, setDuration] = useState<number>(DURATIONS[1].ms);
-  const [imageKey, setImageKey] = useState<string>(myPosts[0]?.id ?? 'auc_new');
+  const [imageKey, setImageKey] = useState<string>('auc_new');
 
-  const canSubmit = title.trim().length > 2 && (Number(startPrice) || 0) > 0;
+  // Fix stale init: myPosts loads async from PostContext tokenSeq effect. Seed from first listing when available.
+  useMemo(() => {
+    if (myPosts.length > 0 && imageKey === 'auc_new') {
+      setImageKey(myPosts[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myPosts]);
+
+  const canSubmit = isSeller && title.trim().length > 2 && (Number(startPrice) || 0) > 0;
 
   const submit = async () => {
+    if (!isSeller) {
+      Alert.alert('Sellers only', 'Only verified sellers can start auctions. Become a seller to launch live auctions.');
+      return;
+    }
     const now = Date.now();
     const auction: Auction = {
       id: `auc_${now}`,
@@ -50,7 +63,7 @@ export default function StartAuctionScreen() {
       endTime: now + duration,
       bidsCount: 0,
       status: 'live',
-      imageKey,
+      imageKey: myPosts.length ? imageKey : 'auc_new',
       bids: [],
     };
     try {
@@ -65,6 +78,19 @@ export default function StartAuctionScreen() {
         }
       }
       await AsyncStorage.setItem(AUCTIONS_KEY, JSON.stringify([auction, ...list]));
+      // Publish to the shared backend so the Auction House is cross-device
+      // (server row is the source of truth; the local mirror is offline fallback).
+      try {
+        const { serverApi } = await import('../utils/serverApi');
+        await serverApi.createAuction({
+          title: auction.title,
+          startPrice: auction.startPrice,
+          durationHours: Math.max(1, Math.round(duration / 3600000)),
+          imageKey: auction.imageKey,
+        });
+      } catch {
+        // offline: local mirror stands alone until the next sync
+      }
       Alert.alert('Auction is live', `"${auction.title}" is now open for bidding on the Auction House.`, [
         { text: 'View auctions', onPress: () => router.replace('/auctions') },
       ]);
@@ -72,6 +98,33 @@ export default function StartAuctionScreen() {
       Alert.alert('Something went wrong', 'Please try again.');
     }
   };
+
+  if (!isSeller) {
+    return (
+      <View className="flex-1" style={{ backgroundColor: colors.surface }}>
+        <View className="flex-row items-center px-5" style={{ height: 52 + insets.top, paddingTop: insets.top, backgroundColor: colors.surface }}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <ChevronLeftIcon size={18} color={colors.primary} />
+          </TouchableOpacity>
+          <Text className="flex-1 text-center font-inter-700" style={{ fontSize: 18, lineHeight: 24, color: colors.textPrimary }}>
+            Start Auction
+          </Text>
+          <View style={{ width: 18 }} />
+        </View>
+        <View className="flex-1 items-center justify-center px-8" style={{ gap: 12 }}>
+          <Text className="font-inter-700 text-center" style={{ fontSize: 18, lineHeight: 24, color: colors.textPrimary }}>
+            Auctions are for sellers
+          </Text>
+          <Text className="font-inter-400 text-center" style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
+            Create your shop to launch live auctions, set reserves and accept real bids from buyers across the marketplace.
+          </Text>
+          <TouchableOpacity className="mt-2 px-6 h-11 rounded-full items-center justify-center" style={{ backgroundColor: colors.primaryContainer }} onPress={() => router.push('/become-seller')}>
+            <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: colors.onPrimary }}>Become a Seller</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView className="flex-1" style={{ backgroundColor: colors.surface }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -147,7 +200,7 @@ export default function StartAuctionScreen() {
               {myPosts.map((p) => {
                 const src = p.image
                   ? { uri: p.image }
-                  : productImages[p.id] ?? { uri: `https://picsum.photos/seed/${p.id}/200/200` };
+                  : resolveListingImage(p, p.id);
                 const on = imageKey === p.id;
                 return (
                   <TouchableOpacity key={p.id} onPress={() => setImageKey(p.id)}>

@@ -7,10 +7,11 @@ import { BackIcon, SearchIcon, BookmarkIcon, BellIcon, ChevronRightIcon } from '
 import { formatPrice, formatCount, colors } from '../utils/theme';
 import { usePosts } from '../contexts/PostContext';
 import { useCommunities } from '../contexts/CommunityContext';
-import { productImages } from '../utils/productImages';
+import { useAuth } from '../contexts/AuthContext';
+import { hasRealImage, resolveListingImage } from '../utils/productImages';
 
-const RECENT_KEY = '@susej_recent_searches';
-const SEARCHES_KEY = '@susej_saved_searches';
+const RECENT_KEY_BASE = '@susej_recent_searches';
+const SEARCHES_KEY_BASE = '@susej_saved_searches';
 
 interface SavedSearch {
   id: string;
@@ -38,8 +39,11 @@ export default function SearchScreen() {
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState(q || '');
   const [tab, setTab] = useState<SearchTab>('products');
-  const { posts } = usePosts();
+  const { posts, hiddenPostIds = [], mutedSellers = [] } = usePosts() as { posts: import('../contexts/PostContext').Post[]; hiddenPostIds?: string[]; mutedSellers?: string[] };
   const { communities } = useCommunities();
+  const { user } = useAuth();
+  const recentKey = user?.username ? `${RECENT_KEY_BASE}:${user.username}` : RECENT_KEY_BASE;
+  const searchesKey = user?.username ? `${SEARCHES_KEY_BASE}:${user.username}` : SEARCHES_KEY_BASE;
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -56,24 +60,31 @@ export default function SearchScreen() {
   const [recentLoaded, setRecentLoaded] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(RECENT_KEY)
+    let cancelled = false;
+    AsyncStorage.getItem(recentKey)
       .then((data) => {
+        if (cancelled) return;
         if (data) {
           try {
             const parsed = JSON.parse(data) as unknown;
             if (Array.isArray(parsed)) {
               setRecentSearches(parsed.filter((s): s is string => typeof s === 'string').slice(0, 8));
+            } else {
+              setRecentSearches([]);
             }
           } catch {}
+        } else {
+          setRecentSearches([]);
         }
       })
-      .catch(() => {})
-      .finally(() => setRecentLoaded(true));
-  }, []);
+      .catch(() => { if (!cancelled) setRecentSearches([]); })
+      .finally(() => { if (!cancelled) setRecentLoaded(true); });
+    return () => { cancelled = true; };
+  }, [recentKey]);
 
   const persistRecent = (next: string[]) => {
     setRecentSearches(next);
-    AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next)).catch(() => {});
+    AsyncStorage.setItem(recentKey, JSON.stringify(next)).catch(() => {});
   };
 
   const addRecentSearch = (raw: string) => {
@@ -81,7 +92,7 @@ export default function SearchScreen() {
     if (!termToSave) return;
     setRecentSearches((prev) => {
       const next = [termToSave, ...prev.filter((s) => s.toLowerCase() !== termToSave.toLowerCase())].slice(0, 8);
-      AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next)).catch(() => {});
+      AsyncStorage.setItem(recentKey, JSON.stringify(next)).catch(() => {});
       return next;
     });
   };
@@ -93,17 +104,23 @@ export default function SearchScreen() {
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
 
   useEffect(() => {
-    AsyncStorage.getItem(SEARCHES_KEY)
+    let cancelled = false;
+    AsyncStorage.getItem(searchesKey)
       .then((data) => {
+        if (cancelled) return;
         if (data) {
           try {
             const parsed = JSON.parse(data) as SavedSearch[];
             if (Array.isArray(parsed)) setSavedSearches(parsed);
+            else setSavedSearches([]);
           } catch {}
+        } else {
+          setSavedSearches([]);
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => { if (!cancelled) setSavedSearches([]); });
+    return () => { cancelled = true; };
+  }, [searchesKey]);
 
   const isCurrentSaved = term.length > 0 && savedSearches.some((s) => s.query.toLowerCase() === term);
 
@@ -113,20 +130,23 @@ export default function SearchScreen() {
     const entry: SavedSearch = { id: `ss_${Date.now()}`, query: q, savedAt: Date.now(), priceAlert: false };
     const next = [entry, ...savedSearches];
     setSavedSearches(next);
-    AsyncStorage.setItem(SEARCHES_KEY, JSON.stringify(next)).catch(() => {});
+    AsyncStorage.setItem(searchesKey, JSON.stringify(next)).catch(() => {});
   };
 
   const results = useMemo(() => {
     if (!term) return [];
     return posts.filter(
       (p) =>
-        p.description.toLowerCase().includes(term) ||
-        p.category.toLowerCase().includes(term) ||
-        p.hashtags.some((h) => h.toLowerCase().includes(term)) ||
-        p.sellerName.toLowerCase().includes(term) ||
-        p.sellerUsername.toLowerCase().includes(term)
+        !hiddenPostIds.includes(p.id) &&
+        !mutedSellers.includes(p.sellerUsername) &&
+        hasRealImage(p) &&
+        (p.description.toLowerCase().includes(term) ||
+          p.category.toLowerCase().includes(term) ||
+          p.hashtags.some((h) => h.toLowerCase().includes(term)) ||
+          p.sellerName.toLowerCase().includes(term) ||
+          p.sellerUsername.toLowerCase().includes(term))
     );
-  }, [posts, term]);
+  }, [posts, term, hiddenPostIds, mutedSellers]);
 
   const sellers = useMemo(() => {
     const seen = new Set<string>();
@@ -168,11 +188,7 @@ export default function SearchScreen() {
       onPress={() => router.push(`/product/${item.id}`)}
     >
       <View className="w-full aspect-square bg-surfaceContainer">
-        {item.image ? (
-          <Image source={{ uri: item.image }} className="absolute inset-0 w-full h-full" resizeMode="cover" />
-        ) : productImages[item.id] ? (
-          <Image source={productImages[item.id]} className="absolute inset-0 w-full h-full" resizeMode="cover" />
-        ) : null}
+        <Image source={resolveListingImage(item, item.id)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
       </View>
       <View className="p-3">
         <Text className="text-figma-13 font-inter-500 text-textPrimary mb-1" numberOfLines={2}>{item.description.split('#')[0].trim()}</Text>

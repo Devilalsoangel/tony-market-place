@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Modal, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Path, Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BackIcon, StarIcon, CheckIcon, BagIcon, ChevronRightIcon, CloseIcon } from '../utils/icons';
+import { BackIcon, StarIcon, CheckIcon, CloseIcon } from '../utils/icons';
 import { colors, shadows } from '../utils/theme';
+import { addRedeemedCoupon } from '../utils/redeemedCoupons';
+import { useAuth } from '../contexts/AuthContext';
 
-const LOYALTY_KEY = '@susej_loyalty';
+const LOYALTY_KEY_BASE = '@susej_loyalty';
 
 interface LoyaltyTx {
   id: string;
@@ -22,6 +24,9 @@ interface Reward {
   title: string;
   desc: string;
   cost: number;
+  /** Real cart value granted on redemption — mirrors the reward title exactly. */
+  flatOff?: number;
+  freeDelivery?: boolean;
 }
 
 interface Coupon {
@@ -31,54 +36,25 @@ interface Coupon {
   createdAt: number;
 }
 
-const SEED_HISTORY: LoyaltyTx[] = [
-  { id: 'l1', title: 'Referral reward · Priya S.', detail: 'Joined with your code', points: 200, date: 'Jul 31' },
-  { id: 'l2', title: 'Purchase reward · Order #SJ-102938', detail: '₹2,000+ spend', points: 100, date: 'Jul 30' },
-  { id: 'l3', title: 'Product review reward', detail: 'Rated & reviewed a purchase', points: 25, date: 'Jul 29' },
-  { id: 'l4', title: 'Referral reward · Arjun K.', detail: 'Joined with your code', points: 200, date: 'Jul 27' },
-  { id: 'l5', title: 'Purchase reward · Order #SJ-102731', detail: '₹2,000+ spend', points: 100, date: 'Jul 26' },
-  { id: 'l6', title: 'Purchase reward · Order #SJ-102620', detail: '₹2,000+ spend', points: 100, date: 'Jul 24' },
-];
-
-interface LoyaltyTx {
-  id: string;
-  title: string;
-  detail: string;
-  points: number;
-  date: string;
-}
-
-interface Reward {
-  id: string;
-  title: string;
-  desc: string;
-  cost: number;
-}
-
 const TIERS = {
   Bronze: { min: 0, next: 500, nextName: 'Silver' },
   Silver: { min: 500, next: 1500, nextName: 'Gold' },
   Gold: { min: 1500, next: null, nextName: null },
 } as const;
 
-const EARN_RULES = [
-  { title: 'Buy items', detail: 'Earn 50 points per ₹1,000 spent', points: 50, route: '/(tabs)/explore' },
-  { title: 'Refer a friend', detail: 'Earn 200 points when they join', points: 200, route: '/refer' },
-  { title: 'Review a product', detail: 'Earn 25 points per review', points: 25, route: '/orders' },
-];
-
 const COUPON_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const genCouponCode = () => {
   let code = '';
   for (let i = 0; i < 4; i++) code += COUPON_CHARS[Math.floor(Math.random() * COUPON_CHARS.length)];
-  return `SASUKE15K-${code}`;
+  return `SUSEJ-${code}`;
 };
 
+// Values mirror each reward's own title — the same discount redemption pays for.
 const REWARDS: Reward[] = [
-  { id: 'rw1', title: 'Free delivery', desc: 'On your next order', cost: 300 },
-  { id: 'rw2', title: '₹50 off', desc: 'On orders above ₹999', cost: 500 },
-  { id: 'rw3', title: '₹100 off', desc: 'On orders above ₹1,499', cost: 900 },
-  { id: 'rw4', title: '₹250 off', desc: 'On orders above ₹2,999', cost: 2000 },
+  { id: 'rw1', title: 'Free delivery', desc: 'On your next order', cost: 300, freeDelivery: true },
+  { id: 'rw2', title: '₹50 off', desc: 'On orders above ₹999', cost: 500, flatOff: 50 },
+  { id: 'rw3', title: '₹100 off', desc: 'On orders above ₹1,499', cost: 900, flatOff: 100 },
+  { id: 'rw4', title: '₹250 off', desc: 'On orders above ₹2,999', cost: 2000, flatOff: 250 },
 ];
 
 function GiftIcon({ size = 20, color = colors.primary }: { size?: number; color?: string }) {
@@ -109,6 +85,11 @@ function TagIcon({ size = 20, color = colors.primary }: { size?: number; color?:
 
 export default function LoyaltyScreen() {
   const insets = useSafeAreaInsets();
+  const { user, tokenSeq } = useAuth();
+  const getKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${LOYALTY_KEY_BASE}:${u}` : LOYALTY_KEY_BASE;
+  }, [user?.username]);
   const [loaded, setLoaded] = useState(false);
   const [balance, setBalance] = useState(0);
   const [history, setHistory] = useState<LoyaltyTx[]>([]);
@@ -117,15 +98,18 @@ export default function LoyaltyScreen() {
   const [couponsOpen, setCouponsOpen] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(LOYALTY_KEY)
-      .then((data) => {
+    let cancelled = false;
+    const key = getKey();
+    setLoaded(false);
+    AsyncStorage.getItem(key)
+      .then(async (data) => {
+        if (cancelled) return;
         if (data) {
           try {
             const parsed = JSON.parse(data);
             if (parsed && typeof parsed.balance === 'number') {
               setBalance(parsed.balance);
-              setHistory(Array.isArray(parsed.history) ? parsed.history : SEED_HISTORY);
-              // legacy shape stored reward ids as plain strings — migrate them
+              setHistory(Array.isArray(parsed.history) ? parsed.history : []);
               setCoupons(
                 Array.isArray(parsed.coupons)
                   ? parsed.coupons
@@ -141,27 +125,37 @@ export default function LoyaltyScreen() {
               setLoaded(true);
               return;
             }
-          } catch {
-            // corrupted data — fall through to seed
-          }
+          } catch {}
         }
-        setBalance(725);
-        setHistory(SEED_HISTORY);
-        setCoupons([]);
-        setLoaded(true);
+        // legacy migration from global base
+        if (key !== LOYALTY_KEY_BASE) {
+          try {
+            const legacy = await AsyncStorage.getItem(LOYALTY_KEY_BASE);
+            if (!cancelled && legacy) {
+              try {
+                const parsed = JSON.parse(legacy);
+                if (parsed && typeof parsed.balance === 'number') {
+                  setBalance(parsed.balance);
+                  setHistory(Array.isArray(parsed.history) ? parsed.history : []);
+                  setCoupons(Array.isArray(parsed.coupons) ? parsed.coupons : []);
+                  try { await AsyncStorage.setItem(key, legacy); } catch {}
+                  setLoaded(true);
+                  return;
+                }
+              } catch {}
+            }
+          } catch {}
+        }
+        if (!cancelled) { setBalance(0); setHistory([]); setCoupons([]); setLoaded(true); }
       })
-      .catch(() => {
-        setBalance(725);
-        setHistory(SEED_HISTORY);
-        setCoupons([]);
-        setLoaded(true);
-      });
-  }, []);
+      .catch(() => { if (!cancelled) { setBalance(0); setHistory([]); setCoupons([]); setLoaded(true); } });
+    return () => { cancelled = true; };
+  }, [getKey, tokenSeq]);
 
   useEffect(() => {
     if (!loaded) return;
-    AsyncStorage.setItem(LOYALTY_KEY, JSON.stringify({ balance, history, coupons })).catch(() => {});
-  }, [balance, history, coupons, loaded]);
+    AsyncStorage.setItem(getKey(), JSON.stringify({ balance, history, coupons })).catch(() => {});
+  }, [balance, history, coupons, loaded, getKey]);
 
   const tier = balance >= 1500 ? 'Gold' : balance >= 500 ? 'Silver' : 'Bronze';
   const tierInfo = TIERS[tier];
@@ -170,6 +164,14 @@ export default function LoyaltyScreen() {
   const redeem = (reward: Reward) => {
     if (balance < reward.cost || coupons.some((c) => c.rewardId === reward.id)) return;
     const coupon: Coupon = { rewardId: reward.id, rewardTitle: reward.title, code: genCouponCode(), createdAt: Date.now() };
+    // The code becomes REAL: persisted where cart/checkout accept and consume it.
+    addRedeemedCoupon({
+      code: coupon.code,
+      rewardTitle: reward.title,
+      ...(reward.flatOff != null ? { discountFlat: reward.flatOff } : {}),
+      ...(reward.freeDelivery ? { freeDelivery: true } : {}),
+      redeemedAt: coupon.createdAt,
+    }).catch(() => {});
     setBalance((prev) => prev - reward.cost);
     setHistory((prev) => [
       { id: `l${Date.now()}`, title: `Redeemed · ${reward.title}`, detail: `${reward.cost} points used`, points: -reward.cost, date: 'Just now' },
@@ -273,34 +275,13 @@ export default function LoyaltyScreen() {
                 </Text>
               </View>
 
-              <Text className="font-inter-700 mt-6 mb-2" style={{ fontSize: 16, lineHeight: 24, color: colors.textPrimary }}>
-                How to earn
-              </Text>
-              <View className="px-5 py-2" style={{ borderRadius: 24, backgroundColor: colors.surfaceContainerLowest, ...shadows.card }}>
-                {EARN_RULES.map((rule) => (
-                  <TouchableOpacity
-                    key={rule.title}
-                    className="flex-row items-center py-3"
-                    activeOpacity={0.7}
-                    onPress={() => router.push(rule.route as never)}
-                  >
-                    <View className="w-10 h-10 rounded-full items-center justify-center mr-3" style={{ backgroundColor: colors.surfaceContainerLow }}>
-                      <BagIcon size={18} color={colors.primary} />
-                    </View>
-                    <View className="flex-1">
-                      <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 18, color: colors.textPrimary }}>
-                        {rule.title}
-                      </Text>
-                      <Text className="font-inter-400" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
-                        {rule.detail}
-                      </Text>
-                    </View>
-                    <Text className="font-inter-700 mr-2" style={{ fontSize: 14, lineHeight: 18, color: colors.primary }}>
-                      +{rule.points}
-                    </Text>
-                    <ChevronRightIcon size={12} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                ))}
+              <View className="mt-4 px-5 py-4" style={{ borderRadius: 24, backgroundColor: colors.surfaceContainerLowest, ...shadows.card }}>
+                <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 18, color: colors.textPrimary }}>
+                  About earning
+                </Text>
+                <Text className="font-inter-400 mt-1" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
+                  Points come from the seller program. Automatic earning is coming soon — redeemed rewards below are real and apply at checkout.
+                </Text>
               </View>
 
               <View className="flex-row items-center justify-between mt-6 mb-2">
@@ -376,7 +357,7 @@ export default function LoyaltyScreen() {
                 No points activity yet
               </Text>
               <Text className="font-inter-400 mt-1 text-center" style={{ fontSize: 14, lineHeight: 20, color: colors.textSecondary }}>
-                Shop, refer friends and review products to start earning points.
+                Points come from the seller program — earning automation is coming soon.
               </Text>
             </View>
           }

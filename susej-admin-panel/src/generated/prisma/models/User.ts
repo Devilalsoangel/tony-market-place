@@ -20,8 +20,20 @@ export type UserModel = runtime.Types.Result.DefaultSelection<Prisma.$UserPayloa
 
 export type AggregateUser = {
   _count: UserCountAggregateOutputType | null
+  _avg: UserAvgAggregateOutputType | null
+  _sum: UserSumAggregateOutputType | null
   _min: UserMinAggregateOutputType | null
   _max: UserMaxAggregateOutputType | null
+}
+
+export type UserAvgAggregateOutputType = {
+  walletBalance: number | null
+  loyaltyPoints: number | null
+}
+
+export type UserSumAggregateOutputType = {
+  walletBalance: number | null
+  loyaltyPoints: number | null
 }
 
 export type UserMinAggregateOutputType = {
@@ -33,6 +45,18 @@ export type UserMinAggregateOutputType = {
   status: string | null
   joinedAt: Date | null
   verified: boolean | null
+  phone: string | null
+  username: string | null
+  bio: string | null
+  location: string | null
+  isSeller: boolean | null
+  businessName: string | null
+  category: string | null
+  verification: string | null
+  walletBalance: number | null
+  passwordHash: string | null
+  loyaltyPoints: number | null
+  updatedAt: Date | null
 }
 
 export type UserMaxAggregateOutputType = {
@@ -44,6 +68,18 @@ export type UserMaxAggregateOutputType = {
   status: string | null
   joinedAt: Date | null
   verified: boolean | null
+  phone: string | null
+  username: string | null
+  bio: string | null
+  location: string | null
+  isSeller: boolean | null
+  businessName: string | null
+  category: string | null
+  verification: string | null
+  walletBalance: number | null
+  passwordHash: string | null
+  loyaltyPoints: number | null
+  updatedAt: Date | null
 }
 
 export type UserCountAggregateOutputType = {
@@ -55,9 +91,32 @@ export type UserCountAggregateOutputType = {
   status: number
   joinedAt: number
   verified: number
+  phone: number
+  username: number
+  bio: number
+  location: number
+  interests: number
+  isSeller: number
+  businessName: number
+  category: number
+  verification: number
+  walletBalance: number
+  passwordHash: number
+  loyaltyPoints: number
+  updatedAt: number
   _all: number
 }
 
+
+export type UserAvgAggregateInputType = {
+  walletBalance?: true
+  loyaltyPoints?: true
+}
+
+export type UserSumAggregateInputType = {
+  walletBalance?: true
+  loyaltyPoints?: true
+}
 
 export type UserMinAggregateInputType = {
   id?: true
@@ -68,6 +127,18 @@ export type UserMinAggregateInputType = {
   status?: true
   joinedAt?: true
   verified?: true
+  phone?: true
+  username?: true
+  bio?: true
+  location?: true
+  isSeller?: true
+  businessName?: true
+  category?: true
+  verification?: true
+  walletBalance?: true
+  passwordHash?: true
+  loyaltyPoints?: true
+  updatedAt?: true
 }
 
 export type UserMaxAggregateInputType = {
@@ -79,6 +150,18 @@ export type UserMaxAggregateInputType = {
   status?: true
   joinedAt?: true
   verified?: true
+  phone?: true
+  username?: true
+  bio?: true
+  location?: true
+  isSeller?: true
+  businessName?: true
+  category?: true
+  verification?: true
+  walletBalance?: true
+  passwordHash?: true
+  loyaltyPoints?: true
+  updatedAt?: true
 }
 
 export type UserCountAggregateInputType = {
@@ -90,6 +173,19 @@ export type UserCountAggregateInputType = {
   status?: true
   joinedAt?: true
   verified?: true
+  phone?: true
+  username?: true
+  bio?: true
+  location?: true
+  interests?: true
+  isSeller?: true
+  businessName?: true
+  category?: true
+  verification?: true
+  walletBalance?: true
+  passwordHash?: true
+  loyaltyPoints?: true
+  updatedAt?: true
   _all?: true
 }
 
@@ -131,6 +227,18 @@ export type UserAggregateArgs<ExtArgs extends runtime.Types.Extensions.InternalA
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
+   * Select which fields to average
+  **/
+  _avg?: UserAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
+   * Select which fields to sum
+  **/
+  _sum?: UserSumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
    * Select which fields to find the minimum value
   **/
   _min?: UserMinAggregateInputType
@@ -161,6 +269,8 @@ export type UserGroupByArgs<ExtArgs extends runtime.Types.Extensions.InternalArg
   take?: number
   skip?: number
   _count?: UserCountAggregateInputType | true
+  _avg?: UserAvgAggregateInputType
+  _sum?: UserSumAggregateInputType
   _min?: UserMinAggregateInputType
   _max?: UserMaxAggregateInputType
 }
@@ -174,7 +284,22 @@ export type UserGroupByOutputType = {
   status: string
   joinedAt: Date
   verified: boolean
+  phone: string | null
+  username: string | null
+  bio: string | null
+  location: string | null
+  interests: runtime.JsonValue | null
+  isSeller: boolean
+  businessName: string | null
+  category: string | null
+  verification: string
+  walletBalance: number
+  passwordHash: string | null
+  loyaltyPoints: number
+  updatedAt: Date
   _count: UserCountAggregateOutputType | null
+  _avg: UserAvgAggregateOutputType | null
+  _sum: UserSumAggregateOutputType | null
   _min: UserMinAggregateOutputType | null
   _max: UserMaxAggregateOutputType | null
 }
@@ -206,6 +331,20 @@ export type UserWhereInput = {
   status?: Prisma.StringFilter<"User"> | string
   joinedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   verified?: Prisma.BoolFilter<"User"> | boolean
+  phone?: Prisma.StringNullableFilter<"User"> | string | null
+  username?: Prisma.StringNullableFilter<"User"> | string | null
+  bio?: Prisma.StringNullableFilter<"User"> | string | null
+  location?: Prisma.StringNullableFilter<"User"> | string | null
+  interests?: Prisma.JsonNullableFilter<"User">
+  isSeller?: Prisma.BoolFilter<"User"> | boolean
+  businessName?: Prisma.StringNullableFilter<"User"> | string | null
+  category?: Prisma.StringNullableFilter<"User"> | string | null
+  verification?: Prisma.StringFilter<"User"> | string
+  walletBalance?: Prisma.IntFilter<"User"> | number
+  passwordHash?: Prisma.StringNullableFilter<"User"> | string | null
+  loyaltyPoints?: Prisma.IntFilter<"User"> | number
+  updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
+  sessions?: Prisma.AppSessionListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -217,11 +356,26 @@ export type UserOrderByWithRelationInput = {
   status?: Prisma.SortOrder
   joinedAt?: Prisma.SortOrder
   verified?: Prisma.SortOrder
+  phone?: Prisma.SortOrderInput | Prisma.SortOrder
+  username?: Prisma.SortOrderInput | Prisma.SortOrder
+  bio?: Prisma.SortOrderInput | Prisma.SortOrder
+  location?: Prisma.SortOrderInput | Prisma.SortOrder
+  interests?: Prisma.SortOrderInput | Prisma.SortOrder
+  isSeller?: Prisma.SortOrder
+  businessName?: Prisma.SortOrderInput | Prisma.SortOrder
+  category?: Prisma.SortOrderInput | Prisma.SortOrder
+  verification?: Prisma.SortOrder
+  walletBalance?: Prisma.SortOrder
+  passwordHash?: Prisma.SortOrderInput | Prisma.SortOrder
+  loyaltyPoints?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
+  sessions?: Prisma.AppSessionOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
   id?: string
   email?: string
+  username?: string
   AND?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
   OR?: Prisma.UserWhereInput[]
   NOT?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
@@ -231,7 +385,20 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   status?: Prisma.StringFilter<"User"> | string
   joinedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   verified?: Prisma.BoolFilter<"User"> | boolean
-}, "id" | "email">
+  phone?: Prisma.StringNullableFilter<"User"> | string | null
+  bio?: Prisma.StringNullableFilter<"User"> | string | null
+  location?: Prisma.StringNullableFilter<"User"> | string | null
+  interests?: Prisma.JsonNullableFilter<"User">
+  isSeller?: Prisma.BoolFilter<"User"> | boolean
+  businessName?: Prisma.StringNullableFilter<"User"> | string | null
+  category?: Prisma.StringNullableFilter<"User"> | string | null
+  verification?: Prisma.StringFilter<"User"> | string
+  walletBalance?: Prisma.IntFilter<"User"> | number
+  passwordHash?: Prisma.StringNullableFilter<"User"> | string | null
+  loyaltyPoints?: Prisma.IntFilter<"User"> | number
+  updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
+  sessions?: Prisma.AppSessionListRelationFilter
+}, "id" | "email" | "username">
 
 export type UserOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -242,9 +409,24 @@ export type UserOrderByWithAggregationInput = {
   status?: Prisma.SortOrder
   joinedAt?: Prisma.SortOrder
   verified?: Prisma.SortOrder
+  phone?: Prisma.SortOrderInput | Prisma.SortOrder
+  username?: Prisma.SortOrderInput | Prisma.SortOrder
+  bio?: Prisma.SortOrderInput | Prisma.SortOrder
+  location?: Prisma.SortOrderInput | Prisma.SortOrder
+  interests?: Prisma.SortOrderInput | Prisma.SortOrder
+  isSeller?: Prisma.SortOrder
+  businessName?: Prisma.SortOrderInput | Prisma.SortOrder
+  category?: Prisma.SortOrderInput | Prisma.SortOrder
+  verification?: Prisma.SortOrder
+  walletBalance?: Prisma.SortOrder
+  passwordHash?: Prisma.SortOrderInput | Prisma.SortOrder
+  loyaltyPoints?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
   _count?: Prisma.UserCountOrderByAggregateInput
+  _avg?: Prisma.UserAvgOrderByAggregateInput
   _max?: Prisma.UserMaxOrderByAggregateInput
   _min?: Prisma.UserMinOrderByAggregateInput
+  _sum?: Prisma.UserSumOrderByAggregateInput
 }
 
 export type UserScalarWhereWithAggregatesInput = {
@@ -259,6 +441,19 @@ export type UserScalarWhereWithAggregatesInput = {
   status?: Prisma.StringWithAggregatesFilter<"User"> | string
   joinedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   verified?: Prisma.BoolWithAggregatesFilter<"User"> | boolean
+  phone?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  username?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  bio?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  location?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  interests?: Prisma.JsonNullableWithAggregatesFilter<"User">
+  isSeller?: Prisma.BoolWithAggregatesFilter<"User"> | boolean
+  businessName?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  category?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  verification?: Prisma.StringWithAggregatesFilter<"User"> | string
+  walletBalance?: Prisma.IntWithAggregatesFilter<"User"> | number
+  passwordHash?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  loyaltyPoints?: Prisma.IntWithAggregatesFilter<"User"> | number
+  updatedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
 }
 
 export type UserCreateInput = {
@@ -266,10 +461,24 @@ export type UserCreateInput = {
   name: string
   email: string
   avatar?: string | null
-  role: string
-  status: string
-  joinedAt: Date | string
-  verified: boolean
+  role?: string
+  status?: string
+  joinedAt?: Date | string
+  verified?: boolean
+  phone?: string | null
+  username?: string | null
+  bio?: string | null
+  location?: string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: boolean
+  businessName?: string | null
+  category?: string | null
+  verification?: string
+  walletBalance?: number
+  passwordHash?: string | null
+  loyaltyPoints?: number
+  updatedAt?: Date | string
+  sessions?: Prisma.AppSessionCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -277,10 +486,24 @@ export type UserUncheckedCreateInput = {
   name: string
   email: string
   avatar?: string | null
-  role: string
-  status: string
-  joinedAt: Date | string
-  verified: boolean
+  role?: string
+  status?: string
+  joinedAt?: Date | string
+  verified?: boolean
+  phone?: string | null
+  username?: string | null
+  bio?: string | null
+  location?: string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: boolean
+  businessName?: string | null
+  category?: string | null
+  verification?: string
+  walletBalance?: number
+  passwordHash?: string | null
+  loyaltyPoints?: number
+  updatedAt?: Date | string
+  sessions?: Prisma.AppSessionUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -292,6 +515,20 @@ export type UserUpdateInput = {
   status?: Prisma.StringFieldUpdateOperationsInput | string
   joinedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  username?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  location?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verification?: Prisma.StringFieldUpdateOperationsInput | string
+  walletBalance?: Prisma.IntFieldUpdateOperationsInput | number
+  passwordHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  loyaltyPoints?: Prisma.IntFieldUpdateOperationsInput | number
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.AppSessionUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -303,6 +540,20 @@ export type UserUncheckedUpdateInput = {
   status?: Prisma.StringFieldUpdateOperationsInput | string
   joinedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  username?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  location?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verification?: Prisma.StringFieldUpdateOperationsInput | string
+  walletBalance?: Prisma.IntFieldUpdateOperationsInput | number
+  passwordHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  loyaltyPoints?: Prisma.IntFieldUpdateOperationsInput | number
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.AppSessionUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -310,10 +561,23 @@ export type UserCreateManyInput = {
   name: string
   email: string
   avatar?: string | null
-  role: string
-  status: string
-  joinedAt: Date | string
-  verified: boolean
+  role?: string
+  status?: string
+  joinedAt?: Date | string
+  verified?: boolean
+  phone?: string | null
+  username?: string | null
+  bio?: string | null
+  location?: string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: boolean
+  businessName?: string | null
+  category?: string | null
+  verification?: string
+  walletBalance?: number
+  passwordHash?: string | null
+  loyaltyPoints?: number
+  updatedAt?: Date | string
 }
 
 export type UserUpdateManyMutationInput = {
@@ -325,6 +589,19 @@ export type UserUpdateManyMutationInput = {
   status?: Prisma.StringFieldUpdateOperationsInput | string
   joinedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  username?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  location?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verification?: Prisma.StringFieldUpdateOperationsInput | string
+  walletBalance?: Prisma.IntFieldUpdateOperationsInput | number
+  passwordHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  loyaltyPoints?: Prisma.IntFieldUpdateOperationsInput | number
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type UserUncheckedUpdateManyInput = {
@@ -336,6 +613,19 @@ export type UserUncheckedUpdateManyInput = {
   status?: Prisma.StringFieldUpdateOperationsInput | string
   joinedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  username?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  location?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verification?: Prisma.StringFieldUpdateOperationsInput | string
+  walletBalance?: Prisma.IntFieldUpdateOperationsInput | number
+  passwordHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  loyaltyPoints?: Prisma.IntFieldUpdateOperationsInput | number
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type UserCountOrderByAggregateInput = {
@@ -347,6 +637,24 @@ export type UserCountOrderByAggregateInput = {
   status?: Prisma.SortOrder
   joinedAt?: Prisma.SortOrder
   verified?: Prisma.SortOrder
+  phone?: Prisma.SortOrder
+  username?: Prisma.SortOrder
+  bio?: Prisma.SortOrder
+  location?: Prisma.SortOrder
+  interests?: Prisma.SortOrder
+  isSeller?: Prisma.SortOrder
+  businessName?: Prisma.SortOrder
+  category?: Prisma.SortOrder
+  verification?: Prisma.SortOrder
+  walletBalance?: Prisma.SortOrder
+  passwordHash?: Prisma.SortOrder
+  loyaltyPoints?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
+}
+
+export type UserAvgOrderByAggregateInput = {
+  walletBalance?: Prisma.SortOrder
+  loyaltyPoints?: Prisma.SortOrder
 }
 
 export type UserMaxOrderByAggregateInput = {
@@ -358,6 +666,18 @@ export type UserMaxOrderByAggregateInput = {
   status?: Prisma.SortOrder
   joinedAt?: Prisma.SortOrder
   verified?: Prisma.SortOrder
+  phone?: Prisma.SortOrder
+  username?: Prisma.SortOrder
+  bio?: Prisma.SortOrder
+  location?: Prisma.SortOrder
+  isSeller?: Prisma.SortOrder
+  businessName?: Prisma.SortOrder
+  category?: Prisma.SortOrder
+  verification?: Prisma.SortOrder
+  walletBalance?: Prisma.SortOrder
+  passwordHash?: Prisma.SortOrder
+  loyaltyPoints?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type UserMinOrderByAggregateInput = {
@@ -369,8 +689,185 @@ export type UserMinOrderByAggregateInput = {
   status?: Prisma.SortOrder
   joinedAt?: Prisma.SortOrder
   verified?: Prisma.SortOrder
+  phone?: Prisma.SortOrder
+  username?: Prisma.SortOrder
+  bio?: Prisma.SortOrder
+  location?: Prisma.SortOrder
+  isSeller?: Prisma.SortOrder
+  businessName?: Prisma.SortOrder
+  category?: Prisma.SortOrder
+  verification?: Prisma.SortOrder
+  walletBalance?: Prisma.SortOrder
+  passwordHash?: Prisma.SortOrder
+  loyaltyPoints?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
+export type UserSumOrderByAggregateInput = {
+  walletBalance?: Prisma.SortOrder
+  loyaltyPoints?: Prisma.SortOrder
+}
+
+export type UserScalarRelationFilter = {
+  is?: Prisma.UserWhereInput
+  isNot?: Prisma.UserWhereInput
+}
+
+export type UserCreateNestedOneWithoutSessionsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutSessionsInput, Prisma.UserUncheckedCreateWithoutSessionsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutSessionsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutSessionsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutSessionsInput, Prisma.UserUncheckedCreateWithoutSessionsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutSessionsInput
+  upsert?: Prisma.UserUpsertWithoutSessionsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutSessionsInput, Prisma.UserUpdateWithoutSessionsInput>, Prisma.UserUncheckedUpdateWithoutSessionsInput>
+}
+
+export type UserCreateWithoutSessionsInput = {
+  id?: string
+  name: string
+  email: string
+  avatar?: string | null
+  role?: string
+  status?: string
+  joinedAt?: Date | string
+  verified?: boolean
+  phone?: string | null
+  username?: string | null
+  bio?: string | null
+  location?: string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: boolean
+  businessName?: string | null
+  category?: string | null
+  verification?: string
+  walletBalance?: number
+  passwordHash?: string | null
+  loyaltyPoints?: number
+  updatedAt?: Date | string
+}
+
+export type UserUncheckedCreateWithoutSessionsInput = {
+  id?: string
+  name: string
+  email: string
+  avatar?: string | null
+  role?: string
+  status?: string
+  joinedAt?: Date | string
+  verified?: boolean
+  phone?: string | null
+  username?: string | null
+  bio?: string | null
+  location?: string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: boolean
+  businessName?: string | null
+  category?: string | null
+  verification?: string
+  walletBalance?: number
+  passwordHash?: string | null
+  loyaltyPoints?: number
+  updatedAt?: Date | string
+}
+
+export type UserCreateOrConnectWithoutSessionsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutSessionsInput, Prisma.UserUncheckedCreateWithoutSessionsInput>
+}
+
+export type UserUpsertWithoutSessionsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutSessionsInput, Prisma.UserUncheckedUpdateWithoutSessionsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutSessionsInput, Prisma.UserUncheckedCreateWithoutSessionsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutSessionsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutSessionsInput, Prisma.UserUncheckedUpdateWithoutSessionsInput>
+}
+
+export type UserUpdateWithoutSessionsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  avatar?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  joinedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  username?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  location?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verification?: Prisma.StringFieldUpdateOperationsInput | string
+  walletBalance?: Prisma.IntFieldUpdateOperationsInput | number
+  passwordHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  loyaltyPoints?: Prisma.IntFieldUpdateOperationsInput | number
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type UserUncheckedUpdateWithoutSessionsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  avatar?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  joinedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  verified?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  username?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  location?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  interests?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  isSeller?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  verification?: Prisma.StringFieldUpdateOperationsInput | string
+  walletBalance?: Prisma.IntFieldUpdateOperationsInput | number
+  passwordHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  loyaltyPoints?: Prisma.IntFieldUpdateOperationsInput | number
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+
+/**
+ * Count Type UserCountOutputType
+ */
+
+export type UserCountOutputType = {
+  sessions: number
+}
+
+export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  sessions?: boolean | UserCountOutputTypeCountSessionsArgs
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the UserCountOutputType
+   */
+  select?: Prisma.UserCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountSessionsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.AppSessionWhereInput
+}
 
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -382,6 +879,21 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   status?: boolean
   joinedAt?: boolean
   verified?: boolean
+  phone?: boolean
+  username?: boolean
+  bio?: boolean
+  location?: boolean
+  interests?: boolean
+  isSeller?: boolean
+  businessName?: boolean
+  category?: boolean
+  verification?: boolean
+  walletBalance?: boolean
+  passwordHash?: boolean
+  loyaltyPoints?: boolean
+  updatedAt?: boolean
+  sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
+  _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
 export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -393,6 +905,19 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   status?: boolean
   joinedAt?: boolean
   verified?: boolean
+  phone?: boolean
+  username?: boolean
+  bio?: boolean
+  location?: boolean
+  interests?: boolean
+  isSeller?: boolean
+  businessName?: boolean
+  category?: boolean
+  verification?: boolean
+  walletBalance?: boolean
+  passwordHash?: boolean
+  loyaltyPoints?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
 
 export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -404,6 +929,19 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   status?: boolean
   joinedAt?: boolean
   verified?: boolean
+  phone?: boolean
+  username?: boolean
+  bio?: boolean
+  location?: boolean
+  interests?: boolean
+  isSeller?: boolean
+  businessName?: boolean
+  category?: boolean
+  verification?: boolean
+  walletBalance?: boolean
+  passwordHash?: boolean
+  loyaltyPoints?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
 
 export type UserSelectScalar = {
@@ -415,13 +953,34 @@ export type UserSelectScalar = {
   status?: boolean
   joinedAt?: boolean
   verified?: boolean
+  phone?: boolean
+  username?: boolean
+  bio?: boolean
+  location?: boolean
+  interests?: boolean
+  isSeller?: boolean
+  businessName?: boolean
+  category?: boolean
+  verification?: boolean
+  walletBalance?: boolean
+  passwordHash?: boolean
+  loyaltyPoints?: boolean
+  updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "avatar" | "role" | "status" | "joinedAt" | "verified", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "avatar" | "role" | "status" | "joinedAt" | "verified" | "phone" | "username" | "bio" | "location" | "interests" | "isSeller" | "businessName" | "category" | "verification" | "walletBalance" | "passwordHash" | "loyaltyPoints" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
+  _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
+}
+export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
+export type UserIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
 
 export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "User"
-  objects: {}
+  objects: {
+    sessions: Prisma.$AppSessionPayload<ExtArgs>[]
+  }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     name: string
@@ -431,6 +990,19 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     status: string
     joinedAt: Date
     verified: boolean
+    phone: string | null
+    username: string | null
+    bio: string | null
+    location: string | null
+    interests: runtime.JsonValue | null
+    isSeller: boolean
+    businessName: string | null
+    category: string | null
+    verification: string
+    walletBalance: number
+    passwordHash: string | null
+    loyaltyPoints: number
+    updatedAt: Date
   }, ExtArgs["result"]["user"]>
   composites: {}
 }
@@ -825,6 +1397,7 @@ readonly fields: UserFieldRefs;
  */
 export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  sessions<T extends Prisma.User$sessionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$sessionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AppSessionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -862,6 +1435,19 @@ export interface UserFieldRefs {
   readonly status: Prisma.FieldRef<"User", 'String'>
   readonly joinedAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly verified: Prisma.FieldRef<"User", 'Boolean'>
+  readonly phone: Prisma.FieldRef<"User", 'String'>
+  readonly username: Prisma.FieldRef<"User", 'String'>
+  readonly bio: Prisma.FieldRef<"User", 'String'>
+  readonly location: Prisma.FieldRef<"User", 'String'>
+  readonly interests: Prisma.FieldRef<"User", 'Json'>
+  readonly isSeller: Prisma.FieldRef<"User", 'Boolean'>
+  readonly businessName: Prisma.FieldRef<"User", 'String'>
+  readonly category: Prisma.FieldRef<"User", 'String'>
+  readonly verification: Prisma.FieldRef<"User", 'String'>
+  readonly walletBalance: Prisma.FieldRef<"User", 'Int'>
+  readonly passwordHash: Prisma.FieldRef<"User", 'String'>
+  readonly loyaltyPoints: Prisma.FieldRef<"User", 'Int'>
+  readonly updatedAt: Prisma.FieldRef<"User", 'DateTime'>
 }
     
 
@@ -878,6 +1464,10 @@ export type UserFindUniqueArgs<ExtArgs extends runtime.Types.Extensions.Internal
    * Omit specific fields from the User
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
   /**
    * Filter, which User to fetch.
    */
@@ -897,6 +1487,10 @@ export type UserFindUniqueOrThrowArgs<ExtArgs extends runtime.Types.Extensions.I
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
+  /**
    * Filter, which User to fetch.
    */
   where: Prisma.UserWhereUniqueInput
@@ -914,6 +1508,10 @@ export type UserFindFirstArgs<ExtArgs extends runtime.Types.Extensions.InternalA
    * Omit specific fields from the User
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
   /**
    * Filter, which User to fetch.
    */
@@ -963,6 +1561,10 @@ export type UserFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extensions.In
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
+  /**
    * Filter, which User to fetch.
    */
   where?: Prisma.UserWhereInput
@@ -1010,6 +1612,10 @@ export type UserFindManyArgs<ExtArgs extends runtime.Types.Extensions.InternalAr
    * Omit specific fields from the User
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
   /**
    * Filter, which Users to fetch.
    */
@@ -1059,6 +1665,10 @@ export type UserCreateArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
+  /**
    * The data needed to create a User.
    */
   data: Prisma.XOR<Prisma.UserCreateInput, Prisma.UserUncheckedCreateInput>
@@ -1072,6 +1682,7 @@ export type UserCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Internal
    * The data used to create many Users.
    */
   data: Prisma.UserCreateManyInput | Prisma.UserCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1090,6 +1701,7 @@ export type UserCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensions
    * The data used to create many Users.
    */
   data: Prisma.UserCreateManyInput | Prisma.UserCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1104,6 +1716,10 @@ export type UserUpdateArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs
    * Omit specific fields from the User
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
   /**
    * The data needed to update a User.
    */
@@ -1171,6 +1787,10 @@ export type UserUpsertArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
+  /**
    * The filter to search for the User to update in case it exists.
    */
   where: Prisma.UserWhereUniqueInput
@@ -1197,6 +1817,10 @@ export type UserDeleteArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
+  /**
    * Filter which User to delete.
    */
   where: Prisma.UserWhereUniqueInput
@@ -1217,6 +1841,30 @@ export type UserDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.Internal
 }
 
 /**
+ * User.sessions
+ */
+export type User$sessionsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the AppSession
+   */
+  select?: Prisma.AppSessionSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the AppSession
+   */
+  omit?: Prisma.AppSessionOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.AppSessionInclude<ExtArgs> | null
+  where?: Prisma.AppSessionWhereInput
+  orderBy?: Prisma.AppSessionOrderByWithRelationInput | Prisma.AppSessionOrderByWithRelationInput[]
+  cursor?: Prisma.AppSessionWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.AppSessionScalarFieldEnum | Prisma.AppSessionScalarFieldEnum[]
+}
+
+/**
  * User without action
  */
 export type UserDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1228,4 +1876,8 @@ export type UserDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArg
    * Omit specific fields from the User
    */
   omit?: Prisma.UserOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
 }

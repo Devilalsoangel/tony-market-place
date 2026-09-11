@@ -81,7 +81,7 @@ function ModerationQueue({ communities }: { communities: Community[] }) {
                 <p className="font-medium text-[#18181B] ">{c.name}</p>
                 <p className="text-sm text-gray-500">
                   {c.reports > 0 ? `${c.reports} report${c.reports > 1 ? "s" : ""}` : c.status === "suspended" ? "Suspended" : c.status === "banned" ? "Banned" : "Clear"}
-                  {" Â· "}{formatNumber(c.members)} members
+                  {" · "}{formatNumber(c.members)} members
                 </p>
               </div>
             </div>

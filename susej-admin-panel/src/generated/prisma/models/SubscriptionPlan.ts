@@ -1250,6 +1250,7 @@ export type SubscriptionPlanCreateManyArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many SubscriptionPlans.
    */
   data: Prisma.SubscriptionPlanCreateManyInput | Prisma.SubscriptionPlanCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1268,6 +1269,7 @@ export type SubscriptionPlanCreateManyAndReturnArgs<ExtArgs extends runtime.Type
    * The data used to create many SubscriptionPlans.
    */
   data: Prisma.SubscriptionPlanCreateManyInput | Prisma.SubscriptionPlanCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

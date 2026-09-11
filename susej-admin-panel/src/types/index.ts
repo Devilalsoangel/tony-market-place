@@ -7,9 +7,19 @@ export interface User {
   status: "active" | "suspended" | "banned";
   joinedAt: string;
   verified: boolean;
+  // Seller KYC verdict synced from /api/data/sellers approvals — what the app
+  // reads for the blue tick. `verified` above is a legacy boolean, rarely set.
+  verification?: "none" | "pending" | "approved" | "rejected";
+  username?: string;
+  phone?: string;
+  // One-shop-one-category: the store's main category (what /api/app/users/
+  // [username] serves to the app). Editable here for admins to correct
+  // mismatches between the declared shop category and actual listings.
+  category?: string;
+  isSeller?: boolean;
 }
 
-export type DocumentType = "government_id" | "business_license" | "address_proof" | "gst_certificate" | "store_logo" | "additional";
+export type DocumentType = "government_id" | "government_id_back" | "business_license" | "address_proof" | "gst_certificate" | "store_logo" | "additional";
 
 export interface SellerDocument {
   id: string;
@@ -39,7 +49,20 @@ export interface Seller {
   email: string;
   phone: string;
   address: string;
+  storeLat?: number | null;
+  storeLng?: number | null;
+  storeAddress?: string | null;
+  // Shop category chosen in the become-a-seller wizard (one per shop).
+  category?: string;
   taxId: string;
+  // CKYC identity binding (nullable: unknown for legacy rows).
+  idType?: string | null;
+  idNumber?: string | null;
+  nameOnId?: string | null;
+  dob?: string | null;
+  pan?: string | null;
+  bankAccount?: string | null;
+  selfieUrl?: string | null;
   kycStatus: "pending" | "approved" | "rejected";
   gstStatus: "pending" | "verified" | "unverified";
   score: number;
@@ -263,7 +286,8 @@ export interface Carrier {
   name: string;
   rate: number;
   avgDeliveryDays: number;
-  onTimeRate: number;
+  // null until real shipment data exists — UI renders an em dash, never an invented %.
+  onTimeRate: number | null;
   shipments: number;
   active: boolean;
 }
@@ -355,7 +379,7 @@ export interface PlanLimits {
   maxStorage: number | null;
 }
 
-export type PromotionKind = "topSeller" | "hotDeal" | "featuredPost";
+export type PromotionKind = "topSeller" | "hotDeal" | "featuredPost" | "spotlight";
 
 export type PromotionStatus = "pending_payment" | "active" | "expired" | "refunded";
 
@@ -389,6 +413,7 @@ export const PROMOTION_KIND_LABEL: Record<PromotionKind, string> = {
   topSeller: "Top Seller Spotlight",
   hotDeal: "Hot Deal",
   featuredPost: "Boost Post",
+  spotlight: "Feed Spotlight",
 };
 
 export interface CommissionCategoryOverride {
@@ -449,6 +474,10 @@ export interface KPIData {
   communities: number;
   ordersToday: number;
   revenue: number;
+  /** Money-out via approved/refunded refunds (subtracted for net revenue). */
+  refundsOut: number;
+  /** Delivered gross minus refundsOut (floored at 0). */
+  netRevenue: number;
   pendingReports: number;
   openSupportTickets: number;
 }

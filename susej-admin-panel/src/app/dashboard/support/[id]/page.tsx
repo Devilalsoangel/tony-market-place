@@ -11,9 +11,10 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch, apiPost } from "@/lib/api-mutate";
 import { formatDate } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth-store";
 import { ArrowLeft, LifeBuoy, Send, User, Calendar, Tag, MessageSquare } from "lucide-react";
 import Link from "next/link";
-import type { SupportTicket } from "@/types";
+import type { SupportTicket, AdminUser } from "@/types";
 
 const priorityVariants: Record<string, "success" | "warning" | "danger" | "default"> = {
   low: "success",
@@ -39,21 +40,13 @@ interface ThreadMessage {
   at: string;
 }
 
-function buildFallbackThread(ticket: SupportTicket): ThreadMessage[] {
-  const base = Date.parse(ticket.createdAt);
-  const at = (h: number) => new Date(base + h * 60 * 60 * 1000).toISOString();
-  return [
-    { id: `${ticket.id}_m1`, from: "user", author: ticket.userName, text: `Hi, I need help with: ${ticket.subject.toLowerCase()}. Please assist as soon as possible.`, at: at(0) },
-    { id: `${ticket.id}_m2`, from: "agent", author: "Support Agent", text: "Thanks for reaching out! We have received your ticket and are looking into it.", at: at(1.5) },
-    { id: `${ticket.id}_m3`, from: "user", author: ticket.userName, text: "I can share more details if needed. Let me know what you require.", at: at(3) },
-  ];
-}
-
 export default function SupportTicketPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data: tickets, refresh } = useDbResource<SupportTicket>("tickets");
   const { data: messageRows, refresh: refreshMessages } = useDbResource<MessageRow>("messages");
-  const [assignee, setAssignee] = useState("Support Agent");
+  const { data: adminRows } = useDbResource<AdminUser>("admins");
+  const adminUser = useAuthStore((s) => s.user);
+  const [assignee, setAssignee] = useState("");
   const [reply, setReply] = useState("");
   const [ticket, setTicket] = useState<SupportTicket | null>(null);
 
@@ -70,25 +63,32 @@ export default function SupportTicketPage({ params }: { params: Promise<{ id: st
   }, [id]);
 
   const thread = useMemo<ThreadMessage[]>(() => {
-    const rows = (messageRows ?? []).filter((m) => m.threadId === id);
-    if (rows.length === 0) {
-      return ticket ? buildFallbackThread(ticket) : [];
-    }
-    return rows.map((m) => ({
-      id: m.id,
-      from: m.senderRole === "agent" ? ("agent" as const) : ("user" as const),
-      author: m.sender,
-      text: m.body,
-      at: m.createdAt,
-    }));
-  }, [messageRows, id, ticket]);
+    return (messageRows ?? [])
+      .filter((m) => m.threadId === id)
+      .map((m) => ({
+        id: m.id,
+        from: m.senderRole === "agent" ? ("agent" as const) : ("user" as const),
+        author: m.sender,
+        text: m.body,
+        at: m.createdAt,
+      }));
+  }, [messageRows, id]);
+
+  const assigneeOptions = useMemo(
+    () =>
+      Array.from(new Set((adminRows ?? []).map((a) => a.name).filter(Boolean))).map((name) => ({
+        label: name,
+        value: name,
+      })),
+    [adminRows]
+  );
 
   async function sendReply() {
     if (!reply.trim() || !ticket) return;
     try {
       await apiPost("messages", {
         threadId: ticket.id,
-        sender: assignee,
+        sender: adminUser?.name || "Admin",
         senderRole: "agent",
         body: reply.trim(),
         createdAt: new Date().toISOString(),
@@ -155,7 +155,7 @@ export default function SupportTicketPage({ params }: { params: Promise<{ id: st
         <div className="flex items-center gap-2">
           {ticket.status === "open" ? (
             <>
-              <Button variant="secondary" onClick={() => patchTicket({ status: "resolved", assignee })}>
+              <Button variant="secondary" onClick={() => patchTicket({ status: "resolved", ...(assignee ? { assignee } : {}) })}>
                 Resolve
               </Button>
               <Button variant="danger" onClick={() => patchTicket({ status: "closed" })}>
@@ -178,22 +178,31 @@ export default function SupportTicketPage({ params }: { params: Promise<{ id: st
               <CardTitle>Conversation</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {thread.map((m) => (
-                  <div key={m.id} className={`flex ${m.from === "user" ? "justify-start" : "justify-end"}`}>
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                        m.from === "user" ? "rounded-tl-sm bg-[#F4F4F5]" : "rounded-tr-sm bg-[#6C3BFF]"
-                      }`}
-                    >
-                      <p className={`text-xs font-medium ${m.from === "user" ? "text-gray-500" : "text-white/70"}`}>
-                        {m.author} &middot; {formatDate(m.at, "relative")}
-                      </p>
-                      <p className={`mt-1 text-sm ${m.from === "user" ? "text-[#18181B]" : "text-white"}`}>{m.text}</p>
+              {thread.length === 0 ? (
+                <EmptyState
+                  icon={<MessageSquare className="h-8 w-8 text-gray-300" />}
+                  title="No messages in this thread yet"
+                  description="Replies between the user and support will appear here."
+                  className="py-8"
+                />
+              ) : (
+                <div className="space-y-4">
+                  {thread.map((m) => (
+                    <div key={m.id} className={`flex ${m.from === "user" ? "justify-start" : "justify-end"}`}>
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                          m.from === "user" ? "rounded-tl-sm bg-[#F4F4F5]" : "rounded-tr-sm bg-[#6C3BFF]"
+                        }`}
+                      >
+                        <p className={`text-xs font-medium ${m.from === "user" ? "text-gray-500" : "text-white/70"}`}>
+                          {m.author} &middot; {formatDate(m.at, "relative")}
+                        </p>
+                        <p className={`mt-1 text-sm ${m.from === "user" ? "text-[#18181B]" : "text-white"}`}>{m.text}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               {ticket.status === "open" ? (
                 <div className="mt-6 flex items-center gap-3">
@@ -270,16 +279,15 @@ export default function SupportTicketPage({ params }: { params: Promise<{ id: st
                   <Select
                     value={assignee}
                     onChange={(e) => setAssignee(e.target.value)}
-                    options={[
-                      { label: "Support Agent", value: "Support Agent" },
-                      { label: "Admin John", value: "Admin John" },
-                      { label: "Moderator Jane", value: "Moderator Jane" },
-                    ]}
+                    options={assigneeOptions}
+                    placeholder={assigneeOptions.length > 0 ? "Select assignee" : "No admins available"}
+                    disabled={assigneeOptions.length === 0}
                   />
                 </div>
                 <Button
                   variant="secondary"
                   className="w-full"
+                  disabled={!assignee}
                   onClick={() => {
                     patchTicket({ assignee });
                   }}

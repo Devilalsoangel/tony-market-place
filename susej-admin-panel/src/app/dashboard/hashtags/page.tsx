@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch } from "@/lib/api-mutate";
 import { formatNumber } from "@/lib/utils";
 import { Hash, TrendingUp, Ban } from "lucide-react";
-import type { MockHashtag } from "@/services/mock-data";
+import type { MockHashtag } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockHashtag>();
 
@@ -21,12 +21,17 @@ const makeColumns = (onToggle: (h: MockHashtag) => void) => [
   column.accessor("followers", { header: "Followers", cell: (info) => <span className="tabular-nums">{formatNumber(info.getValue())}</span> }),
   column.accessor("trending", {
     header: "Trending",
-    cell: (info) =>
-      info.getValue() ? (
+    cell: (info) => {
+      const row = info.row.original;
+      // Only show trending if the tag actually has posts — a hashtag with 0 posts
+      // cannot logically be "trending" even if the DB flag is set.
+      const isTrending = row.postsCount > 0;
+      return isTrending ? (
         <Badge variant="primary"><TrendingUp className="mr-1 h-3 w-3" /> Trending</Badge>
       ) : (
         <span className="text-[#71717A]">—</span>
-      ),
+      );
+    },
   }),
   column.accessor("status", {
     header: "Status",
@@ -84,7 +89,7 @@ export default function HashtagsPage() {
       <div className="grid grid-cols-4 gap-4">
         <StatTile label="Active tags" value={(items ?? []).filter((h) => h.status === "active").length} tone="green" />
         <StatTile label="Blocked" value={(items ?? []).filter((h) => h.status === "blocked").length} tone="red" />
-        <StatTile label="Trending now" value={(items ?? []).filter((h) => h.trending).length} tone="purple" />
+        <StatTile label="Trending now" value={(items ?? []).filter((h) => h.trending && h.postsCount > 0).length} tone="purple" />
         <StatTile label="Total posts tagged" value={formatNumber(totalPosts)} />
       </div>
 

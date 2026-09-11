@@ -94,8 +94,8 @@ export default function SplashScreen() {
             </View>
             {/* Text */}
             <View style={styles.cardTextArea}>
-              <Text style={styles.cardFeaturedLabel}>Featured Item</Text>
-              <Text style={styles.cardProductName}>Luxe Runner v2</Text>
+              <Text style={styles.cardFeaturedLabel}>susej Marketplace</Text>
+              <Text style={styles.cardProductName}>Fresh finds from local sellers</Text>
             </View>
             {/* Arrow - exact Figma path */}
             <View style={styles.cardArrow}>

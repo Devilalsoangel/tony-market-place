@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch } from "@/lib/api-mutate";
 import { formatCurrency } from "@/lib/utils";
 import { CalendarCheck, CheckCircle2, XCircle } from "lucide-react";
-import type { MockBooking } from "@/services/mock-data";
+import type { MockBooking } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockBooking>();
 

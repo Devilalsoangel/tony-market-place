@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch } from "@/lib/api-mutate";
 import { formatDate, formatNumber } from "@/lib/utils";
 import { Clapperboard, EyeOff, CheckCircle2 } from "lucide-react";
-import type { MockReel } from "@/services/mock-data";
+import type { MockReel } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockReel>();
 

@@ -177,7 +177,7 @@ export default function SystemPage() {
             <p className="text-[13px] text-[#71717A]">
               Generic CRUD over{" "}
               <span className="font-mono text-[#18181B]">/api/data/:resource</span> —{" "}
-              {dbStatus === "ok" ? "SQLite (Prisma) backed with static demo fallback." : "Running on static demo data (no database available)."}
+              {dbStatus === "ok" ? "PostgreSQL via Prisma." : "Database unavailable — live data paused."}
             </p>
           </div>
         </CardContent>

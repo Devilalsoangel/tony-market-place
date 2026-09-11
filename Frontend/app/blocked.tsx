@@ -6,20 +6,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
+import { useAuth } from '../contexts/AuthContext';
 
-const BLOCKED_KEY = '@susej_blocked';
+const BLOCKED_KEY_BASE = '@susej_blocked';
 
 export interface BlockedUser {
   username: string;
   name?: string;
   at?: number;
 }
-
-const dayAgo = (days: number) => Date.now() - days * 86400000;
-
-const SEED_BLOCKED: BlockedUser[] = [
-  { username: 'hype_vault', name: 'Hype Vault', at: dayAgo(3) },
-];
 
 const formatTime = (time?: number): string => {
   if (!time) return '';
@@ -31,37 +26,47 @@ const formatTime = (time?: number): string => {
 
 export default function BlockedScreen() {
   const insets = useSafeAreaInsets();
+  const { user, tokenSeq } = useAuth();
+  const username = user?.username ?? null;
+  const blockedKey = username ? `${BLOCKED_KEY_BASE}:${username}` : BLOCKED_KEY_BASE;
   const [loaded, setLoaded] = useState(false);
   const [blocked, setBlocked] = useState<BlockedUser[]>([]);
 
   useEffect(() => {
-    AsyncStorage.getItem(BLOCKED_KEY)
-      .then((data) => {
-        if (data) {
-          try {
-            const parsed = JSON.parse(data);
-            if (Array.isArray(parsed)) {
-              setBlocked(parsed as BlockedUser[]);
-              setLoaded(true);
-              return;
-            }
-          } catch {
-            // corrupted data — fall through to seed
+    setBlocked([]);
+    setLoaded(false);
+  }, [tokenSeq]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        let data = await AsyncStorage.getItem(blockedKey);
+        if (!data && blockedKey !== BLOCKED_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(BLOCKED_KEY_BASE);
+          if (legacy) data = legacy;
+        }
+        if (data && active) {
+          const parsed = JSON.parse(data);
+          if (Array.isArray(parsed)) {
+            const real = (parsed as BlockedUser[]).filter(
+              (b) => b && b.username && b.username !== 'hype_vault'
+            );
+            setBlocked(real);
           }
         }
-        setBlocked(SEED_BLOCKED);
-        setLoaded(true);
-      })
-      .catch(() => {
-        setBlocked(SEED_BLOCKED);
-        setLoaded(true);
-      });
-  }, []);
+      } catch {
+        // corrupted cache — start empty
+      }
+      if (active) setLoaded(true);
+    })();
+    return () => { active = false; };
+  }, [blockedKey, tokenSeq]);
 
   useEffect(() => {
     if (!loaded) return;
-    AsyncStorage.setItem(BLOCKED_KEY, JSON.stringify(blocked)).catch(() => {});
-  }, [blocked, loaded]);
+    AsyncStorage.setItem(blockedKey, JSON.stringify(blocked)).catch(() => {});
+  }, [blocked, loaded, blockedKey]);
 
   const unblock = (user: BlockedUser) => {
     Alert.alert(

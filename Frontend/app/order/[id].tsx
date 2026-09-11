@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, Alert, AlertButton } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, MapPinIcon, StarIcon, SendIcon, ShopIcon, BagIcon, ChevronRightIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
-import { useOrders, STATUS_LABELS, REFUND_STATUS_LABELS } from '../../contexts/OrderContext';
-import { productImages } from '../../utils/productImages';
+import { useOrders, STATUS_LABELS, REFUND_STATUS_LABELS, ORDER_STATUS_FLOW } from '../../contexts/OrderContext';
+import type { Order } from '../../contexts/OrderContext';
+import { resolveListingImage } from '../../utils/productImages';
+import { serverApi } from '../../utils/serverApi';
 
 const REFUND_REASONS = ['Item not as described', 'Item not received', 'Damaged', 'Other'];
 const CANCEL_REASONS = ['Changed my mind', 'Found better price', 'Ordered by mistake', 'Other'];
@@ -34,10 +36,76 @@ function getStatusColor(status: keyof typeof STATUS_LABELS): string {
 
 export default function OrderDetailsScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
-  const { getOrder, requestRefund, cancelOrder } = useOrders();
+  const { getOrder, requestRefund, cancelOrder, retryOrderSync } = useOrders();
+  const [retrying, setRetrying] = useState(false);
   const insets = useSafeAreaInsets();
   const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const order = rawId ? getOrder(String(rawId)) : undefined;
+  const localOrder = rawId ? getOrder(String(rawId)) : undefined;
+  // Server fallback: the order may exist server-side but not in the local
+  // cache (opened on a 2nd device, or navigated by server id before the
+  // context sync lands). Pull once and match id/serverId/orderNumber.
+  const [serverOrder, setServerOrder] = useState<Order | null>(null);
+  const [serverMiss, setServerMiss] = useState(false);
+  useEffect(() => {
+    setServerOrder(null);
+    setServerMiss(false);
+  }, [rawId]);
+  useEffect(() => {
+    if (localOrder || !rawId || serverOrder || serverMiss) return;
+    let alive = true;
+    const key = String(rawId);
+    serverApi
+      .getOrders('all')
+      .then((res) => {
+        if (!alive || !res.ok || !res.data?.orders) return;
+        const hit = (res.data.orders as any[]).find(
+          (o) => o && (String(o.id) === key || String(o.orderNumber ?? '') === key || `#${String(o.orderNumber ?? '')}` === key)
+        );
+        if (!alive) return;
+        if (!hit) {
+          setServerMiss(true);
+          return;
+        }
+        const flowIdx = ORDER_STATUS_FLOW.indexOf((hit.status as Order['status']) ?? 'placed');
+        const labels = ['Order Placed', 'Confirmed', 'Preparing', 'Out for Delivery', 'Delivered'];
+        setServerOrder({
+          id: String(hit.id),
+          orderNumber: String(hit.orderNumber ?? hit.id),
+          kind: (hit.kind as Order['kind']) ?? 'order',
+          sellerName: String(hit.sellerName ?? ''),
+          sellerUsername: String(hit.sellerUsername ?? ''),
+          items: Array.isArray(hit.items)
+            ? hit.items.map((i: any) => ({
+                listingId: String(i.listingId ?? i.postId ?? ''),
+                name: String(i.name ?? 'Item'),
+                price: Number(i.price ?? 0),
+                quantity: Number(i.quantity ?? 1),
+                ...(i.imageUrl ? { imageUrl: String(i.imageUrl) } : {}),
+              }))
+            : [],
+          total: Number(hit.total ?? 0),
+          chargedTotal: Number(hit.chargedTotal ?? hit.total ?? 0),
+          status: (hit.status as Order['status']) ?? 'placed',
+          placedAt: typeof hit.placedAt === 'string' ? Date.parse(hit.placedAt) : Number(hit.placedAt ?? Date.now()),
+          reviewed: Boolean(hit.reviewed),
+          rating: hit.rating ? Number(hit.rating) : undefined,
+          reviewComment: hit.reviewComment ? String(hit.reviewComment) : undefined,
+          address: hit.address ? String(hit.address) : undefined,
+          paymentMethod: hit.paymentMethod ? String(hit.paymentMethod) : undefined,
+          serverId: String(hit.id),
+          tracking: labels.map((label, i) => ({
+            label,
+            time: i === 0 ? new Date(typeof hit.placedAt === 'string' ? Date.parse(hit.placedAt) : Number(hit.placedAt ?? Date.now())).toLocaleString() : '—',
+            done: flowIdx < 0 ? i === 0 : i <= flowIdx,
+          })),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [localOrder, rawId, serverOrder, serverMiss]);
+  const order = localOrder ?? serverOrder ?? undefined;
   const [showRefundPicker, setShowRefundPicker] = useState(false);
   const [refundReason, setRefundReason] = useState<string | null>(null);
 
@@ -48,12 +116,33 @@ export default function OrderDetailsScreen() {
     setShowRefundPicker(false);
   };
 
+  const handleRetrySync = async () => {
+    if (!order || retrying) return;
+    setRetrying(true);
+    const synced = await retryOrderSync(order.id);
+    setRetrying(false);
+    if (!synced) {
+      Alert.alert('Still offline', 'Could not reach the server. Your order is kept and you can retry again.');
+    }
+  };
+
   const toggleRefundPicker = () => {
     setShowRefundPicker((v) => !v);
     setRefundReason(null);
   };
 
   if (!order) {
+    // While the server lookup is in flight, show a loading state — never a
+    // false "not found" for an order that exists (deep link / 2nd device).
+    if (!serverMiss) {
+      return (
+        <View className="flex-1 bg-surface items-center justify-center">
+          <Text className="text-[14px] font-inter-400 text-textSecondary" style={{ lineHeight: 20 }}>
+            Loading order…
+          </Text>
+        </View>
+      );
+    }
     return (
       <View className="flex-1 bg-surface">
         <View className="flex-row items-center justify-between px-5" style={{ height: 52 + insets.top, paddingTop: insets.top }}>
@@ -82,7 +171,11 @@ export default function OrderDetailsScreen() {
   }
 
   const steps = order.tracking.map((s) => ({ label: s.label, date: s.time, done: s.done }));
-  const activeIdx = steps.findIndex((s) => !s.done);
+  // Strict status-driven timeline: a step lights up only when order.status has
+  // actually reached it — never ahead of the server. The tracking flags are
+  // not trusted for progression (they can lag or lead); they carry timestamps.
+  const isCancelled = order.status === 'cancelled';
+  const activeIdx = isCancelled ? -1 : steps.findIndex((s) => s.label === STATUS_LABELS[order.status]);
 
   const canCancel = !order.refund && (order.status === 'placed' || order.status === 'confirmed');
 
@@ -135,6 +228,28 @@ export default function OrderDetailsScreen() {
       </View>
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: insets.bottom + 40, rowGap: 20 }}>
+        {/* Offline outbox: order placed locally but never acknowledged.
+            Never ghost-deleted — explicit retry (idempotent server-side). */}
+        {order.syncPending && (
+          <View className="mx-5 rounded-[24px] p-4" style={{ backgroundColor: '#fff7e6', borderWidth: 1, borderColor: '#f0c36d' }}>
+            <Text className="text-[14px] font-inter-600" style={{ lineHeight: 20, color: '#8a5a00' }}>
+              Waiting for connection
+            </Text>
+            <Text className="text-[13px] font-inter-400 mt-1" style={{ lineHeight: 18, color: '#8a5a00' }}>
+              This order hasn't reached our server yet. It is saved on this device — retry when you're back online.
+            </Text>
+            <TouchableOpacity
+              className="mt-3 px-5 h-11 items-center justify-center rounded-figma-16 self-start"
+              style={{ backgroundColor: colors.primaryContainer, opacity: retrying ? 0.6 : 1 }}
+              onPress={handleRetrySync}
+              disabled={retrying}
+            >
+              <Text className="text-[14px] font-inter-600 text-white">
+                {retrying ? 'Retrying…' : 'Retry now'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {/* Order # + status */}
         <View className="mx-5 rounded-[24px] p-4" style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: colors.textPrimary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 2 }}>
           <View className="flex-row items-center justify-between">
@@ -159,8 +274,8 @@ export default function OrderDetailsScreen() {
           </Text>
           <View className="ml-2">
             {steps.map((step, i) => {
-              const isActive = activeIdx === -1 ? i === steps.length - 1 : i === activeIdx;
-              const isDone = activeIdx === -1 ? true : i < activeIdx;
+              const isActive = i === activeIdx;
+              const isDone = !isCancelled && i < activeIdx;
               return (
                 <View key={step.label} className="flex-row">
                   <View className="items-center mr-4">
@@ -216,20 +331,20 @@ export default function OrderDetailsScreen() {
               <View key={item.listingId} className="flex-row items-center">
                 <View className="w-12 h-12 rounded-[12px] overflow-hidden mr-3" style={{ backgroundColor: colors.surfaceContainerLow }}>
                   <Image
-                    source={productImages[item.listingId] ?? { uri: `https://picsum.photos/seed/${item.listingId}/48/48` }}
+                    source={(item as any).imageUrl ? { uri: (item as any).imageUrl } : resolveListingImage(null, item.listingId)}
                     className="w-full h-full"
                     style={{ width: 48, height: 48 }}
                   />
                 </View>
-                <View className="flex-1">
-                  <Text className="text-[14px] font-inter-500 text-textPrimary" style={{ lineHeight: 18 }} numberOfLines={1}>
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[14px] font-inter-500 text-textPrimary" style={{ lineHeight: 18 }} numberOfLines={1} ellipsizeMode="tail">
                     {item.name}
                   </Text>
                   <Text className="text-[12px] font-inter-400 text-textSecondary" style={{ lineHeight: 16 }}>
                     Qty {item.quantity}
                   </Text>
                 </View>
-                <Text className="text-[14px] font-inter-600 text-textPrimary" style={{ lineHeight: 20 }}>
+                <Text className="ml-2 shrink-0 text-[14px] font-inter-600 text-textPrimary" style={{ lineHeight: 20 }}>
                   {formatPrice(item.price * item.quantity)}
                 </Text>
               </View>
@@ -278,7 +393,7 @@ export default function OrderDetailsScreen() {
             </View>
             <View className="h-[1px]" style={{ backgroundColor: colors.surfaceContainerLow }} />
             <View className="flex-row justify-between">
-              <Text className="text-[15px] font-inter-700 text-textPrimary" style={{ lineHeight: 22 }}>Total Paid</Text>
+              <Text className="text-[15px] font-inter-700 text-textPrimary" style={{ lineHeight: 22 }}>{/cash|cod/i.test(order.paymentMethod ?? '') ? 'Order Total (due on delivery)' : 'Total Paid'}</Text>
               <Text className="text-[15px] font-inter-700" style={{ lineHeight: 22, color: colors.primary }}>{formatPrice(order.chargedTotal ?? order.total)}</Text>
             </View>
           </View>

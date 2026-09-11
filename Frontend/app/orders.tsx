@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { View, Text, Image, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, Image, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronLeftIcon, ChevronRightIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useOrders, STATUS_LABELS } from '../contexts/OrderContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { orderImages } from '../utils/screenImages';
+import { resolveListingImage } from '../utils/productImages';
 
 function getStatusColor(status: keyof typeof STATUS_LABELS): string {
   switch (status) {
@@ -22,15 +22,23 @@ function getStatusColor(status: keyof typeof STATUS_LABELS): string {
 
 export default function OrdersScreen() {
   const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState<'buying' | 'selling'>('buying');
-  const { orders } = useOrders();
+  const { orders, loaded: ordersLoaded, cancelOrder } = useOrders();
   const { user } = useAuth();
-  // Selling = orders placed against the signed-in user's own store (industry: your shop's sales).
   const myStore = (user?.username ?? '').toLowerCase();
-  const data = tab === 'buying' ? orders : orders.filter((o) => (o.sellerUsername ?? '').toLowerCase() === myStore);
+  const STATUS_TABS = ['All', 'In Progress', 'Delivered', 'Cancelled'] as const;
+  type StatusTab = (typeof STATUS_TABS)[number];
+  const [statusTab, setStatusTab] = useState<StatusTab>('All');
+  const data = orders
+    .filter((o) => (o.sellerUsername ?? '').toLowerCase() !== myStore)
+    .filter((o) => {
+      if (statusTab === 'All') return true;
+      if (statusTab === 'Delivered') return o.status === 'delivered';
+      if (statusTab === 'Cancelled') return o.status === 'cancelled';
+      return o.status === 'placed' || o.status === 'confirmed' || o.status === 'preparing' || o.status === 'out_for_delivery';
+    });
 
   const formatDate = (ts: number) =>
-    new Date(ts).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    new Date(ts).toLocaleDateString('en-IN', { month: 'long', day: 'numeric', year: 'numeric' });
 
   return (
     <View className="flex-1 bg-surface">
@@ -42,109 +50,58 @@ export default function OrdersScreen() {
         <Text className="flex-1 text-center font-inter-700 text-primary" style={{ fontSize: 20, lineHeight: 28 }}>
           Order History
         </Text>
-        <View style={{ width: 18 }} />
-      </View>
-
-      {/* Tabs - Buying / Selling */}
-      <View className="flex-row mx-5 mb-4 bg-surfaceContainerLow rounded-figma-12 p-1">
-        <TouchableOpacity
-          className={`flex-1 py-2 rounded-figma-8 items-center ${tab === 'buying' ? 'bg-white' : ''}`}
-          onPress={() => setTab('buying')}
-        >
-          <Text className={`font-inter-700 ${tab === 'buying' ? 'text-primaryContainer' : 'text-textSecondary'}`} style={{ fontSize: 14, lineHeight: 16 }}>
-            Buying
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className={`flex-1 py-2 rounded-figma-8 items-center ${tab === 'selling' ? 'bg-white' : ''}`}
-          onPress={() => setTab('selling')}
-        >
-          <Text className={`font-inter-600 ${tab === 'selling' ? 'text-primaryContainer' : 'text-textSecondary'}`} style={{ fontSize: 14, lineHeight: 16 }}>
-            Selling
+        <TouchableOpacity onPress={() => router.push('/saved')}>
+          <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 20, color: colors.primaryContainer }}>
+            Saved
           </Text>
         </TouchableOpacity>
       </View>
 
+      {/* Status filter tabs — industry: All / In Progress / Delivered / Cancelled */}
+      <View className="flex-row items-center px-5 pt-1" style={{ borderBottomWidth: 1, borderBottomColor: colors.outlineVariant }}>
+        {STATUS_TABS.map((tab) => {
+          const active = tab === statusTab;
+          return (
+            <TouchableOpacity key={tab} className="items-center pb-2.5 px-4" onPress={() => setStatusTab(tab)} accessibilityRole="button" accessibilityLabel={`Show ${tab} orders`}>
+              <Text className="font-inter-600" style={{ fontSize: 13, lineHeight:  16, color: active ? colors.primary : colors.secondary, letterSpacing: 0.14 }}>{tab}</Text>
+              {active && <View className="absolute bottom-0 w-[42px] h-[2px] rounded-full" style={{ backgroundColor: colors.primary }} />}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {!ordersLoaded && (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color={colors.primaryContainer} />
+        </View>
+      )}
+
+      {ordersLoaded && (
       <FlatList
         data={data}
         keyExtractor={(item) => item.id}
         contentContainerClassName="px-5 pb-8"
         contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
-        renderItem={({ item, index }) => {
-          const isNewSellerGroup = index === 0 || data[index - 1].sellerUsername !== item.sellerUsername;
-          if (tab === 'selling') {
-            return (
-              <View>
-                {isNewSellerGroup && (
-                  <Text className="font-inter-600 text-textSecondary mb-2" style={{ fontSize: 13, lineHeight: 18 }}>
-                    Sold by {item.sellerName} (@{item.sellerUsername})
-                  </Text>
-                )}
-                <TouchableOpacity
-                  className="rounded-figma-24 bg-white p-4"
-                  style={{
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.04,
-                    shadowRadius: 8,
-                    elevation: 2,
-                  }}
-                  onPress={() => router.push(`/order/${item.id}`)}
-                >
-                  <View className="flex-row gap-4">
-                    {/* Product thumbnail — Figma Order History 96x96 */}
-                    <Image
-                      source={orderImages[index % 4]}
-                      className="w-[96px] h-[96px] rounded-figma-16"
-                      resizeMode="cover"
-                    />
-                    <View className="flex-1">
-                      <View className="flex-row justify-between items-center mb-2">
-                        <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 12, lineHeight: 14 }}>
-                          {formatDate(item.placedAt)}
-                        </Text>
-                        <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: colors.primaryBg }}>
-                          <Text className="font-inter-600" style={{ fontSize: 11, lineHeight: 14, color: getStatusColor(item.status) }}>
-                            {STATUS_LABELS[item.status]}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <Text className="font-inter-700 text-textPrimary mb-1" style={{ fontSize: 16, lineHeight: 22 }}>
-                        {item.items[0].name}
-                        {item.items.length > 1 ? ` +${item.items.length - 1} more` : ''}
-                      </Text>
-
-                      <View className="flex-row justify-between items-center">
-                        <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 14, lineHeight: 16 }}>
-                          {formatPrice(item.total)}
-                        </Text>
-                        <View className="flex-row items-center">
-                          <Text className="font-inter-600 text-primaryContainer mr-1" style={{ fontSize: 14, lineHeight: 16 }}>
-                            View
-                          </Text>
-                          <ChevronRightIcon size={10} color={colors.primaryContainer} />
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            );
-          }
-          return (
-            <View className="rounded-figma-24 bg-white p-4" style={{
+        renderItem={({ item }) => (
+            <TouchableOpacity
+              className="rounded-figma-24 bg-white p-4"
+              style={{
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.04,
               shadowRadius: 8,
               elevation: 2,
-            }}>
+            }}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`View order ${item.orderNumber ?? item.id}`}
+              onPress={() => router.push(`/track-order?id=${item.id}`)}
+            >
               <View className="flex-row gap-4">
                 {/* Product thumbnail — Figma Order History 96x96 */}
                 <Image
-                  source={orderImages[index % 4]}
+                  source={item.items[0]?.imageUrl ? { uri: item.items[0].imageUrl } : resolveListingImage(null, item.items[0]?.listingId ?? item.id)}
                   className="w-[96px] h-[96px] rounded-figma-16"
                   resizeMode="cover"
                 />
@@ -153,32 +110,75 @@ export default function OrdersScreen() {
                   <View className="flex-row justify-between items-center mb-2">
                     <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 12, lineHeight: 14 }}>
                       {formatDate(item.placedAt)}
+                      {item.orderNumber ? ` · ${item.orderNumber}` : ''}
                     </Text>
-                    <Text className="font-inter-700" style={{ fontSize: 12, lineHeight: 14, color: getStatusColor(item.status) }}>
-                      {STATUS_LABELS[item.status]}
-                    </Text>
+                    <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: colors.primaryBg }}>
+                      <Text className="font-inter-600" style={{ fontSize: 11, lineHeight: 14, color: getStatusColor(item.status) }}>
+                        {STATUS_LABELS[item.status]}
+                      </Text>
+                    </View>
                   </View>
 
-                  {/* Product title */}
+                  {/* Product title — guarded: legacy/malformed orders may carry zero items */}
                   <Text className="font-inter-700 text-textPrimary mb-1" style={{ fontSize: 16, lineHeight: 22 }}>
-                    {item.items[0].name}
+                    {item.items[0]?.name ?? 'Order'}
                     {item.items.length > 1 ? ` +${item.items.length - 1} more` : ''}
                   </Text>
 
                   {/* Price + actions row */}
                   <View className="flex-row justify-between items-center">
                     <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 14, lineHeight: 16 }}>
-                      {formatPrice(item.total)}
+                      {formatPrice(item.chargedTotal ?? item.total)}
                     </Text>
                     <View className="flex-row items-center gap-4">
+                      {(item.status === 'placed' || item.status === 'confirmed') && (
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Alert.alert(
+                              'Cancel order?',
+                              'The seller will be notified. Prepaid amounts return to your wallet.',
+                              [
+                                { text: 'Keep order', style: 'cancel' },
+                                {
+                                  text: 'Cancel order',
+                                  style: 'destructive',
+                                  onPress: () => {
+                                    if (!cancelOrder(item.id, 'Cancelled by buyer')) {
+                                      Alert.alert('Cannot cancel', 'This order can no longer be cancelled. Contact support for help.');
+                                    }
+                                  },
+                                },
+                              ]
+                            );
+                          }}
+                          hitSlop={{ top: 8, bottom:	8, left:	8, right:	8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Cancel order ${item.orderNumber ?? item.id}`}
+                        >
+                          <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, color: colors.error }}>
+                            Cancel
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                       {item.status === 'delivered' && !item.reviewed && (
-                        <TouchableOpacity onPress={() => router.push(`/rate-review?id=${item.id}`)}>
+                        <TouchableOpacity
+                          onPress={(e) => { e.stopPropagation(); router.push(`/rate-review?id=${item.id}`); }}
+                          hitSlop={{ top: 8, bottom:	8, left:	8, right:	8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Rate this order"
+                        >
                           <Text className="font-inter-600 text-primaryContainer" style={{ fontSize: 14, lineHeight: 16 }}>
                             Rate
                           </Text>
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity onPress={() => router.push(`/track-order?id=${item.id}`)}>
+                      <TouchableOpacity
+                        onPress={(e) => { e.stopPropagation(); router.push(`/track-order?id=${item.id}`); }}
+                        hitSlop={{ top: 8, bottom:	8, left:	8, right:	8 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`View details for order ${item.orderNumber ?? item.id}`}
+                      >
                         <Text className="font-inter-600 text-primaryContainer" style={{ fontSize: 14, lineHeight: 16 }}>
                           View Details
                         </Text>
@@ -187,28 +187,26 @@ export default function OrdersScreen() {
                   </View>
                 </View>
               </View>
-            </View>
-          );
-        }}
+            </TouchableOpacity>
+        )}
         ListEmptyComponent={
           <View className="items-center justify-center py-20">
             <Text className="font-inter-600 text-textPrimary mb-2" style={{ fontSize: 18, lineHeight: 28 }}>
-              {tab === 'buying' ? 'No orders yet' : 'No sales yet — share your listings'}
+              No orders yet
             </Text>
-            {tab === 'buying' && (
-              <TouchableOpacity
-                className="px-6 py-3 rounded-full"
-                style={{ backgroundColor: colors.primaryContainer }}
-                onPress={() => router.push('/(tabs)/feed')}
-              >
-                <Text className="font-inter-600 text-white" style={{ fontSize: 14, lineHeight: 16 }}>
-                  Browse Feed
-                </Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              className="px-6 py-3 rounded-full"
+              style={{ backgroundColor: colors.primaryContainer }}
+              onPress={() => router.push('/(tabs)/feed')}
+            >
+              <Text className="font-inter-600 text-white" style={{ fontSize: 14, lineHeight: 16 }}>
+                Browse Feed
+              </Text>
+            </TouchableOpacity>
           </View>
         }
       />
+      )}
     </View>
   );
 }

@@ -1228,6 +1228,7 @@ export type FeaturedPostCreateManyArgs<ExtArgs extends runtime.Types.Extensions.
    * The data used to create many FeaturedPosts.
    */
   data: Prisma.FeaturedPostCreateManyInput | Prisma.FeaturedPostCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1246,6 +1247,7 @@ export type FeaturedPostCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ex
    * The data used to create many FeaturedPosts.
    */
   data: Prisma.FeaturedPostCreateManyInput | Prisma.FeaturedPostCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

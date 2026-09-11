@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, CheckIcon, StarIcon } from '../utils/icons';
@@ -9,13 +9,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePosts, type Post } from '../contexts/PostContext';
 import { usePromotions } from '../contexts/PromotionContext';
 import {
-  PROMO_PACKAGES,
   PROMOTION_KIND_LABEL,
   PROMOTION_KIND_BLURB,
   getPackage,
+  getPackages,
+  loadMarketplaceConfig,
+  resetMarketplaceConfig,
   type PromotionKind,
 } from '../utils/marketplace';
-import { getWallet, saveWallet } from '../utils/walletStore';
+import { getWallet, syncWalletFromServer } from '../utils/walletStore';
+import { serverApi } from '../utils/serverApi';
 
 const MegaphoneIcon = ({ size = 18, color = '#4343d5' }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -42,7 +45,7 @@ const STATUS_CHIP: Record<string, { label: string; bg: string; fg: string }> = {
   pending_payment: { label: 'PENDING PAYMENT', bg: colors.tertiaryContainer, fg: colors.tertiary },
 };
 
-const KIND_ORDER: PromotionKind[] = ['featuredPost', 'hotDeal', 'topSeller'];
+const KIND_ORDER: PromotionKind[] = ['spotlight', 'featuredPost', 'hotDeal', 'topSeller'];
 
 export default function PromotionsScreen() {
   const insets = useSafeAreaInsets();
@@ -51,20 +54,46 @@ export default function PromotionsScreen() {
   const { promotions, createPromotion, endPromotion } = usePromotions();
 
   const [balance, setBalance] = useState(0);
-  const [selectedKind, setSelectedKind] = useState<PromotionKind>('featuredPost');
-  const [selectedPkg, setSelectedPkg] = useState<string | null>('featured-post-7');
+  // Deep-link entry (e.g. storefront editor "Promote as Hot Deal"):
+  // validated against the known kinds, defaults to no preselection intent.
+  const entryParams = useLocalSearchParams<{ kind?: string | string[] }>();
+  const entryKind = (() => {
+    const raw = Array.isArray(entryParams.kind) ? entryParams.kind[0] : entryParams.kind;
+    return raw === 'spotlight' || raw === 'featuredPost' || raw === 'hotDeal' || raw === 'topSeller'
+      ? (raw as PromotionKind)
+      : 'featuredPost';
+  })();
+  const [selectedKind, setSelectedKind] = useState<PromotionKind>(entryKind);
+  // No preselected package: a default-selected ₹349 spend one tap from Pay is
+  // an accidental-purchase trap. The buyer picks explicitly (Meesho pattern).
+  const [selectedPkg, setSelectedPkg] = useState<string | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const payingRef = useRef(false);
+  // Bumps when the admin-managed catalog arrives so prices re-render live.
+  const [configTick, setConfigTick] = useState(0);
+
+  // Admin Commission & Fees page is the source of truth for package prices.
+  // Refresh on every entry so price edits show up on the next visit, not the
+  // next cold start.
+  useEffect(() => {
+    resetMarketplaceConfig();
+    loadMarketplaceConfig()
+      .then(() => setConfigTick((t) => t + 1))
+      .catch(() => {});
+  }, []);
+
+  const promoPackages = useMemo(() => getPackages(), [configTick]);
 
   const myPromos = useMemo(
     () =>
       promotions
-        .filter((p) => p.sellerUsername === (user?.username || 'user'))
+        .filter((p) => p.sellerUsername === (user?.username ?? ''))
         .sort((a, b) => b.startsAt - a.startsAt),
     [promotions, user]
   );
 
   const myPosts = useMemo(
-    () => posts.filter((p) => p.sellerUsername === (user?.username || 'user')),
+    () => posts.filter((p) => p.sellerUsername === (user?.username ?? '')),
     [posts, user]
   );
 
@@ -75,6 +104,9 @@ export default function PromotionsScreen() {
   useEffect(() => {
     (async () => {
       try {
+        // Fresh server balance for the payment gate — a mount-cached value
+        // approves spends against stale money (or blocks real top-ups).
+        await syncWalletFromServer().catch(() => {});
         const state = await getWallet();
         setBalance(state.balance);
       } catch {}
@@ -85,6 +117,7 @@ export default function PromotionsScreen() {
   const total = pkg?.price ?? 0;
 
   const pay = async () => {
+    if (payingRef.current) return;
     if (!pkg || !selectedPost) {
       Alert.alert('Select a listing', 'Pick one of your listings and a package to promote.');
       return;
@@ -93,44 +126,43 @@ export default function PromotionsScreen() {
       Alert.alert('Insufficient balance', `This campaign costs ${formatPrice(pkg.price)}. Add money to your wallet first.`);
       return;
     }
-    const promo = createPromotion({
+    payingRef.current = true;
+    // Server owns the money: ONE call debits the wallet and creates the
+    // ACTIVE placement atomically (server price, ownership-checked). The old
+    // client-debit + fire-and-forget mirror burned money whenever the mirror
+    // failed, and a double-tap charged twice — both impossible here:
+    // checkoutRef makes retries idempotent (same ref returns the purchase,
+    // never a second charge).
+    const checkoutRef = `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      const res = await serverApi.purchasePromotion({
+        packageId: pkg.id,
+        postId: selectedPost.id,
+        checkoutRef,
+      });
+      if (!res.ok) {
+        Alert.alert('Payment failed', res.error === 'offline' ? 'Could not reach the server — no money was charged. Try again when online.' : String(res.error || 'Could not start campaign. No money was charged.'));
+        getWallet().then((s) => setBalance(s.balance)).catch(() => {});
+        return;
+      }
+    } catch {
+      Alert.alert('Payment failed', 'Could not reach the server — no money was charged. Safe to retry: the same attempt can never bill twice.');
+      return;
+    } finally {
+      payingRef.current = false;
+    }
+    // Refresh the header balance from SERVER truth (the debit happened
+    // server-side; the local cache doesn't know yet).
+    await syncWalletFromServer().catch(() => {});
+    getWallet().then((s) => setBalance(s.balance)).catch(() => {});
+    // Local mirror for instant "My campaigns" reflection (server row is the
+    // truth other devices read; this never moves money).
+    createPromotion({
       packageId: pkg.id,
       postId: selectedPost.id,
       productTitle: selectedPost.description.slice(0, 44),
       sellerUsername: user?.username || 'user',
     });
-    if (!promo) return;
-    // Single atomic debit through the shared wallet store.
-    const state = await getWallet();
-    const newBalance = state.balance - pkg.price;
-    await saveWallet({
-      balance: newBalance,
-      transactions: [
-        {
-          id: `prm${Date.now()}`,
-          title: `Promotion · ${PROMOTION_KIND_LABEL[pkg.kind]}`,
-          detail: `${pkg.name} · ${selectedPost.description.slice(0, 24)}`,
-          amount: -pkg.price,
-          ts: Date.now(),
-        },
-        ...state.transactions,
-      ],
-    });
-    setBalance(newBalance);
-    // Mirror the purchase to the admin campaign queue (fire-and-forget).
-    void import('../utils/adminSync').then((m) =>
-      m.syncPromotion({
-        id: promo.id,
-        kind: promo.kind,
-        packageName: pkg.name,
-        price: pkg.price,
-        days: pkg.days,
-        sellerUsername: user?.username,
-        postId: selectedPost.id,
-        postTitle: selectedPost.description.slice(0, 44),
-        createdAt: Date.now(),
-      })
-    );
     Alert.alert(
       'Campaign is live',
       `${PROMOTION_KIND_LABEL[pkg.kind]} started for "${selectedPost.description.slice(0, 24)}" — ${
@@ -157,7 +189,7 @@ export default function PromotionsScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 40 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 110 }}>
         <Text className="font-inter-400 mt-3 text-textSecondary" style={{ fontSize: 12.5, lineHeight: 18 }}>
           Get more views and orders — like Instagram boosts, OLX featured ads and Facebook promoted posts.
           Every campaign is pay-per-duration from your wallet and reviewed by susej Finance.
@@ -256,13 +288,13 @@ export default function PromotionsScreen() {
         {/* Packages by kind */}
         <View className="mt-5" style={{ gap: 16 }}>
           {KIND_ORDER.map((kind) => {
-            const pkgs = PROMO_PACKAGES.filter((p) => p.kind === kind);
+            const pkgs = promoPackages.filter((p) => p.kind === kind);
             const open = selectedKind === kind;
             return (
               <View key={kind} className="rounded-figma-16 overflow-hidden" style={{ backgroundColor: colors.surfaceContainerLowest, ...shadows.card }}>
-                <TouchableOpacity className="flex-row items-center px-4 py-3.5" onPress={() => setSelectedKind(kind)}>
+                    <TouchableOpacity className="flex-row items-center px-4 py-3.5" onPress={() => { setSelectedKind(kind); }}>
                   <View className="w-9 h-9 rounded-full items-center justify-center mr-3" style={{ backgroundColor: colors.surfaceContainer }}>
-                    {kind === 'topSeller' ? <StarIcon size={17} color={colors.primaryContainer} /> : kind === 'hotDeal' ? <ZapIcon size={17} /> : <MegaphoneIcon size={17} color={colors.primaryContainer} />}
+                    {kind === 'topSeller' ? <StarIcon size={17} color={colors.primaryContainer} /> : kind === 'hotDeal' ? <ZapIcon size={17} /> : kind === 'spotlight' ? <MegaphoneIcon size={17} color={colors.primary} /> : <MegaphoneIcon size={17} color={colors.primaryContainer} />}
                   </View>
                   <View className="flex-1">
                     <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 18 }}>

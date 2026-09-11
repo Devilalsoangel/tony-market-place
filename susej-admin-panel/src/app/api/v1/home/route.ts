@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkAppKey, unauthorized } from "@/lib/promotions/api-auth";
 import { getPrisma } from "@/lib/db";
 import { lazySweep } from "@/lib/promotions/activate";
-import { mockTopSellers, mockHotDeals, mockFeaturedPosts } from "@/home-management/lib/mockData";
 
 const ACTIVE = "active";
 
@@ -11,42 +10,30 @@ export async function GET(request: NextRequest) {
 
   await lazySweep();
   const prisma = await getPrisma();
+  // FAIL HONEST: DB unreachable → empty payload + degraded flag. No mock data.
   if (!prisma) {
-    return NextResponse.json({
-      topSellers: mockTopSellers.filter((t) => t.status === ACTIVE).map((t) => ({
-        sellerId: t.sellerId,
-        sellerName: t.sellerName,
-        sellerLogo: t.sellerLogo,
-        totalSales: t.totalSales,
-        rating: t.rating,
-        reviewCount: t.reviewCount,
-        position: t.position,
-        isPinned: t.isPinned,
-      })),
-      hotDeals: mockHotDeals.filter((d) => d.status === ACTIVE).map((d) => ({
-        productId: d.productId,
-        productName: d.productName,
-        productImage: d.productImage,
-        originalPrice: d.originalPrice,
-        discountedPrice: d.discountedPrice,
-        discountPercentage: d.discountPercentage,
-        priority: d.priority,
-      })),
-      featuredPosts: mockFeaturedPosts.filter((p) => p.status === ACTIVE).map((p) => ({
-        postId: p.postId,
-        title: p.title,
-        excerpt: p.excerpt,
-        imageUrl: p.imageUrl,
-        position: p.position,
-        isPinned: p.isPinned,
-      })),
-    });
+    return NextResponse.json(
+      {
+        topSellers: [],
+        hotDeals: [],
+        marketingBanners: [],
+        degraded: true,
+      },
+      { status: 200 }
+    );
   }
 
-  const [topSellers, hotDeals, featuredPosts] = await Promise.all([
+  const [topSellers, hotDeals, marketingBanners] = await Promise.all([
     prisma.topSeller.findMany({ where: { status: ACTIVE }, orderBy: { position: "asc" } }),
     prisma.hotDeal.findMany({ where: { status: ACTIVE }, orderBy: { priority: "asc" } }),
-    prisma.featuredPost.findMany({ where: { status: ACTIVE }, orderBy: { position: "asc" } }),
+    // Marketing banners: seller-uploaded banner images from the seller dashboard,
+    // synced into storefrontBanner. Ordered by explicit position (lower first,
+    // nulls last) then newest. This is the ONLY hero source — post marketing
+    // (featured posts) was removed.
+    prisma.storefrontBanner.findMany({
+      where: { status: ACTIVE },
+      orderBy: [{ position: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+    }),
   ]);
 
   return NextResponse.json({
@@ -69,13 +56,16 @@ export async function GET(request: NextRequest) {
       discountPercentage: d.discountPercentage,
       priority: d.priority,
     })),
-    featuredPosts: featuredPosts.map((p) => ({
-      postId: p.postId,
-      title: p.title,
-      excerpt: p.excerpt,
-      imageUrl: p.imageUrl,
-      position: p.position,
-      isPinned: p.isPinned,
+    marketingBanners: marketingBanners.map((b) => ({
+      id: b.id,
+      sellerUsername: b.sellerUsername,
+      sellerName: b.sellerName,
+      title: b.title,
+      subtitle: b.subtitle,
+      ctaLabel: b.ctaLabel,
+      imageUrl: b.imageUrl,
+      size: b.size,
+      position: b.position,
     })),
   });
 }

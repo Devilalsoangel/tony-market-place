@@ -88,7 +88,9 @@ export function Navbar({ onOpenSearch }: NavbarProps) {
           trigger={
             <button className="relative flex h-7 w-7 items-center justify-center rounded-[6px] text-[#71717A] transition-colors hover:bg-[#F4F4F5] hover:text-[#18181B]">
               <Bell className="h-4 w-4" />
-              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#6C3BFF]" />
+              {recent.length > 0 && (
+                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#6C3BFF]" />
+              )}
             </button>
           }
           align="end"

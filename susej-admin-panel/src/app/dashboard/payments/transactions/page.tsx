@@ -29,7 +29,7 @@ const columns = [
     cell: (info) => <Badge variant={typeBadge[info.getValue()]} className="capitalize">{info.getValue()}</Badge>,
   }),
   column.accessor("amount", { header: "Amount", cell: (info) => <span className="font-medium tabular-nums">{formatCurrency(info.getValue())}</span> }),
-  column.accessor("method", { header: "Method", cell: (info) => <span className="capitalize text-[#71717A]">{String(info.getValue()).replace("_", " ")}</span> }),
+  column.accessor("method", { header: "Method", cell: (info) => <span className="capitalize text-[#71717A]">{String(info.getValue()).replaceAll("_", " ")}</span> }),
   column.accessor("gateway", { header: "Gateway", cell: (info) => info.getValue() }),
   column.accessor("reference", { header: "Reference", cell: (info) => <span className="font-mono text-xs text-[#71717A]">{info.getValue()}</span> }),
   column.accessor("status", {

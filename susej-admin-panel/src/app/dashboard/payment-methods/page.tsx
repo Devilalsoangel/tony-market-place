@@ -11,9 +11,20 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch } from "@/lib/api-mutate";
 import { formatDate } from "@/lib/utils";
 import { CreditCard } from "lucide-react";
-import type { MockPaymentMethod } from "@/services/mock-data";
+import type { MockPaymentMethod } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockPaymentMethod>();
+
+/** Display-masked payment identifier (full values never leave the DB). */
+function maskIdentifier(p: MockPaymentMethod): string {
+  const v = String((p as { last4?: unknown }).last4 ?? "").trim();
+  if (p.type === "card") return v ? `•••• ${v.slice(-4)}` : "••••";
+  if (p.type === "upi") {
+    const at = v.lastIndexOf("@");
+    return at > 0 ? `•••@${v.slice(at + 1)}` : "•••";
+  }
+  return "—";
+}
 
 const typeVariant: Record<string, "primary" | "success" | "info" | "warning" | "default"> = {
   card: "primary",
@@ -27,10 +38,17 @@ const makeColumns = (onToggle: (p: MockPaymentMethod) => void) => [
   column.accessor("userName", { header: "User", cell: (info) => <span className="font-medium text-[#18181B]">{info.getValue()}</span> }),
   column.accessor("type", {
     header: "Type",
-    cell: (info) => <Badge variant={typeVariant[info.getValue()]} className="capitalize">{String(info.getValue()).replace("_", " ")}</Badge>,
+    cell: (info) => <Badge variant={typeVariant[info.getValue()]} className="capitalize">{String(info.getValue()).replaceAll("_", " ")}</Badge>,
   }),
   column.accessor("brand", { header: "Brand / Provider", cell: (info) => info.getValue() }),
-  column.accessor("last4", { header: "Identifier", cell: (info) => <span className="font-mono text-sm text-[#71717A]">{info.getValue()}</span> }),
+  // Privacy: full identifiers never render — cards show last4 only, UPI IDs
+  // show domain only, wallet/bank/cod rows carry no meaningful identifier.
+  column.accessor("last4", {
+    header: "Identifier",
+    cell: (info) => (
+      <span className="font-mono text-sm text-[#71717A]">{maskIdentifier(info.row.original)}</span>
+    ),
+  }),
   column.accessor("status", {
     header: "Status",
     cell: (info) => <Badge variant={info.getValue() === "active" ? "success" : info.getValue() === "expired" ? "warning" : "default"} className="capitalize">{info.getValue()}</Badge>,
@@ -103,7 +121,6 @@ export default function PaymentMethodsPage() {
               { key: "userName", label: "User" },
               { key: "type", label: "Type" },
               { key: "brand", label: "Brand" },
-              { key: "last4", label: "Identifier" },
               { key: "status", label: "Status" },
               { key: "addedAt", label: "Added" },
             ]}

@@ -7,8 +7,13 @@ import { ChevronLeftIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
 import { CATEGORY_TREE, findMainCategory } from '../utils/categories';
 import CategoryPicker from '../components/CategoryPicker';
+import { useAuth } from '../contexts/AuthContext';
 
-const STORE_CATEGORIES_KEY = '@susej_store_categories';
+const STORE_CATEGORIES_KEY_BASE = '@susej_store_categories';
+
+function getStoreCategoriesKey(username?: string | null): string {
+  return username ? `${STORE_CATEGORIES_KEY_BASE}:${username}` : STORE_CATEGORIES_KEY_BASE;
+}
 
 interface StoreCategories {
   main: string;
@@ -19,6 +24,8 @@ const DEFAULTS: StoreCategories = { main: 'fashion', children: ['Kurtas & Ethnic
 
 export default function CategoriesManagerScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const storeKey = getStoreCategoriesKey(user?.username);
   const [main, setMain] = useState<string>(DEFAULTS.main);
   const [children, setChildren] = useState<string[]>(DEFAULTS.children);
   const [loaded, setLoaded] = useState(false);
@@ -27,7 +34,14 @@ export default function CategoriesManagerScreen() {
     let active = true;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORE_CATEGORIES_KEY);
+        let raw = await AsyncStorage.getItem(storeKey);
+        if (!raw && storeKey !== STORE_CATEGORIES_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(STORE_CATEGORIES_KEY_BASE);
+          if (legacy) {
+            raw = legacy;
+            try { await AsyncStorage.setItem(storeKey, legacy); } catch {}
+          }
+        }
         if (active && raw) {
           const parsed = JSON.parse(raw) as StoreCategories;
           setMain(findMainCategory(parsed.main)?.id ?? parsed.main ?? DEFAULTS.main);
@@ -42,11 +56,11 @@ export default function CategoriesManagerScreen() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [storeKey]);
 
   const persist = async (nextMain: string, nextChildren: string[]) => {
     try {
-      await AsyncStorage.setItem(STORE_CATEGORIES_KEY, JSON.stringify({ main: nextMain, children: nextChildren } as StoreCategories));
+      await AsyncStorage.setItem(getStoreCategoriesKey(user?.username), JSON.stringify({ main: nextMain, children: nextChildren } as StoreCategories));
     } catch (err) {
       // storage write failed — surface silently, state still holds the values
     }

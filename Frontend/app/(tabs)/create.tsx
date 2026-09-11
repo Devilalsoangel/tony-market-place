@@ -1,16 +1,21 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, Image, ActivityIndicator, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, Image, ActivityIndicator, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent, Alert } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CloseIcon, CheckIcon, ChevronLeftIcon, MapPinIcon, CameraIcon, PencilIcon, BagIcon, GpsTargetIcon, ShopIcon } from '../../utils/icons';
+import { CloseIcon, CheckIcon, ChevronLeftIcon, MapPinIcon, CameraIcon, PencilIcon, BagIcon, ShopIcon } from '../../utils/icons';
 import { colors, CATEGORIES, formatPrice, getCategoryColor } from '../../utils/theme';
+import { serverApi } from '../../utils/serverApi';
 import { getFlow } from '../../utils/categoryFlow';
+import { isApprovedSeller, sellerPendingReview } from '../../utils/marketplace';
 import CategoryPicker from '../../components/CategoryPicker';
+import { MapLocationPicker, type PickedLocation } from '../../components/MapLocationPicker';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePosts } from '../../contexts/PostContext';
-import { createPostImages, categoryImages, savedCollectionImages } from '../../utils/screenImages';
+import { getPermStatus, permCanAskAgain, requestPerm } from '../../utils/permissions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const PERM_ASKED_KEY = '@susej_media_perm_asked';
 const STEPS = [
   { key: 'media', label: 'Choose Media' },
   { key: 'details', label: 'Product Details' },
@@ -19,17 +24,6 @@ const STEPS = [
   { key: 'location', label: 'Location' },
   { key: 'preview', label: 'Preview & Post' },
 ] as const;
-
-const MEDIA_IMAGES: (string | number)[] = [
-  createPostImages.gallery[0],
-  createPostImages.gallery[1],
-  createPostImages.gallery[2],
-  createPostImages.gallery[3],
-  categoryImages[0],
-  categoryImages[1],
-  categoryImages[2],
-  savedCollectionImages[0],
-];
 
 const CONDITIONS = ['New', 'Like New', 'Used', 'Refurbished'];
 
@@ -81,7 +75,7 @@ type DeliveryKey = (typeof DELIVERY_OPTIONS)[number]['key'];
 
 interface VariantDraft {
   name: string;
-  values: { label: string; priceDelta?: number }[];
+  values: { label: string; priceDelta?: number; stock?: number }[];
 }
 
 const MAX_IMAGES = 10;
@@ -113,21 +107,51 @@ export default function CreateScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const cardWidth = screenWidth - 40;
+  // Camera shell hand-off: /creator shutter|gallery lands here with pre-picked
+  // media ('|'-joined uris) so the wizard opens with images already attached.
+  const cameraParams = useLocalSearchParams<{ cameraImages?: string | string[] }>();
+  const seededFromCamera: string[] = (() => {
+    const raw = cameraParams.cameraImages;
+    const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split('|') : [];
+    return list.map((s) => s.trim()).filter(Boolean);
+  })();
 
   const [step, setStep] = useState(1);
-  const [selectedImages, setSelectedImages] = useState<(string | number)[]>([]);
-  const [imageUrl, setImageUrl] = useState('');
+  const [selectedImages, setSelectedImages] = useState<(string | number)[]>(seededFromCamera);
+  const [mediaMeta, setMediaMeta] = useState<Record<string, { isVideo: boolean; seconds?: number }>>({});
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [subCategories, setSubCategories] = useState<string[]>([]);
   const [condition, setCondition] = useState('');
   const [price, setPrice] = useState('');
+  // Optional was-price (MRP): enables strikethrough + % off + price-drop alerts.
+  const [mrp, setMrp] = useState('');
   const [negotiable, setNegotiable] = useState(false);
   const [delivery, setDelivery] = useState<DeliveryKey | null>(null);
   const [shippingFee, setShippingFee] = useState('');
   const [city, setCity] = useState('');
-  const [useCurrentLocation, setUseCurrentLocation] = useState(false);
+  // Optional per-listing SELLING spot on the live map (separate from the
+  // seller's mandatory store location). Prefilled from the store pick so the
+  // seller can accept or move it - never fabricated.
+  const [sellLoc, setSellLoc] = useState<PickedLocation | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const u = user?.username;
+    if (!u) return;
+    AsyncStorage.getItem(`@susej_store_location:${u}`)
+      .then((raw) => {
+        if (!alive || !raw) return;
+        try {
+          const v = JSON.parse(raw);
+          if (v && typeof v.lat === 'number' && typeof v.lng === 'number') {
+            setSellLoc((prev) => prev ?? { lat: v.lat, lng: v.lng, label: v.label ?? '' });
+          }
+        } catch {}
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [user?.username]);
   const [showVariants, setShowVariants] = useState(false);
   const [variants, setVariants] = useState<VariantDraft[]>([]);
   const [extra, setExtra] = useState<Record<string, string | boolean>>({});
@@ -137,13 +161,67 @@ export default function CreateScreen() {
 
   const flow = getFlow(category);
 
-  const isSeller = !!user?.isSeller;
+  // Category chips come from the ADMIN-OWNED catalog in Postgres
+  // (/api/app/categories) so every listing lands in a real storefront.
+  // Local CATEGORIES stay only as the offline fallback.
+  const [adminCats, setAdminCats] = useState<{ id: string; label: string }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    serverApi.getCategories().then((res) => {
+      if (!alive) return;
+      if (res.ok && res.data?.categories?.length) {
+        setAdminCats(res.data.categories.map((c) => ({ id: c.slug, label: c.name })));
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const categoryChips = adminCats.length > 0 ? adminCats : CATEGORIES;
+
+  // One-shop-one-category: a seller with a store category can only list in
+  // it (their shop IS one category). Buyers never reach this screen, but the
+  // guard keeps honest behavior if state ever drifts.
+  const storeCategory = (user?.category ?? '').trim();
+  const lockedCategory = !!user?.isSeller && storeCategory.length > 0;
+  useEffect(() => {
+    if (!lockedCategory) return;
+    // Prefill when empty AND force-correct if state ever drifts: a locked
+    // seller's listings always start from (and stay in) their store category.
+    if (!category || category !== storeCategory) {
+      setCategory(storeCategory);
+      setSubCategories([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedCategory]);
+
+  // First visit to Create: fire the gallery permission popup once, contextually.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const asked = await AsyncStorage.getItem(PERM_ASKED_KEY);
+        if (asked === '1' || cancelled) return;
+        await AsyncStorage.setItem(PERM_ASKED_KEY, '1');
+        const status = await getPermStatus('media');
+        if (status !== 'granted' && (await permCanAskAgain('media'))) {
+          await requestPerm('media');
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const numericPrice = Number(price);
   const priceValid = Number.isFinite(numericPrice) && numericPrice > 0;
+  // MRP valid only when strictly above the selling price (real discount)
+  const numericMrp = Number(mrp);
+  const validMrp = mrp.trim().length > 0 && Number.isFinite(numericMrp) && numericMrp > numericPrice;
   const canPost =
     selectedImages.length > 0 && title.trim().length > 0 && category.length > 0 && priceValid && !!delivery && city.trim().length > 0;
 
-  // Variants with a name and at least one labelled value
+  // Variants with a name and at least one labelled value (per-value stock
+  // included when set — Shopify-style inventory, optional per value).
   const cleanVariants = variants
     .map((v) => ({
       name: v.name.trim(),
@@ -152,6 +230,9 @@ export default function CreateScreen() {
         .map((val) => ({
           label: val.label.trim(),
           ...(val.priceDelta && val.priceDelta > 0 ? { priceDelta: Math.round(val.priceDelta) } : {}),
+          ...(typeof val.stock === 'number' && Number.isFinite(val.stock) && val.stock >= 0
+            ? { stock: Math.min(100000, Math.floor(val.stock)) }
+            : {}),
         })),
     }))
     .filter((v) => v.name.length > 0 && v.values.length > 0);
@@ -190,18 +271,47 @@ export default function CreateScreen() {
 
   const setExtraToggle = (key: string, value: boolean) => setExtra((prev) => ({ ...prev, [key]: value }));
 
-  const applyImageUrl = () => {
-    const trimmed = imageUrl.trim();
-    if (/^https?:\/\/.+/.test(trimmed)) {
-      toggleImage(trimmed);
-      setImageUrl('');
-    }
+  const pickFromGallery = async () => {
+    try {
+      const ImagePicker: any = require('expo-image-picker');
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) return;
+      const remaining = MAX_IMAGES - selectedImages.length;
+      if (remaining <= 0) return;
+      const res = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: remaining > 1,
+        selectionLimit: remaining,
+        mediaTypes: ['images', 'videos'],
+        quality: 0.82,
+        allowsEditing: false,
+      });
+      if (!res.canceled && res.assets?.length) {
+        const metas: Record<string, { isVideo: boolean; seconds?: number }> = {};
+        const uris: string[] = [];
+        for (const a of res.assets as any[]) {
+          const u = typeof a?.uri === 'string' ? a.uri : '';
+          if (!u || uris.includes(u)) continue;
+          uris.push(u);
+          const dur = typeof a.duration === 'number' ? Math.round(a.duration) : undefined;
+          metas[u] = { isVideo: a.type === 'video' || a.mediaType === 'video', seconds: dur };
+        }
+        setMediaMeta((prev) => ({ ...prev, ...metas }));
+        setSelectedImages((prev) => {
+          const merged = [...prev];
+          for (const u of uris) {
+            if (merged.length >= MAX_IMAGES) break;
+            if (!merged.includes(u)) merged.push(u);
+          }
+          return merged;
+        });
+      }
+    } catch {}
   };
 
   const updateVariantName = (i: number, name: string) =>
     setVariants((prev) => prev.map((v, vi) => (vi === i ? { ...v, name } : v)));
 
-  const updateVariantValue = (i: number, vi: number, patch: Partial<{ label: string; priceDelta?: number }>) =>
+  const updateVariantValue = (i: number, vi: number, patch: Partial<{ label: string; priceDelta?: number; stock?: number }>) =>
     setVariants((prev) =>
       prev.map((v, vIndex) =>
         vIndex === i ? { ...v, values: v.values.map((val, valIndex) => (valIndex === vi ? { ...val, ...patch } : val)) } : v
@@ -241,22 +351,45 @@ export default function CreateScreen() {
         .filter((k) => extra[k] !== undefined && extra[k] !== '')
         .map((k) => [k, extra[k]])
     );
-    const urlImages = selectedImages.filter((s): s is string => typeof s === 'string');
+    const localUris = selectedImages.filter((s): s is string => typeof s === 'string');
+    const feeNum = shippingFee.trim() ? Math.max(0, Math.min(100000, Math.floor(Number(shippingFee)))) : undefined;
+    // Upload FIRST (industry standard: DB stores hosted http(s) URLs only —
+    // the server now rejects file://, content:// and data: references, which
+    // previously leaked into the feed as broken images on every other device).
+    const { uploadAllToServer } = require('../../utils/mediaUpload');
+    const hadLocal = localUris.some((u) => !u.startsWith('http'));
+    const hostedImages = await uploadAllToServer(localUris);
+    if (hadLocal && hostedImages.length === 0) {
+      setPosting(false);
+      Alert.alert('Upload failed', 'Could not upload your images. Check your connection and try again.');
+      return;
+    }
     addPost({
       sellerName: user?.businessName || user?.name || 'My Store',
       sellerUsername: user?.username || 'user',
-      sellerLocation: user?.location || `${city}, India`,
+      sellerLocation: city.trim() ? `${city.trim()}, India` : (user?.location || 'India'),
       verified: user?.verification === 'approved',
       price: Math.round(numericPrice),
+      mrp: validMrp ? Math.round(numericMrp) : undefined,
       description,
       category,
       subCategories: subCategories.length > 0 ? subCategories : undefined,
       type: 'product',
       hashtags: parsedTags,
-      image: urlImages[0] || undefined,
-      images: urlImages.length > 1 ? urlImages : undefined,
+      image: hostedImages[0] || undefined,
+      images: hostedImages.length > 1 ? hostedImages : undefined,
       variants: cleanVariants.length > 0 ? cleanVariants : undefined,
+      // Fulfillment data the wizard collects — previously dropped before the
+      // order (buyer never saw condition, delivery mode, or shipping fee).
+      condition: condition || undefined,
+      negotiable,
+      delivery: delivery !== null,
+      deliveryMode: delivery ?? undefined,
+      shippingFee: delivery === 'shipping' && feeNum !== undefined && Number.isFinite(feeNum) ? feeNum : undefined,
       ...extraPayload,
+      ...(sellLoc && sellLoc.label && sellLoc.label !== 'Resolving address…'
+        ? { listingLat: sellLoc.lat, listingLng: sellLoc.lng, listingLocation: sellLoc.label }
+        : {}),
     });
     setPosting(false);
     setPosted(true);
@@ -327,7 +460,11 @@ export default function CreateScreen() {
     );
   };
 
-  if (!isSeller) {
+  // Publishing requires APPROVED sellers (matches server 403s). Pending
+  // applicants see their review status — never a working wizard that fails
+  // at publish time, and never a fake local seller session.
+  if (!isApprovedSeller(user)) {
+    const pending = sellerPendingReview(user);
     return (
       <View className="flex-1" style={{ backgroundColor: colors.surface }}>
         <View className="flex-row items-center px-5" style={{ height: 64 + insets.top, paddingTop: insets.top, backgroundColor: colors.surface }}>
@@ -346,24 +483,28 @@ export default function CreateScreen() {
 
         <View className="flex-1 items-center justify-center px-8" style={{ paddingBottom: 80 }}>
           <View className="w-16 h-16 rounded-full bg-surfaceContainer items-center justify-center mb-5">
-            <Text style={{ fontSize: 28, lineHeight: 36 }}>🛍️</Text>
+            <ShopIcon size={28} color={colors.primary} />
           </View>
           <Text style={{ fontSize: 18, lineHeight: 24, letterSpacing: 0.18, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' }}>
-            Become a seller to list products
+            {pending ? 'Verification under review' : 'Become a seller to list products'}
           </Text>
           <Text style={{ fontSize: 14, lineHeight: 20, color: colors.textSecondary, textAlign: 'center', marginTop: 8 }}>
-            Create your seller profile and start listing products to thousands of local buyers.
+            {pending
+              ? 'Our team is reviewing your documents. Listing unlocks the moment you are approved.'
+              : 'Create your seller profile and start listing products to thousands of local buyers.'}
           </Text>
-          <TouchableOpacity
-            className="w-full h-14 rounded-figma-16 items-center justify-center mt-6"
-            style={{ backgroundColor: colors.primaryContainer }}
-            activeOpacity={0.85}
-            onPress={() => router.push('/become-seller')}
-          >
-            <Text style={{ fontSize: 16, lineHeight: 24, fontWeight: '600', color: colors.surfaceContainerLowest }}>
-              Become a Seller
-            </Text>
-          </TouchableOpacity>
+          {!pending && (
+            <TouchableOpacity
+              className="w-full h-14 rounded-figma-16 items-center justify-center mt-6"
+              style={{ backgroundColor: colors.primaryContainer }}
+              activeOpacity={0.85}
+              onPress={() => router.push('/become-seller')}
+            >
+              <Text style={{ fontSize: 16, lineHeight: 24, fontWeight: '600', color: colors.surfaceContainerLowest }}>
+                Become a Seller
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -461,17 +602,24 @@ export default function CreateScreen() {
                       style={{ backgroundColor: colors.primaryContainer, shadowColor: colors.inverseSurface, shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}
                     >
                       <Text style={{ fontSize: 12, lineHeight: 14, fontWeight: '700', color: colors.onPrimaryContainer }}>
-                        {selectedImages.length} {selectedImages.length === 1 ? 'photo' : 'photos'}
+                        {selectedImages.length} selected
                       </Text>
                     </View>
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
                     {selectedImages.map((uri, i) => (
-                      <View key={uri} className="mr-2 rounded-figma-12 overflow-hidden" style={{ width: 72, height: 90, backgroundColor: colors.surfaceContainer }}>
+                      <View key={String(uri)} className="mr-2 rounded-figma-12 overflow-hidden" style={{ width: 72, height: 90, backgroundColor: colors.surfaceContainer }}>
                         <Image source={toSource(uri)} className="w-full h-full" resizeMode="cover" />
                         {i === 0 && (
                           <View className="absolute top-1 left-1 px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.primaryContainer }}>
                             <Text style={{ fontSize: 9, lineHeight: 12, fontWeight: '700', color: colors.onPrimaryContainer }}>MAIN</Text>
+                          </View>
+                        )}
+                        {mediaMeta[String(uri)]?.isVideo && (
+                          <View className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+                            <Text style={{ fontSize: 9, lineHeight: 12, fontWeight: '700', color: '#ffffff' }}>
+                              {mediaMeta[String(uri)].seconds ? `${mediaMeta[String(uri)].seconds}s` : 'VIDEO'}
+                            </Text>
                           </View>
                         )}
                         <TouchableOpacity
@@ -484,6 +632,17 @@ export default function CreateScreen() {
                         </TouchableOpacity>
                       </View>
                     ))}
+                    {selectedImages.length < MAX_IMAGES && (
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={pickFromGallery}
+                        className="rounded-figma-12 items-center justify-center"
+                        style={{ width: 72, height: 90, backgroundColor: colors.surfaceContainerLow, borderWidth: 1, borderColor: colors.outlineVariant, borderStyle: 'dashed' }}
+                      >
+                        <CameraIcon size={18} color={colors.primary} />
+                        <Text style={{ fontSize: 10, lineHeight: 12, fontWeight: '600', color: colors.primary, marginTop: 4 }}>Add</Text>
+                      </TouchableOpacity>
+                    )}
                   </ScrollView>
                   {selectedImages.length >= MAX_IMAGES && (
                     <Text style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary, marginTop: 8 }}>
@@ -492,77 +651,31 @@ export default function CreateScreen() {
                   )}
                 </View>
               ) : (
-                <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                  {MEDIA_IMAGES.map((seed, i) => {
-                    const selected = selectedImages.includes(seed);
-                    const index = selectedImages.indexOf(seed);
-                    return (
-                      <TouchableOpacity
-                        key={i}
-                        activeOpacity={0.85}
-                        onPress={() => toggleImage(seed)}
-                        className="rounded-figma-16 overflow-hidden"
-                        style={{
-                          width: '31.5%',
-                          aspectRatio: 4 / 5,
-                          backgroundColor: colors.surfaceContainer,
-                          borderWidth: selected ? 2 : 0,
-                          borderColor: selected ? colors.primaryContainer : 'transparent',
-                        }}
-                      >
-                        <Image source={toSource(seed)} className="w-full h-full" resizeMode="cover" />
-                        {selected && (
-                          <View
-                            className="absolute top-2 right-2 w-5 h-5 rounded-full items-center justify-center"
-                            style={{ backgroundColor: colors.primaryContainer }}
-                          >
-                            <Text style={{ fontSize: 11, lineHeight: 14, fontWeight: '700', color: colors.onPrimaryContainer }}>
-                              {index + 1}
-                            </Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
+                <View
+                  className="rounded-figma-24 items-center justify-center py-10 px-6"
+                  style={{ backgroundColor: colors.surfaceContainer, borderWidth: 1.2, borderColor: colors.outlineVariant, borderStyle: 'dashed' }}
+                >
+                  <View className="w-14 h-14 rounded-full items-center justify-center mb-3" style={{ backgroundColor: colors.surfaceContainerLowest }}>
+                    <CameraIcon size={26} color={colors.primary} />
+                  </View>
+                  <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' }}>No media selected</Text>
+                  <Text style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary, textAlign: 'center', marginTop: 6, marginBottom: 14 }}>
+                    Choose photos or videos from your phone's gallery — no demo images.
+                  </Text>
                   <TouchableOpacity
                     activeOpacity={0.85}
-                    onPress={() => toggleImage(createPostImages.preview)}
-                    className="rounded-figma-16 items-center justify-center"
-                    style={{ width: '31.5%', aspectRatio: 4 / 5, backgroundColor: colors.surfaceContainer }}
+                    onPress={pickFromGallery}
+                    className="px-6 h-12 rounded-figma-16 items-center justify-center"
+                    style={{ backgroundColor: colors.primaryContainer }}
                   >
-                    <CameraIcon size={26} color={colors.textSecondary} />
-                    <Text style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary, marginTop: 6 }}>More</Text>
+                    <Text style={{ fontSize: 14, lineHeight: 16, fontWeight: '600', color: colors.onPrimaryContainer }}>Choose from gallery</Text>
                   </TouchableOpacity>
                 </View>
               )}
-              <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginTop: 20, marginBottom: 8 }}>
-                Or paste an image URL
-              </Text>
-              <View className="flex-row gap-2">
-                <TextInput
-                  className="flex-1 bg-surfaceContainerLow rounded-figma-16 px-4 py-3"
-                  style={{ fontSize: 14, color: colors.textPrimary, fontFamily: 'Inter' }}
-                  placeholder="https://..."
-                  placeholderTextColor={colors.textTertiary}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={imageUrl}
-                  onChangeText={setImageUrl}
-                />
-                <TouchableOpacity
-                  onPress={applyImageUrl}
-                  activeOpacity={0.85}
-                  className="px-4 h-full items-center justify-center rounded-figma-16"
-                  style={{ backgroundColor: imageUrl.trim().length > 0 && selectedImages.length < MAX_IMAGES ? colors.primaryContainer : colors.surfaceContainer }}
-                >
-                  <Text style={{ fontSize: 14, lineHeight: 16, fontWeight: '600', color: imageUrl.trim().length > 0 && selectedImages.length < MAX_IMAGES ? colors.onPrimaryContainer : colors.disabledText }}>
-                    Apply
-                  </Text>
-                </TouchableOpacity>
-              </View>
+
               {selectedImages.length > 0 && (
                 <Text style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary, marginTop: 8 }}>
-                  First photo is the main cover — tap ✕ on thumbnails to remove.
+                  First item is the main cover — tap ✕ on thumbnails to remove. Mixed photos + video stays a product post; video-only becomes a Reel.
                 </Text>
               )}
             </View>
@@ -586,14 +699,16 @@ export default function CreateScreen() {
                 Category
               </Text>
               <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                {CATEGORIES.map((cat) => {
+                {categoryChips.map((cat) => {
                   const active = category === cat.label;
+                  const blocked = lockedCategory && cat.label !== storeCategory;
                   return (
                     <TouchableOpacity
                       key={cat.id}
-                      activeOpacity={0.8}
+                      activeOpacity={blocked ? 1 : 0.8}
+                      disabled={blocked}
                       className="px-4 py-2 rounded-full"
-                      style={{ backgroundColor: active ? colors.primaryContainer : colors.surfaceContainer }}
+                      style={{ backgroundColor: active ? colors.primaryContainer : colors.surfaceContainer, opacity: blocked ? 0.45 : 1 }}
                       onPress={() => {
                         setCategory(active ? '' : cat.label);
                         if (active) setSubCategories([]);
@@ -606,6 +721,11 @@ export default function CreateScreen() {
                   );
                 })}
               </View>
+              {lockedCategory && (
+                <Text style={{ fontSize: 12, lineHeight: 16, color: colors.textTertiary, marginTop: 8 }}>
+                  Your store sells {storeCategory} - one category per shop.
+                </Text>
+              )}
               {category.length > 0 && (
                 <View style={{ marginTop: 16 }}>
                   <Text
@@ -674,6 +794,36 @@ export default function CreateScreen() {
                 <Text style={{ fontSize: 13, lineHeight: 18, color: colors.success, marginTop: 8 }}>
                   {formatPrice(numericPrice)} · shown to buyers
                 </Text>
+              )}
+              {/* Optional was-price — Flipkart/OLX-style discount display */}
+              {priceValid && (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    Original price (optional)
+                  </Text>
+                  <View className="bg-surfaceContainerLow rounded-figma-16 px-5 py-4 flex-row items-center">
+                    <Text style={{ fontSize: 18, lineHeight: 24, fontWeight: '700', color: colors.textTertiary }}>₹</Text>
+                    <TextInput
+                      className="flex-1 ml-2"
+                      style={{ fontSize: 18, lineHeight: 24, fontWeight: '700', color: colors.textPrimary, fontFamily: 'Inter' }}
+                      placeholder="Was price, if on sale"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="numeric"
+                      value={mrp}
+                      onChangeText={(t) => setMrp(t.replace(/[^0-9]/g, ''))}
+                    />
+                  </View>
+                  {mrp.trim().length > 0 && !validMrp && (
+                    <Text style={{ fontSize: 12, lineHeight: 16, color: colors.error, marginTop: 6 }}>
+                      Original price must be higher than the selling price
+                    </Text>
+                  )}
+                  {validMrp && (
+                    <Text style={{ fontSize: 13, lineHeight: 18, color: colors.success, marginTop: 8 }}>
+                      Buyers see {formatPrice(numericMrp)} struck through · {Math.round(((numericMrp - numericPrice) / numericMrp) * 100)}% off
+                    </Text>
+                  )}
+                </View>
               )}
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -777,6 +927,20 @@ export default function CreateScreen() {
                               }
                               maxLength={5}
                             />
+                            <Text style={{ fontSize: 12, color: colors.textSecondary, marginLeft: 4 }}>stk</Text>
+                            <TextInput
+                              style={{ fontSize: 12, color: colors.textSecondary, fontFamily: 'Inter', minWidth: 26, padding: 0, marginLeft: 2 }}
+                              placeholder="—"
+                              placeholderTextColor={colors.textTertiary}
+                              keyboardType="numeric"
+                              value={val.stock != null ? String(val.stock) : ''}
+                              onChangeText={(t) =>
+                                updateVariantValue(vi, vi2, {
+                                  stock: t === '' ? undefined : Number(t.replace(/[^0-9]/g, '')),
+                                })
+                              }
+                              maxLength={5}
+                            />
                             {vi2 > 0 && (
                               <TouchableOpacity onPress={() => removeVariantValue(vi, vi2)} className="ml-1.5">
                                 <Text style={{ fontSize: 12, lineHeight: 14, color: colors.textSecondary, fontWeight: '700' }}>✕</Text>
@@ -876,94 +1040,43 @@ export default function CreateScreen() {
 
           {step === 5 && (
             <View>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => {
-                  const next = !useCurrentLocation;
-                  setUseCurrentLocation(next);
-                  if (next) setCity('Pune');
-                }}
-                className="flex-row items-center justify-between px-5 py-4 rounded-figma-16"
-                style={{ backgroundColor: colors.surfaceContainerLow, borderWidth: 1, borderColor: useCurrentLocation ? colors.primary : colors.surfaceContainer }}
-              >
-                <View className="flex-row items-center">
-                  <GpsTargetIcon size={20} color={useCurrentLocation ? colors.primary : colors.textSecondary} />
-                  <Text
-                    style={{
-                      fontSize: 15,
-                      lineHeight: 20,
-                      fontWeight: '600',
-                      color: useCurrentLocation ? colors.primary : colors.textPrimary,
-                      marginLeft: 12,
-                    }}
-                  >
-                    Use current location
-                  </Text>
-                </View>
-                <View
-                  className="justify-center"
-                  style={{
-                    width: 44,
-                    height: 26,
-                    borderRadius: 13,
-                    padding: 2,
-                    backgroundColor: useCurrentLocation ? colors.primaryContainer : colors.surfaceContainer,
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 11,
-                      backgroundColor: colors.surfaceContainerLowest,
-                      marginLeft: useCurrentLocation ? 18 : 0,
-                    }}
-                  />
-                </View>
-              </TouchableOpacity>
-              {useCurrentLocation ? (
-                <View className="flex-row items-center mt-4 px-4 py-3 rounded-figma-16" style={{ backgroundColor: colors.primaryBg }}>
-                  <MapPinIcon size={16} color={colors.primary} />
-                  <Text style={{ fontSize: 14, lineHeight: 20, color: colors.primary, marginLeft: 8, fontWeight: '500' }}>
-                    Pune, India — using current location
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginTop: 16, marginBottom: 8 }}>
-                    Pick a city
-                  </Text>
-                  <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                    {CITIES.map((c) => {
-                      const active = city === c;
-                      return (
-                        <TouchableOpacity
-                          key={c}
-                          activeOpacity={0.8}
-                          className="px-4 py-2 rounded-full"
-                          style={{ backgroundColor: active ? colors.primaryContainer : colors.surfaceContainer }}
-                          onPress={() => setCity(active ? '' : c)}
-                        >
-                          <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: '500', color: active ? colors.onPrimaryContainer : colors.textSecondary }}>
-                            {c}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                  <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginTop: 16, marginBottom: 8 }}>
-                    Or type your city
-                  </Text>
-                  <TextInput
-                    className="bg-surfaceContainerLow rounded-figma-16 px-4 py-3"
-                    style={{ fontSize: 14, color: colors.textPrimary, fontFamily: 'Inter' }}
-                    placeholder="e.g. Chennai"
-                    placeholderTextColor={colors.textTertiary}
-                    value={city}
-                    onChangeText={setCity}
-                  />
-                </>
-              )}
+              <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                Selling area (city / locality)
+              </Text>
+              <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                {CITIES.map((c) => {
+                  const active = city === c;
+                  return (
+                    <TouchableOpacity
+                      key={c}
+                      activeOpacity={0.8}
+                      className="px-4 py-2 rounded-full"
+                      style={{ backgroundColor: active ? colors.primaryContainer : colors.surfaceContainer }}
+                      onPress={() => setCity(active ? '' : c)}
+                    >
+                      <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: '500', color: active ? colors.onPrimaryContainer : colors.textSecondary }}>
+                        {c}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <TextInput
+                className="bg-surfaceContainerLow rounded-figma-16 px-4 py-3 mt-3"
+                style={{ fontSize: 14, color: colors.textPrimary, fontFamily: 'Inter' }}
+                placeholder="Or type your city, e.g. Chennai"
+                placeholderTextColor={colors.textTertiary}
+                value={city}
+                onChangeText={setCity}
+              />
+
+              <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginTop: 20, marginBottom: 4 }}>
+                Exact selling spot on the map (optional)
+              </Text>
+              <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: '400', color: colors.textTertiary, marginBottom: 10 }}>
+                Defaults to your store location - move the pin if this item ships from somewhere else. Buyers see this area for delivery matching.
+              </Text>
+              <MapLocationPicker value={sellLoc} onChange={setSellLoc} height={240} />
             </View>
           )}
 
@@ -1210,3 +1323,5 @@ export default function CreateScreen() {
     </View>
   );
 }
+
+// bump 2026-08-23T13:08:10.4339243+05:30

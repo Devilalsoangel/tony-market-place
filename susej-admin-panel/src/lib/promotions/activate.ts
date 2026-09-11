@@ -25,10 +25,19 @@ export async function createPendingPurchase(input: CheckoutInput) {
   const prisma = await getPrisma();
   if (!prisma) return { ok: false as const, error: "database_unavailable", demo: true };
 
-  const pkg = getPackage(input.packageId);
+  let pkg = getPackage(input.packageId);
   if (!pkg || pkg.kind !== input.kind) {
     return { ok: false as const, error: "unknown_package" };
   }
+  // Respect admin-edited price overrides (promoPrices AppSetting). The config
+  // GET returns overridden prices, so checkout must charge the same amount.
+  try {
+    const row = await prisma.appSetting.findUnique({ where: { key: "promoPrices" } });
+    const overrides = row?.value as Record<string, unknown> | null | undefined;
+    const raw = overrides?.[pkg.id];
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) pkg = { ...pkg, price: Math.round(raw) };
+    // chatPin override does not affect promotion packages
+  } catch {}
 
   let sellerName = input.sellerId;
   let sellerLogo: string | null = null;
@@ -93,7 +102,7 @@ export async function activatePromotion(checkoutRef: string, providerPaymentId?:
     createdAt: now,
   };
   const purchaseData: Record<string, unknown> = {
-    providerPaymentId: providerPaymentId ?? `app_${checkoutRef}`,
+    providerPaymentId: providerPaymentId ?? null,
     status: ACTIVE_STATUS,
     position,
     startsAt: now,
@@ -103,7 +112,7 @@ export async function activatePromotion(checkoutRef: string, providerPaymentId?:
   if (purchase.kind === "topSeller") {
     const seller = await prisma.seller.findUnique({ where: { id: purchase.sellerId } });
     data.totalSales = seller?.totalSales ?? 0;
-    data.rating = seller?.rating ?? 4.5;
+    data.rating = seller?.rating ?? 0;
     data.reviewCount = seller?.reviewCount ?? 0;
     await prisma.topSeller.create({ data: data as never });
   }
@@ -129,7 +138,7 @@ export async function activatePromotion(checkoutRef: string, providerPaymentId?:
     });
   }
 
-  if (purchase.kind === "featuredPost") {
+    if (purchase.kind === "featuredPost") {
     await prisma.featuredPost.create({
       data: {
         postId: purchase.postId ?? "",
@@ -138,6 +147,29 @@ export async function activatePromotion(checkoutRef: string, providerPaymentId?:
         imageUrl: purchase.postImage ?? "",
         position,
         isPinned: purchase.isPinned,
+        status: ACTIVE_STATUS,
+        startDate: isoDate(now),
+        endDate: isoDate(endsAt),
+        createdAt: now,
+      },
+    });
+  }
+
+  if (purchase.kind === "spotlight") {
+    // Spotlight pins a listing/post at the top of buyer feeds for a fixed
+    // duration (24h). It always occupies position 1 — only one active
+    // spotlight per seller at a time (enforced by unique constraint below).
+    await prisma.spotlight.create({
+      data: {
+        postId: purchase.postId ?? null,
+        productId: purchase.productId ?? null,
+        sellerId: purchase.sellerId,
+        sellerName: purchase.sellerName ?? "",
+        sellerLogo: purchase.sellerLogo ?? "",
+        title: purchase.postTitle ?? purchase.productName ?? "Spotlight listing",
+        imageUrl: purchase.postImage ?? purchase.productImage ?? "",
+        position: 1,
+        isPinned: true,
         status: ACTIVE_STATUS,
         startDate: isoDate(now),
         endDate: isoDate(endsAt),
@@ -166,6 +198,33 @@ export async function deactivateOnRefund(checkoutRef: string) {
     data: { status: "refunded", isPinned: false } as never,
   });
   await hideSlot(prisma, purchase.kind, purchase.position);
+  // Money back: the purchase debit left the seller's wallet, so refunding
+  // must re-credit it — previously the slot unpinned while the money stayed
+  // taken. Idempotent by title (double-clicks / replays can't double-pay).
+  try {
+    const revTitle = `Promotion refund · ${purchase.checkoutRef}`;
+    const already = await prisma.walletTransaction.count({ where: { title: revTitle } });
+    const amount = Number(purchase.amountPaid ?? 0);
+    if (!already && amount > 0 && purchase.sellerId) {
+      const seller = await prisma.user.findUnique({ where: { username: purchase.sellerId } }).catch(() => null);
+      if (seller) {
+        await prisma.user.update({
+          where: { id: seller.id },
+          data: { walletBalance: { increment: amount } },
+        });
+        await prisma.walletTransaction.create({
+          data: {
+            username: purchase.sellerId,
+            title: revTitle,
+            detail: `Refund for ${purchase.packageName} (${purchase.kind})`,
+            amount,
+          },
+        });
+      }
+    }
+  } catch {
+    // Slot is already unpinned above; a credit failure must not re-pin it.
+  }
 
   return { ok: true as const, status: "refunded" };
 }
@@ -183,9 +242,14 @@ async function hideSlot(prisma: NonNullable<Awaited<ReturnType<typeof getPrisma>
         where: { status: ACTIVE_STATUS, priority: position },
         data: { status: "expired" },
       });
-    } else if (kind === "featuredPost") {
+        } else if (kind === "featuredPost") {
       await prisma.featuredPost.updateMany({
         where: { status: ACTIVE_STATUS, position },
+        data: { status: "expired", isPinned: false },
+      });
+    } else if (kind === "spotlight") {
+      await prisma.spotlight.updateMany({
+        where: { status: ACTIVE_STATUS },
         data: { status: "expired", isPinned: false },
       });
     }
@@ -226,9 +290,13 @@ async function nextPosition(prisma: NonNullable<Awaited<ReturnType<typeof getPri
       const max = await prisma.topSeller.aggregate({ _max: { position: true } });
       return (max._max.position ?? 0) + 1;
     }
-    if (kind === "hotDeal") {
+        if (kind === "hotDeal") {
       const max = await prisma.hotDeal.aggregate({ _max: { priority: true } });
       return (max._max.priority ?? 0) + 1;
+    }
+    if (kind === "spotlight") {
+      // Spotlight always occupies position 1 — the top feed slot.
+      return 1;
     }
     const max = await prisma.featuredPost.aggregate({ _max: { position: true } });
     return (max._max.position ?? 0) + 1;

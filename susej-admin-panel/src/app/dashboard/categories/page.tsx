@@ -9,16 +9,19 @@ import { Tabs } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { CategoryForm } from "@/components/forms/category-form";
 import { useDbResource } from "@/hooks/use-db-resource";
-import { Plus, MoreVertical, Copy, Eye, EyeOff, Star, AlertTriangle } from "lucide-react";
+import { Plus, MoreVertical, Copy, Eye, EyeOff, Star, AlertTriangle, ChevronUp, ChevronDown } from "lucide-react";
 import type { Category } from "@/types";
 
-function buildCategoryTree(categories: Category[]): (Category & { children: Category[]; depth: number })[] {
-  const topLevel = categories.filter((c) => !c.parentId);
-  const result: (Category & { children: Category[]; depth: number })[] = [];
+function buildCategoryTree(categories: Category[]): (Category & { children: Category[]; depth: number; orphaned?: boolean })[] {
+  const bySort = (a: Category, b: Category) => a.sortOrder - b.sortOrder;
+  const topLevel = categories.filter((c) => !c.parentId).sort(bySort);
+  const result: (Category & { children: Category[]; depth: number; orphaned?: boolean })[] = [];
+  const seen = new Set<string>();
 
   function addWithChildren(parent: Category, depth: number) {
-    const children = categories.filter((c) => c.parentId === parent.id);
+    const children = categories.filter((c) => c.parentId === parent.id).sort(bySort);
     result.push({ ...parent, children, depth });
+    seen.add(parent.id);
     for (const child of children) {
       addWithChildren(child, depth + 1);
     }
@@ -26,6 +29,12 @@ function buildCategoryTree(categories: Category[]): (Category & { children: Cate
 
   for (const cat of topLevel) {
     addWithChildren(cat, 0);
+  }
+  // Orphans (dangling parentId — parent deleted): previously dropped from the
+  // tree entirely, invisible in UI while still live in DB/app ordering.
+  // Surfaced as depth-0 rows with an Orphaned badge; repair via Edit (parent).
+  for (const cat of categories.filter((c) => !seen.has(c.id)).sort(bySort)) {
+    result.push({ ...cat, children: [], depth: 0, orphaned: true });
   }
   return result;
 }
@@ -45,6 +54,7 @@ export default function CategoriesPage() {
     fetch(`/api/data/categories`, {
       method,
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(body),
     });
 
@@ -68,6 +78,47 @@ export default function CategoriesPage() {
     apiPatch("PATCH", { id: cat.id, data: { featured } });
   }
 
+  // Reorders within the sibling group, then renumbers the WHOLE tree depth-first
+  // (0..N-1) so the app's global `sortOrder asc` ordering matches this table exactly.
+  function handleMove(cat: Category, dir: -1 | 1) {
+    const key = cat.parentId ?? null;
+    const sibs = categories
+      .filter((c) => (c.parentId ?? null) === key)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const i = sibs.findIndex((s) => s.id === cat.id);
+    const j = i + dir;
+    if (i === -1 || j < 0 || j >= sibs.length) return;
+    [sibs[i], sibs[j]] = [sibs[j], sibs[i]];
+    const swappedPos = new Map(sibs.map((s, idx) => [s.id, idx]));
+    const temp = categories.map((c) =>
+      swappedPos.has(c.id) ? { ...c, sortOrder: swappedPos.get(c.id)! } : c
+    );
+    const byParent = new Map<string | null, Category[]>();
+    for (const c of temp) {
+      const k = c.parentId ?? null;
+      if (!byParent.has(k)) byParent.set(k, []);
+      byParent.get(k)!.push(c);
+    }
+    for (const arr of byParent.values()) arr.sort((a, b) => a.sortOrder - b.sortOrder);
+    const positions = new Map<string, number>();
+    let n = 0;
+    const walk = (parent: string | null) => {
+      for (const c of byParent.get(parent) ?? []) {
+        positions.set(c.id, n++);
+        walk(c.id);
+      }
+    };
+    walk(null);
+    const changed: { id: string; sortOrder: number }[] = [];
+    const next = temp.map((c) => {
+      const pos = positions.get(c.id)!;
+      if (pos !== c.sortOrder) changed.push({ id: c.id, sortOrder: pos });
+      return { ...c, sortOrder: pos };
+    });
+    setCategories(next);
+    for (const u of changed) apiPatch("PATCH", { id: u.id, data: { sortOrder: u.sortOrder } });
+  }
+
   function handleSave(data: Partial<Category>) {
     if (editCategory) {
       setCategories((prev) =>
@@ -75,14 +126,15 @@ export default function CategoriesPage() {
       );
       apiPatch("PATCH", { id: editCategory.id, data });
     } else {
+      const maxSort = categories.reduce((m, c) => Math.max(m, c.sortOrder), -1);
       const newCat: Category = {
         id: `cat_${Date.now()}`,
         name: data.name || "",
         slug: data.slug || `cat-${Date.now()}`,
         description: data.description || "",
         parentId: data.parentId || null,
-        sortOrder: 0,
-        icon: data.icon || "ðŸ“",
+        sortOrder: maxSort + 1,
+        icon: data.icon || "",
         bannerImage: data.bannerImage || "",
         status: data.status || "active",
         featured: data.featured || false,
@@ -99,14 +151,24 @@ export default function CategoriesPage() {
 
   function handleDelete() {
     if (!deleteTarget) return;
+    const snapshot = categories;
     const idsToRemove = new Set<string>();
     function collectIds(id: string) {
       idsToRemove.add(id);
-      categories.filter((c) => c.parentId === id).forEach((c) => collectIds(c.id));
+      snapshot.filter((c) => c.parentId === id).forEach((c) => collectIds(c.id));
     }
     collectIds(deleteTarget.id);
     setCategories((prev) => prev.filter((c) => !idsToRemove.has(c.id)));
-    apiPatch("DELETE", { id: deleteTarget.id });
+    apiPatch("DELETE", { id: deleteTarget.id }).then(async (res) => {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        // Server blocks delete when children exist (400) — revert optimistic removal
+        if (res.status === 400) {
+          setCategories(snapshot);
+          alert(body?.error ?? "Cannot delete category with children.");
+        }
+      }
+    });
     setDeleteTarget(null);
   }
 
@@ -195,7 +257,8 @@ export default function CategoriesPage() {
                     <thead>
                       <tr className="border-b border-[#E4E4E7] text-left text-sm text-gray-500 ">
                         <th className="pb-3 pl-2 font-medium">Category</th>
-                        <th className="pb-3 font-medium">Products</th>
+                        <th className="pb-3 font-medium">Products <span className="ml-1 rounded-full bg-[#EEF2FF] px-1.5 py-0.5 text-[10px] font-medium text-[#6C3BFF]">auto</span></th>
+                        <th className="pb-3 font-medium">Order</th>
                         <th className="pb-3 font-medium">Status</th>
                         <th className="w-12 pb-3 font-medium"> </th>
                       </tr>
@@ -219,11 +282,39 @@ export default function CategoriesPage() {
                               </div>
                             </div>
                           </td>
-                          <td className="py-3 text-sm text-gray-500">{cat.productCount.toLocaleString()}</td>
+                          <td className="py-3">
+                            <span className="text-sm text-gray-700">{cat.productCount.toLocaleString()}</span>
+                            <span className="ml-2 rounded-full bg-[#F1F5F9] px-1.5 py-0.5 text-[10px] font-medium text-[#64748B]" title="Live count from Product table groupBy — not manually editable">live</span>
+                          </td>
+                          <td className="py-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                title="Move up"
+                                aria-label={`Move ${cat.name} up`}
+                                onClick={() => handleMove(cat, -1)}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                              >
+                                <ChevronUp className="h-4 w-4" />
+                              </button>
+                              <button
+                                title="Move down"
+                                aria-label={`Move ${cat.name} down`}
+                                onClick={() => handleMove(cat, 1)}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                              >
+                                <ChevronDown className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
                           <td className="py-3">
                             <Badge variant={cat.status === "active" ? "success" : "default"}>
                               {cat.status}
                             </Badge>
+                            {cat.orphaned && (
+                              <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-[#FEF3C7] px-1.5 py-0.5 text-[10px] font-medium text-[#92400E]" title="Parent category is gone — Edit to re-parent or move to top level">
+                                <AlertTriangle className="h-3 w-3" /> Orphaned
+                              </span>
+                            )}
                           </td>
                           <td className="w-12 py-3" onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu

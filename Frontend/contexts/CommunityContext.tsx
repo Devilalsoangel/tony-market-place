@@ -1,8 +1,17 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { serverApi } from '../utils/serverApi';
+import { useAuth } from './AuthContext';
 
-const COMMUNITIES_KEY = '@susej_communities';
-const MESSAGES_KEY = '@susej_community_messages';
+const COMMUNITIES_KEY_BASE = '@susej_communities';
+const MESSAGES_KEY_BASE = '@susej_community_messages';
+
+export interface CommunityMember {
+  username: string;
+  name: string;
+  avatar?: string | null;
+  verified?: boolean;
+}
 
 export interface Community {
   id: string;
@@ -12,6 +21,8 @@ export interface Community {
   joined: boolean;
   description?: string;
   rules?: string;
+  ownerName?: string;
+  members?: CommunityMember[];
 }
 
 export interface CommunityMessage {
@@ -22,21 +33,6 @@ export interface CommunityMessage {
   text: string;
   createdAt: number;
 }
-
-const SEED_COMMUNITIES: Community[] = [
-  { id: 'comm_fashion', name: 'Fashion Enthusiasts', category: 'Fashion', memberCount: 12480, joined: true, description: 'Trends, thrift finds, and fashion resale talk.' },
-  { id: 'comm_electronics', name: 'Gadget Geeks', category: 'Electronics', memberCount: 9321, joined: true, description: 'Deals, reviews, and tech resale.' },
-  { id: 'comm_home', name: 'Home & Living', category: 'Home Services', memberCount: 6042, joined: false, description: 'Interior inspo, decor swaps, and home services.' },
-  { id: 'comm_pets', name: 'Pet Parents', category: 'Pets', memberCount: 8110, joined: false, description: 'Pet supplies, grooming services, and adoption.' },
-  { id: 'comm_food', name: 'Local Foodies', category: 'Groceries', memberCount: 15320, joined: false, description: 'Home kitchens, groceries, and neighborhood eats.' },
-  { id: 'comm_crafts', name: 'Art & Crafts Circle', category: 'Art & Crafts', memberCount: 3544, joined: false, description: 'Handmade goods and maker meetups.' },
-];
-
-const SEED_MESSAGES: CommunityMessage[] = [
-  { id: 'msg_1', communityId: 'comm_fashion', author: 'Elara M.', authorUsername: 'elara_mod', text: 'Welcome to Fashion Enthusiasts! Share your latest finds.', createdAt: Date.now() - 86400000 },
-  { id: 'msg_2', communityId: 'comm_fashion', author: 'Ravi K.', authorUsername: 'ravi', text: 'Just scored a vintage jacket on the feed — highly recommend the seller!', createdAt: Date.now() - 3600000 },
-  { id: 'msg_3', communityId: 'comm_electronics', author: 'Sara T.', authorUsername: 'sara', text: 'Any recommendations for a budget laptop under 40k?', createdAt: Date.now() - 7200000 },
-];
 
 interface CommunityContextType {
   communities: Community[];
@@ -52,52 +48,133 @@ interface CommunityContextType {
 const CommunityContext = createContext<CommunityContextType | null>(null);
 
 export function CommunityProvider({ children }: { children: React.ReactNode }) {
-  const [communities, setCommunities] = useState<Community[]>(SEED_COMMUNITIES);
-  const [messages, setMessages] = useState<CommunityMessage[]>(SEED_MESSAGES);
+  const { user, tokenSeq } = useAuth();
+  const username = user?.username ?? null;
+  const communitiesKey = username ? `${COMMUNITIES_KEY_BASE}:${username}` : COMMUNITIES_KEY_BASE;
+  const messagesKey = username ? `${MESSAGES_KEY_BASE}:${username}` : MESSAGES_KEY_BASE;
+  // Real data only: starts empty, populated from the shared backend (the same
+  // rows the admin panel moderates) plus communities the user creates locally.
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [messages, setMessages] = useState<CommunityMessage[]>([]);
+  // Re-discover per account switch (tokenSeq), mirroring PostContext.
+  const serverSeeded = useRef(-1);
 
   useEffect(() => {
-    AsyncStorage.getItem(COMMUNITIES_KEY)
+    let cancelled = false;
+    AsyncStorage.getItem(communitiesKey)
       .then((data) => {
+        if (cancelled) return;
         if (data) {
           try {
             const saved = JSON.parse(data) as Community[];
-            const merged = new Map<string, Community>();
-            for (const c of SEED_COMMUNITIES) merged.set(c.id, c);
-            for (const c of saved) merged.set(c.id, { ...merged.get(c.id), ...c });
-            setCommunities(Array.from(merged.values()));
-          } catch {
-          }
+            // Drop legacy demo seeds (comm_* ids with fabricated member counts).
+            const real = saved.filter((c) => c && c.id && !String(c.id).startsWith('comm_'));
+            setCommunities(real);
+          } catch {}
+        } else {
+          setCommunities([]);
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => { if (!cancelled) setCommunities([]); });
+    return () => { cancelled = true; };
+  }, [communitiesKey]);
+
+  // Merge the shared backend's real communities (admin-managed, same rows the
+  // admin panel moderates) into the discovery list once per login.
+  useEffect(() => {
+    if (!user?.username || serverSeeded.current === tokenSeq) return;
+    serverSeeded.current = tokenSeq;
+    serverApi.getCommunities().then((res) => {
+      if (!res.ok || !res.data?.communities?.length) return;
+      const serverRows = res.data.communities
+        .filter((c: any) => c && c.id)
+        .map((c: any) => ({
+          id: String(c.id),
+          name: String(c.name ?? 'Community'),
+          category: String(c.category ?? 'General'),
+          memberCount: Number(c.memberCount ?? 0),
+          joined: Boolean(c.joined),
+          description: c.description ? String(c.description) : undefined,
+          ownerName: c.ownerName ? String(c.ownerName) : undefined,
+          members: Array.isArray(c.memberProfiles)
+            ? (c.memberProfiles as any[])
+                .filter((m) => m && m.username)
+                .map((m) => ({
+                  username: String(m.username),
+                  name: String(m.name || m.username),
+                  avatar: typeof m.avatar === 'string' ? m.avatar : null,
+                  verified: Boolean(m.verified),
+                }))
+            : undefined,
+        }));
+      setCommunities((prev) => {
+        const byId = new Map(prev.map((p) => [p.id, p]));
+        let changed = false;
+        const merged = prev.map((p) => {
+          const srv = serverRows.find((s: any) => s.id === p.id);
+          if (!srv) return p;
+          if (
+            p.joined !== srv.joined ||
+            p.memberCount !== srv.memberCount ||
+            JSON.stringify(p.members ?? null) !== JSON.stringify(srv.members ?? null) ||
+            p.ownerName !== srv.ownerName
+          ) {
+            changed = true;
+            return { ...p, joined: srv.joined, memberCount: srv.memberCount, members: srv.members, ownerName: srv.ownerName };
+          }
+          return p;
+        });
+        const known = new Set(prev.map((p) => p.id));
+        const fresh = serverRows.filter((sc) => !known.has(sc.id));
+        if (fresh.length) return [...merged, ...fresh];
+        return changed ? merged : prev;
+      });
+    });
+  }, [user?.username, tokenSeq]);
 
   useEffect(() => {
-    AsyncStorage.getItem(MESSAGES_KEY)
+    let cancelled = false;
+    AsyncStorage.getItem(messagesKey)
       .then((data) => {
+        if (cancelled) return;
         if (data) {
           try {
             const saved = JSON.parse(data) as CommunityMessage[];
-            const merged = new Map<string, CommunityMessage>();
-            for (const m of SEED_MESSAGES) merged.set(m.id, m);
-            for (const m of saved) merged.set(m.id, m);
-            setMessages(Array.from(merged.values()));
-          } catch {
-          }
+            // Drop legacy seed chatter (msg_1..3 from fake users).
+            const real = saved.filter((m) => m && m.id && !/^msg_[123]$/.test(String(m.id)));
+            setMessages(real);
+          } catch {}
+        } else {
+          setMessages([]);
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => { if (!cancelled) setMessages([]); });
+    return () => { cancelled = true; };
+  }, [messagesKey]);
 
   const persist = useCallback((next: Community[]) => {
-    AsyncStorage.setItem(COMMUNITIES_KEY, JSON.stringify(next)).catch(() => {});
-  }, []);
+    AsyncStorage.setItem(communitiesKey, JSON.stringify(next)).catch(() => {});
+  }, [communitiesKey]);
 
   const setJoined = useCallback(
     (id: string, joined: boolean) => {
+      let snapJoined: boolean | null = null;
+      let snapCount = 0;
+      let didChange = false;
       setCommunities((prev) => {
+        const target = prev.find((c) => c.id === id);
+        if (target) {
+          snapJoined = target.joined;
+          snapCount = target.memberCount;
+          didChange = target.joined !== joined;
+        } else {
+          snapJoined = !joined;
+          snapCount = 0;
+          didChange = true;
+        }
+        if (!didChange) return prev;
         const next = prev.map((c) => {
-          if (c.id !== id || c.joined === joined) return c;
+          if (c.id !== id) return c;
           return {
             ...c,
             joined,
@@ -106,6 +183,17 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         });
         persist(next);
         return next;
+      });
+      // Mirror to server; on failure rollback to snapshot captured above.
+      void serverApi.toggleCommunityJoin?.(id, joined).catch(() => {
+        if (!didChange) return;
+        setCommunities((prev) => {
+          const rollback = prev.map((c) =>
+            c.id === id ? { ...c, joined: !!snapJoined, memberCount: snapCount } : c
+          );
+          persist(rollback);
+          return rollback;
+        });
       });
     },
     [persist]
@@ -116,32 +204,48 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const addCommunity = useCallback(
     (community: Community) => {
+      const tempId = community.id;
+      // Optimistic local row first (instant UI), then the shared server row —
+      // creations used to live on this device only, invisible to everyone else.
       setCommunities((prev) => {
         const next = [{ ...community, joined: true }, ...prev];
         persist(next);
         return next;
       });
+      void serverApi
+        .createCommunity({ name: community.name, description: community.description })
+        .then((res) => {
+          const s = res.ok ? res.data?.community : null;
+          if (!s?.id) return; // offline: local-only row stays (documented fallback)
+          setCommunities((prev) => {
+            const next = prev.map((c) =>
+              c.id === tempId
+                ? {
+                    ...c,
+                    id: String(s.id),
+                    name: String(s.name ?? c.name),
+                    description: typeof s.description === 'string' ? s.description : c.description,
+                    memberCount: Number(s.memberCount ?? 1),
+                    joined: true,
+                  }
+                : c
+            );
+            persist(next);
+            return next;
+          });
+        })
+        .catch(() => {});
     },
     [persist]
   );
 
   const toggleJoin = useCallback(
     (id: string) => {
-      setCommunities((prev) => {
-        const next = prev.map((c) => {
-          if (c.id !== id) return c;
-          const joined = !c.joined;
-          return {
-            ...c,
-            joined,
-            memberCount: joined ? c.memberCount + 1 : Math.max(0, c.memberCount - 1),
-          };
-        });
-        persist(next);
-        return next;
-      });
+      const target = communities.find((c) => c.id === id);
+      const nextJoined = target ? !target.joined : true;
+      setJoined(id, nextJoined);
     },
-    [persist]
+    [communities, setJoined]
   );
 
   const joinedCommunities = communities.filter((c) => c.joined);
@@ -157,21 +261,25 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const sendMessage = useCallback(
     (communityId: string, text: string) => {
       if (!text.trim()) return;
+      const authorUsername = username ?? 'you';
+      const author = user?.name ?? 'You';
       const message: CommunityMessage = {
-        id: `msg_${Date.now()}`,
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         communityId,
-        author: 'You',
-        authorUsername: 'you',
+        author,
+        authorUsername,
         text,
         createdAt: Date.now(),
       };
       setMessages((prev) => {
         const next = [...prev, message];
-        AsyncStorage.setItem(MESSAGES_KEY, JSON.stringify(next)).catch(() => {});
+        AsyncStorage.setItem(messagesKey, JSON.stringify(next)).catch(() => {});
         return next;
       });
+      // Real message on the shared backend for server communities.
+      serverApi.sendCommunityMessage(communityId, text).catch(() => {});
     },
-    []
+    [username, user?.name, messagesKey]
   );
 
   return (

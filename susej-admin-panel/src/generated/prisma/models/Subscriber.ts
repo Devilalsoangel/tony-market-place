@@ -1100,6 +1100,7 @@ export type SubscriberCreateManyArgs<ExtArgs extends runtime.Types.Extensions.In
    * The data used to create many Subscribers.
    */
   data: Prisma.SubscriberCreateManyInput | Prisma.SubscriberCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1118,6 +1119,7 @@ export type SubscriberCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exte
    * The data used to create many Subscribers.
    */
   data: Prisma.SubscriberCreateManyInput | Prisma.SubscriberCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

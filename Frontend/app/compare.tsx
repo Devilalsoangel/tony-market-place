@@ -5,7 +5,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, VerifiedIcon, HeartIcon } from '../utils/icons';
 import { colors, formatPrice, getCategoryColor } from '../utils/theme';
-import { productImages } from '../utils/productImages';
 import { usePosts, Post } from '../contexts/PostContext';
 import { RecentlyViewedProvider } from '../contexts/RecentlyViewedContext';
 
@@ -38,7 +37,7 @@ const conditionOf = (post: Post): string => {
 };
 
 const deliveryOf = (post: Post): string => {
-  if (post.type === 'food_item') return 'Today · 30-40 min';
+  if (post.type === 'food_item') return '—';
   if (post.type === 'service') return 'On booking';
   return '2-5 days';
 };
@@ -175,7 +174,7 @@ function CompareContent() {
 
             {/* Value columns */}
             {products.map((post) => {
-              const image = post.image ?? productImages[post.id];
+              const image = post.image;
               return (
                 <View key={post.id} style={{ width: VALUE_WIDTH, marginRight: 12 }}>
                   <TouchableOpacity onPress={() => router.push(`/product/${post.id}`)}>

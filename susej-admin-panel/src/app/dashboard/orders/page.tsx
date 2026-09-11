@@ -32,12 +32,35 @@ const methodVariants: Record<PaymentMethod, "primary" | "success" | "info" | "wa
 
 const columnHelper = createColumnHelper<Order>();
 
+// App clients persist free-form strings ("Cash on Delivery", "Wallet · ₹120")
+// while the canonical keys are snake_case ("cod", "wallet") — align before
+// lookup so the column renders a real badge instead of an empty one.
+function normalizePaymentMethod(value: string): PaymentMethod | null {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (!v) return null;
+  if (v === "cod" || v === "cash on delivery" || v.includes("cash on delivery")) return "cod";
+  const known: PaymentMethod[] = ["card", "mobile_money", "bank_transfer", "cod", "wallet", "coupon"];
+  if ((known as string[]).includes(v)) return v as PaymentMethod;
+  const snake = v.replace(/\s+/g, "_");
+  if ((known as string[]).includes(snake)) return snake as PaymentMethod;
+  return null;
+}
+
 const ORDER_STATUSES = ["placed", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"] as const;
 
 const columns = [
   columnHelper.accessor("id", {
     header: "Order ID",
-    cell: (info) => <span className="font-mono text-sm font-medium text-[#18181B] ">{info.getValue()}</span>,
+    // Buyers quote the human SJ- tracking number, not the cuid — show it
+    // primary so support can map calls without opening rows.
+    cell: (info) => {
+      const tracking = (info.row.original as { trackingNumber?: string }).trackingNumber;
+      return (
+        <span className="font-mono text-sm font-medium text-[#18181B] ">
+          {tracking || info.getValue()}
+        </span>
+      );
+    },
   }),
   columnHelper.accessor("buyerName", {
     header: "Buyer",
@@ -73,7 +96,18 @@ const columns = [
   }),
   columnHelper.accessor("paymentMethod", {
     header: "Payment Method",
-    cell: (info) => <Badge variant={methodVariants[info.getValue()]}>{methodLabels[info.getValue()]}</Badge>,
+    cell: (info) => {
+      const raw = String(info.getValue() ?? "");
+      const key = normalizePaymentMethod(raw);
+      if (!key) {
+        return raw ? (
+          <Badge variant="default" className="capitalize">{raw}</Badge>
+        ) : (
+          <span className="text-gray-400">—</span>
+        );
+      }
+      return <Badge variant={methodVariants[key]}>{methodLabels[key]}</Badge>;
+    },
   }),
   columnHelper.accessor("paymentStatus", {
     header: "Payment Status",
@@ -87,7 +121,7 @@ const columns = [
 
 export default function OrdersPage() {
   const router = useRouter();
-  const { data: orders } = useDbResource<Order>("orders");
+  const { data: orders, refresh } = useDbResource<Order>("orders", { take: 500 });
   const [filter, setFilter] = useState<string>("all");
 
   const filtered = useMemo(() => {
@@ -127,7 +161,7 @@ export default function OrdersPage() {
             size="sm"
             onClick={() => setFilter(s)}
           >
-            {s.replace("_", " ")} ({counts[s] ?? 0})
+            {s.replaceAll("_", " ")} ({counts[s] ?? 0})
           </Button>
         ))}
       </div>
@@ -142,6 +176,30 @@ export default function OrdersPage() {
             data={filtered}
             searchable
             searchKey="id"
+            filename="orders"
+            exportColumns={[
+              { key: "id", label: "Order ID" },
+              { key: "buyerName", label: "Buyer" },
+              { key: "sellerName", label: "Seller" },
+              { key: "amount", label: "Amount (INR)" },
+              { key: "status", label: "Status" },
+              { key: "paymentMethod", label: "Payment Method" },
+              { key: "createdAt", label: "Date" },
+            ]}
+            selectable
+            onBulkDelete={async (rows) => {
+              const ids = (rows as any[]).map((r) => r.id);
+              if (!confirm(`Soft-delete ${ids.length} order(s)? They will be marked deleted but remain recoverable.`)) return;
+              let failed = 0;
+              for (const id of ids) {
+                try {
+                  const res = await fetch(`/api/data/orders`, { method: "DELETE", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ id }) });
+                  if (!res.ok) failed++;
+                } catch { failed++; }
+              }
+              if (failed > 0) alert(`${failed} delete(s) failed — check permissions`);
+              refresh();
+            }}
             onRowClick={(row) => router.push(`/dashboard/orders/${row.id}`)}
           />
         </CardContent>

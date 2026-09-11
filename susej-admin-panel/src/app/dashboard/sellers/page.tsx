@@ -27,7 +27,18 @@ const baseColumns = [
   }),
   columnHelper.accessor("kycStatus", {
     header: "KYC",
-    cell: (info) => <StatusBadge status={info.getValue()} />,
+    // Soft-deleted sellers otherwise render as live — the status column is
+    // the only place deletion is visible (rows stay for audit recovery).
+    cell: (info) => (
+      <span className="inline-flex items-center gap-1.5">
+        <StatusBadge status={info.getValue()} />
+        {(info.row.original as { status?: string }).status === "deleted" && (
+          <span className="rounded-full bg-[#FEE2E2] px-1.5 py-0.5 text-[10px] font-medium text-[#991B1B]">
+            Deleted
+          </span>
+        )}
+      </span>
+    ),
   }),
   columnHelper.accessor("gstStatus", {
     header: "GST",
@@ -54,8 +65,8 @@ function PendingQueue({ sellers }: { sellers: Seller[] }) {
         </div>
       ) : (
         pending.map((seller) => {
-          const verifiedDocs = seller.documents.filter((d) => d.verified).length;
-          const totalDocs = seller.documents.length;
+          const verifiedDocs = (seller.documents ?? []).filter((d) => d.verified).length;
+          const totalDocs = (seller.documents ?? []).length;
           return (
             <Link key={seller.id} href={`/dashboard/sellers/${seller.id}`}>
               <div className="flex items-center justify-between rounded-xl border border-[#E4E4E7] px-5 py-4 transition-colors hover:bg-gray-50  ">
@@ -65,7 +76,7 @@ function PendingQueue({ sellers }: { sellers: Seller[] }) {
                   </div>
                   <div>
                     <p className="font-medium text-[#18181B] ">{seller.businessName}</p>
-                    <p className="text-sm text-gray-500">{seller.ownerName} Â· {seller.email}</p>
+                    <p className="text-sm text-gray-500">{seller.ownerName} · {seller.email}</p>
                     <p className="text-xs text-gray-400">Submitted {formatDate(seller.submittedAt)}</p>
                   </div>
                 </div>
@@ -96,7 +107,7 @@ const tabs = [
 
 export default function SellersPage() {
   const router = useRouter();
-  const { data: sellers } = useDbResource<Seller>("sellers");
+  const { data: sellers, refresh } = useDbResource<Seller>("sellers", { take: 500 });
   const allSellers = sellers ?? [];
   const pendingCount = allSellers.filter((s) => s.kycStatus === "pending").length;
   const verifiedCount = allSellers.filter((s) => s.kycStatus === "approved").length;
@@ -123,6 +134,28 @@ export default function SellersPage() {
                     data={allSellers}
                     searchable
                     searchKey="businessName"
+                    filename="sellers"
+                    exportColumns={[
+                      { key: "businessName", label: "Business" },
+                      { key: "kycStatus", label: "KYC" },
+                      { key: "gstStatus", label: "GST" },
+                      { key: "productsCount", label: "Products" },
+                      { key: "joinedAt", label: "Joined" },
+                    ]}
+                    selectable
+                    onBulkDelete={async (rows) => {
+                      const ids = (rows as any[]).map((r) => r.id);
+                      if (!confirm(`Soft-delete ${ids.length} seller(s)?`)) return;
+                      let failed = 0;
+                      for (const id of ids) {
+                        try {
+                          const res = await fetch(`/api/data/sellers`, { method: "DELETE", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ id }) });
+                          if (!res.ok) failed++;
+                        } catch { failed++; }
+                      }
+                      if (failed > 0) alert(`${failed} delete(s) failed — check permissions`);
+                      refresh();
+                    }}
                     onRowClick={(row) => router.push(`/dashboard/sellers/${row.id}`)}
                   />
                 </CardContent>

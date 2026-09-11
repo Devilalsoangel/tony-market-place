@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { nearbyImages } from '../utils/screenImages';
+import { resolveAvatar } from '../utils/productImages';
 import { LeafletMapHost, type LeafletMarker } from '../components/LeafletMap';
 import {
   BackIcon,
@@ -26,34 +27,20 @@ import { colors, formatPrice, formatCount, getCategoryColor } from '../utils/the
 
 const CENTER = { latitude: 18.5204, longitude: 73.8567 };
 
-type PoiKind = 'car' | 'bike' | 'person' | 'office' | 'garage';
+/** Zoomed out below this, nearby pins merge into count badges (GMap-style). */
+const CLUSTER_ZOOM = 12;
 
-interface Poi {
-  id: string;
-  kind: PoiKind;
-  name: string;
-  label: string;
-  color: string;
-  rating: number;
-  latitude: number;
-  longitude: number;
-  image: string;
+interface ClusterCell {
+  key: string;
+  count: number;
+  lat: number;
+  lng: number;
 }
-
-const POI_KINDS: { kind: PoiKind; label: string; color: string; seed: string; names: [string, string] }[] = [
-  { kind: 'car', label: 'Car Showroom', color: '#50519b', seed: 'poi-car', names: ['Urban Motors', 'AutoDrive Showroom'] },
-  { kind: 'bike', label: 'Bike Showroom', color: '#0e7a5f', seed: 'poi-bike', names: ['Velo Cycles', 'Pedal Pro Bikes'] },
-  { kind: 'person', label: 'Salon & Spa', color: '#c2410c', seed: 'poi-person', names: ['Glow Lounge', 'FreshCut Salon'] },
-  { kind: 'office', label: 'Co-working Space', color: '#0369a1', seed: 'poi-office', names: ['WorkNest Hub', 'Skyline Coworking'] },
-  { kind: 'garage', label: 'Auto Garage', color: '#7c3aed', seed: 'poi-garage', names: ['QuickFix Garage', 'Ace Auto Works'] },
-];
-
-const POI_ICON: Record<PoiKind, (size: number, color: string) => ReactNode> = {
-  car: (s, c) => <CarIcon size={s} color={c} />,
-  bike: (s, c) => <BikeIcon size={s} color={c} />,
-  person: (s, c) => <PersonIcon size={s} color={c} />,
-  office: (s, c) => <OfficeIcon size={s} color={c} />,
-  garage: (s, c) => <GarageIcon size={s} color={c} />,
+const compactPrice = (n: number): string => {
+  if (!Number.isFinite(n)) return '';
+  if (n >= 100000) return `₹${(n / 100000).toFixed(n % 100000 === 0 ? 0 : 1)}L`;
+  if (n >= 1000) return `₹${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k`;
+  return `₹${Math.round(n)}`;
 };
 
 const hashString = (s: string): number => {
@@ -64,12 +51,14 @@ const hashString = (s: string): number => {
   return h;
 };
 
-const positionFor = (key: string) => {
+const positionFor = (key: string, lat?: number | null, lng?: number | null) => {
+  if (typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)) return { latitude: lat, longitude: lng };
+  // No precise coordinates: spread pins around center with deterministic jitter so clustered
+  // sellers don't stack exactly on top of each other. Honest label shown on card.
   const h = hashString(key);
-  return {
-    latitude: CENTER.latitude + ((h % 1000) / 1000 - 0.5) * 0.1,
-    longitude: CENTER.longitude + (((h >> 10) % 1000) / 1000 - 0.5) * 0.1,
-  };
+  const dLat = ((h % 1000) / 1000 - 0.5) * 0.08; // ~ ±0.04° ~ 4km
+  const dLng = (((h >> 10) % 1000) / 1000 - 0.5) * 0.08;
+  return { latitude: CENTER.latitude + dLat, longitude: CENTER.longitude + dLng };
 };
 
 interface SellerPin {
@@ -111,8 +100,9 @@ export default function MapScreen() {
   const [userLoc, setUserLoc] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locDenied, setLocDenied] = useState(false);
   const [centerTarget, setCenterTarget] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
-  const [selectedPoi, setSelectedPoi] = useState<Poi | null>(null);
-  const [poiDirections, setPoiDirections] = useState<Poi | null>(null);
+  // Live viewport zoom from the WebView (moveend). Drives GMap-style clustering.
+  const [mapZoom, setMapZoom] = useState(13);
+  const clusterRef = useRef(new Map<string, ClusterCell>());
   const autoCenteredRef = useRef(false);
   const { posts } = usePosts();
   const { communities, toggleJoin } = useCommunities();
@@ -158,28 +148,6 @@ export default function MapScreen() {
     }
   };
 
-  // Snap/Insta-map style POIs: real places with type icons around the user.
-  const pois = useMemo<Poi[]>(() => {
-    const list: Poi[] = [];
-    for (const def of POI_KINDS) {
-      def.names.forEach((name, n) => {
-        const h = hashString(`poi:${def.kind}:${n}`);
-        list.push({
-          id: `poi-${def.kind}-${n}`,
-          kind: def.kind,
-          name,
-          label: def.label,
-          color: def.color,
-          rating: 3.8 + (h % 12) / 10,
-          latitude: origin.latitude + ((h % 1000) / 1000 - 0.5) * 0.03,
-          longitude: origin.longitude + (((h >> 8) % 1000) / 1000 - 0.5) * 0.03,
-          image: `https://picsum.photos/seed/${def.seed}${n}/400/250`,
-        });
-      });
-    }
-    return list;
-  }, [origin.latitude, origin.longitude]);
-
   const sellers = useMemo<SellerPin[]>(() => {
     const bySeller = new Map<string, SellerPin>();
     for (const p of posts) {
@@ -197,7 +165,7 @@ export default function MapScreen() {
           verified: Boolean(p.verified),
           priceFrom: p.price,
           categories: p.category ? [p.category] : [],
-          ...positionFor(p.sellerUsername),
+          ...positionFor(p.sellerUsername, (p as any).listingLat ?? (p as any).lat, (p as any).listingLng ?? (p as any).lng),
         });
       }
     }
@@ -205,7 +173,7 @@ export default function MapScreen() {
   }, [posts]);
 
   const communityPins = useMemo<CommunityPin[]>(
-    () => communities.map((c) => ({ ...c, ...positionFor(c.id) })),
+    () => communities.map((c) => ({ ...c, ...positionFor(c.id, (c as any)?.listingLat ?? (c as any)?.lat, (c as any)?.listingLng ?? (c as any)?.lng) })),
     [communities]
   );
 
@@ -241,108 +209,124 @@ export default function MapScreen() {
   const nearestSeller = useMemo<SellerPin | null>(() => {
     let best: SellerPin | null = null;
     let bestDist = Infinity;
+    const ref = userLoc ?? CENTER;
     for (const s of visibleSellers) {
-      const d = (s.latitude - CENTER.latitude) ** 2 + (s.longitude - CENTER.longitude) ** 2;
+      const d = (s.latitude - ref.latitude) ** 2 + (s.longitude - ref.longitude) ** 2;
       if (d < bestDist) {
         bestDist = d;
         best = s;
       }
     }
     return best;
-  }, [visibleSellers]);
+  }, [visibleSellers, userLoc]);
 
   const routeSource = selectedSeller ?? nearestSeller;
 
   const routePoints = useMemo<{ latitude: number; longitude: number }[] | null>(() => {
     if (!routeSource) return null;
-    const delivery = positionFor(`delivery:${routeSource.username}`);
+    const rLat = (routeSource as any)?.listingLat;
+    const rLng = (routeSource as any)?.listingLng;
+    const delivery = positionFor(`delivery:${routeSource.username}`, typeof rLat === 'number' ? rLat : null, typeof rLng === 'number' ? rLng : null);
+    // Honest delivery preview: seller pin -> user location -> listing location (if set)
+    const mid = userLoc ?? CENTER;
+    if (delivery.latitude === CENTER.latitude && delivery.longitude === CENTER.longitude) {
+      return [{ latitude: routeSource.latitude, longitude: routeSource.longitude }, mid];
+    }
     return [
       { latitude: routeSource.latitude, longitude: routeSource.longitude },
-      CENTER,
+      mid,
       delivery,
     ];
-  }, [routeSource]);
+  }, [routeSource, userLoc]);
 
   const liveRoute = useMemo<{ latitude: number; longitude: number }[] | null>(() => {
-    if (poiDirections) {
-      return [
-        { latitude: origin.latitude, longitude: origin.longitude },
-        { latitude: poiDirections.latitude, longitude: poiDirections.longitude },
-      ];
-    }
     return routeOn && routePoints ? routePoints : null;
-  }, [poiDirections, origin.latitude, origin.longitude, routeOn, routePoints]);
+  }, [routeOn, routePoints]);
 
   const mapMarkers = useMemo<LeafletMarker[]>(() => {
-    const pins: LeafletMarker[] =
-      view === 'Sellers'
-        ? visibleSellers.map((s) => ({
-            id: s.username,
-            lat: s.latitude,
-            lng: s.longitude,
-            kind: 'pin',
-            color: getCategoryColor(s.categories[0] ?? 'Fashion'),
-          }))
-        : visibleCommunities.map((c) => ({
-            id: c.id,
-            lat: c.latitude,
-            lng: c.longitude,
-            kind: 'pin',
-            color: getCategoryColor(c.category),
-          }));
-    const poiMarkers: LeafletMarker[] = pois.map((p) => ({
-      id: p.id,
-      lat: p.latitude,
-      lng: p.longitude,
-      kind: p.kind,
-      color: p.color,
+    const sellerPins: LeafletMarker[] = visibleSellers.map((s) => ({
+      id: s.username,
+      lat: s.latitude,
+      lng: s.longitude,
+      kind: 'pin',
+      color: getCategoryColor(s.categories[0] ?? 'Fashion'),
+      label: compactPrice(s.priceFrom),
     }));
+    const communityPinsOnMap: LeafletMarker[] = visibleCommunities.map((c) => ({
+      id: c.id,
+      lat: c.latitude,
+      lng: c.longitude,
+      kind: 'pin',
+      color: getCategoryColor(c.category),
+    }));
+    // Zoomed in: every shop shows. Zoomed out: merge neighbours into badges.
+    const places = [...sellerPins, ...communityPinsOnMap];
+    let clustered: LeafletMarker[] = places;
+    if (mapZoom < CLUSTER_ZOOM && places.length > 0) {
+      const cellDeg = (90 / 256) * (360 / Math.pow(2, Math.max(1, Math.floor(mapZoom))));
+      const groups = new Map<string, LeafletMarker[]>();
+      for (const p of places) {
+        const k = `${Math.floor(p.lat / cellDeg)}:${Math.floor(p.lng / cellDeg)}`;
+        const g = groups.get(k);
+        if (g) g.push(p);
+        else groups.set(k, [p]);
+      }
+      const out: LeafletMarker[] = [];
+      const cells = new Map<string, ClusterCell>();
+      for (const [k, g] of groups) {
+        if (g.length < 2) {
+          out.push(g[0]);
+          continue;
+        }
+        const lat = g.reduce((a, p) => a + p.lat, 0) / g.length;
+        const lng = g.reduce((a, p) => a + p.lng, 0) / g.length;
+        cells.set(k, { key: k, count: g.length, lat, lng });
+        out.push({ id: `cluster:${k}`, lat, lng, kind: 'cluster', label: String(g.length) });
+      }
+      clusterRef.current = cells;
+      clustered = out;
+    } else {
+      clusterRef.current = new Map();
+    }
     const userMarker: LeafletMarker[] = userLoc
       ? [{ id: 'user', lat: userLoc.latitude, lng: userLoc.longitude, kind: 'user' }]
       : [];
-    return [...poiMarkers, ...pins, ...userMarker];
-  }, [view, visibleSellers, visibleCommunities, pois, userLoc]);
+    return [...clustered, ...userMarker];
+  }, [visibleSellers, visibleCommunities, userLoc, mapZoom]);
 
-  const mapFocus = selectedPoi?.id ?? selectedSeller?.username ?? selectedCommunityId ?? null;
+  const mapFocus = selectedSeller?.username ?? selectedCommunityId ?? null;
 
   const handleMarkerPress = (id: string) => {
     if (id === 'user') {
       recenter();
       return;
     }
-    if (id.startsWith('poi-')) {
-      const p = pois.find((x) => x.id === id);
-      if (p) {
-        setSelectedPoi(p);
-        setSelectedSeller(null);
-        setSelectedCommunityId(null);
+    // Cluster badge tapped → zoom into its cell, like GMap.
+    if (id.startsWith('cluster:')) {
+      const cell = clusterRef.current.get(id.slice(8));
+      if (cell) {
+        setCenterTarget({ lat: cell.lat, lng: cell.lng, zoom: Math.min(18, Math.floor(mapZoom) + 2) });
       }
       return;
     }
-    if (view === 'Sellers') {
-      const s = sellers.find((x) => x.username === id);
-      if (s) {
-        setSelectedSeller(s);
-        setSelectedCommunityId(null);
-        setSelectedPoi(null);
-      }
-    } else {
-      const c = communityPins.find((x) => x.id === id);
-      if (c) {
-        setSelectedCommunityId(c.id);
-        setSelectedSeller(null);
-        setSelectedPoi(null);
-      }
+    // One map, both worlds: sellers and communities share the canvas, no filter UI.
+    const s = sellers.find((x) => x.username === id);
+    if (s) {
+      setSelectedSeller(s);
+      setSelectedCommunityId(null);
+      return;
+    }
+    const c = communityPins.find((x) => x.id === id);
+    if (c) {
+      setSelectedCommunityId(c.id);
+      setSelectedSeller(null);
     }
   };
 
-  const distanceLabel = (p: Poi) => {
-    const d = Math.sqrt((p.latitude - origin.latitude) ** 2 + (p.longitude - origin.longitude) ** 2);
-    const km = d * 111.32;
-    return km < 1 ? `${Math.max(120, Math.round(km * 1000))} m away` : `${km.toFixed(1)} km away`;
+  const clearSelection = () => {
+    setSelectedSeller(null);
+    setSelectedCommunityId(null);
   };
-
-  const visibleCount = view === 'Sellers' ? visibleSellers.length : visibleCommunities.length;
 
   const listData: Array<SellerPin | CommunityPin> =
     view === 'Sellers' ? visibleSellers : visibleCommunities;
@@ -360,8 +344,6 @@ export default function MapScreen() {
     setActiveCategory('All');
     setSelectedSeller(null);
     setSelectedCommunityId(null);
-    setSelectedPoi(null);
-    setPoiDirections(null);
   };
 
   const searchBar = (
@@ -416,11 +398,11 @@ export default function MapScreen() {
     </ScrollView>
   );
 
-  const renderSellerRow = (s: SellerPin, i: number) => (
+  const renderSellerRow = (s: SellerPin) => (
     <View className="bg-surfaceContainerLowest rounded-figma-24 p-4 mb-3" style={cardShadow}>
       <View className="flex-row items-center">
         <View className="w-10 h-10 rounded-full mr-3 overflow-hidden" style={{ backgroundColor: colors.surfaceContainer }}>
-          <Image source={nearbyImages.sellers[i % nearbyImages.sellers.length]} className="w-full h-full" />
+          <Image source={resolveAvatar(s.username)} className="w-full h-full" />
         </View>
         <View className="flex-1">
           <View className="flex-row items-center gap-1">
@@ -494,50 +476,11 @@ export default function MapScreen() {
     </View>
   );
 
-  const defaultCard = (
-    <View
-      className="absolute left-4 right-4 bg-surfaceContainerLowest rounded-figma-24 p-4"
-      style={{ bottom: insets.bottom + 16, ...cardShadow }}
-    >
-      <View className="flex-row items-center">
-        <View className="w-12 h-12 rounded-full bg-surfaceContainerLow items-center justify-center mr-3">
-          <MapPinIcon size={20} color={colors.primaryContainer} />
-        </View>
-        <View className="flex-1">
-          <Text className="text-figma-14 font-inter-600 text-textPrimary">Near You</Text>
-          <Text className="text-figma-12 font-inter-400 text-textSecondary">
-            {userLoc ? 'Places and sellers near your location' : 'Explore sellers and communities nearby'}
-          </Text>
-        </View>
-        <TouchableOpacity
-          className="px-4 py-2 bg-primaryContainer rounded-figma-full"
-          onPress={() => router.push('/search')}
-        >
-          <Text className="text-figma-12 font-inter-600 text-white">Explore</Text>
-        </TouchableOpacity>
-      </View>
-      {routeOn && (
-        <View className="flex-row items-center mt-2">
-          <View
-            className="w-1.5 h-1.5 rounded-full mr-1.5"
-            style={{ backgroundColor: colors.primaryContainer }}
-          />
-          <Text className="text-figma-10 font-inter-500 text-textSecondary">
-            Delivery route preview (mock)
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-
   const sellerCard = selectedSeller ? (
-    <View
-      className="absolute left-4 right-4 bg-surfaceContainerLowest rounded-figma-24 p-4"
-      style={{ bottom: insets.bottom + 16, ...cardShadow }}
-    >
+    <View className="bg-surfaceContainerLowest rounded-figma-24 p-4 mx-4 mt-3" style={cardShadow}>
       <View className="flex-row items-center">
         <View className="w-12 h-12 rounded-full mr-3 overflow-hidden" style={{ backgroundColor: colors.surfaceContainer }}>
-          <Image source={nearbyImages.avatar} className="w-full h-full" />
+          <Image source={resolveAvatar(selectedSeller.username)} className="w-full h-full" />
         </View>
         <View className="flex-1">
           <View className="flex-row items-center gap-1">
@@ -552,9 +495,24 @@ export default function MapScreen() {
           <CloseIcon size={18} color={colors.secondary} />
         </TouchableOpacity>
       </View>
-      <Text className="text-figma-12 font-inter-500 text-textSecondary mt-2">
-        From {formatPrice(selectedSeller.priceFrom)} · {selectedSeller.categories.join(', ')}
-      </Text>
+      <View className="flex-row items-center justify-between mt-2">
+        <Text
+          className="flex-1 text-figma-12 font-inter-500 text-textSecondary mr-2"
+          numberOfLines={1}
+        >
+          From {formatPrice(selectedSeller.priceFrom)} · {selectedSeller.categories.join(', ')}
+        </Text>
+        <TouchableOpacity
+          className={`px-3 py-1.5 rounded-figma-full ${routeOn ? 'bg-primaryContainer' : 'bg-surfaceContainer'}`}
+          onPress={() => setRouteOn((v) => !v)}
+        >
+          <Text
+            className={`text-figma-12 font-inter-600 ${routeOn ? 'text-white' : 'text-primaryContainer'}`}
+          >
+            Route
+          </Text>
+        </TouchableOpacity>
+      </View>
       <View className="flex-row gap-2 mt-3">
         <TouchableOpacity
           className="flex-1 h-11 bg-primaryContainer rounded-figma-16 items-center justify-center"
@@ -577,7 +535,7 @@ export default function MapScreen() {
             style={{ backgroundColor: colors.primaryContainer }}
           />
           <Text className="text-figma-10 font-inter-500 text-textSecondary">
-            Delivery route preview (mock)
+            Approximate route preview
           </Text>
         </View>
       )}
@@ -585,10 +543,7 @@ export default function MapScreen() {
   ) : null;
 
   const communityCard = selectedCommunity ? (
-    <View
-      className="absolute left-4 right-4 bg-surfaceContainerLowest rounded-figma-24 p-4"
-      style={{ bottom: insets.bottom + 16, ...cardShadow }}
-    >
+    <View className="bg-surfaceContainerLowest rounded-figma-24 p-4 mx-4 mt-3" style={cardShadow}>
       <View className="flex-row items-center">
         <View
           className="w-12 h-12 rounded-full items-center justify-center mr-3"
@@ -600,9 +555,21 @@ export default function MapScreen() {
         </View>
         <View className="flex-1">
           <Text className="text-figma-14 font-inter-600 text-textPrimary">{selectedCommunity.name}</Text>
-          <Text className="text-figma-12 font-inter-400 text-textSecondary">
-            {formatCount(selectedCommunity.memberCount)} members · {selectedCommunity.category}
-          </Text>
+          <View className="flex-row items-center justify-between">
+            <Text className="flex-1 text-figma-12 font-inter-400 text-textSecondary mr-2" numberOfLines={1}>
+              {formatCount(selectedCommunity.memberCount)} members · {selectedCommunity.category}
+            </Text>
+            <TouchableOpacity
+              className={`px-3 py-1.5 rounded-figma-full ${routeOn ? 'bg-primaryContainer' : 'bg-surfaceContainer'}`}
+              onPress={() => setRouteOn((v) => !v)}
+            >
+              <Text
+                className={`text-figma-12 font-inter-600 ${routeOn ? 'text-white' : 'text-primaryContainer'}`}
+              >
+                Route
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <TouchableOpacity onPress={() => setSelectedCommunityId(null)}>
           <CloseIcon size={18} color={colors.secondary} />
@@ -633,90 +600,17 @@ export default function MapScreen() {
             style={{ backgroundColor: colors.primaryContainer }}
           />
           <Text className="text-figma-10 font-inter-500 text-textSecondary">
-            Delivery route preview (mock)
+            Approximate route preview
           </Text>
         </View>
       )}
     </View>
   ) : null;
 
-  const poiCard = selectedPoi ? (
-    <View
-      className="absolute left-4 right-4 bg-surfaceContainerLowest rounded-figma-24"
-      style={{ bottom: insets.bottom + 16, ...cardShadow }}
-    >
-      <Image source={{ uri: selectedPoi.image }} className="w-full h-28 rounded-t-figma-24" style={{ resizeMode: 'cover' }} />
-      <View className="p-4">
-        <View className="flex-row items-center">
-          <View
-            className="w-11 h-11 rounded-figma-full items-center justify-center mr-3"
-            style={{ backgroundColor: selectedPoi.color }}
-          >
-            {POI_ICON[selectedPoi.kind](20, colors.surfaceContainerLowest)}
-          </View>
-          <View className="flex-1">
-            <Text className="text-figma-14 font-inter-600 text-textPrimary">{selectedPoi.name}</Text>
-            <Text className="text-figma-12 font-inter-400 text-textSecondary mt-0.5">
-              {selectedPoi.label} · {selectedPoi.rating.toFixed(1)}★ · {distanceLabel(selectedPoi)}
-            </Text>
-          </View>
-          <TouchableOpacity onPress={() => setSelectedPoi(null)} hitSlop={8}>
-            <CloseIcon size={18} color={colors.secondary} />
-          </TouchableOpacity>
-        </View>
-        <View className="flex-row gap-2 mt-3">
-          <TouchableOpacity
-            className="flex-1 h-11 bg-primaryContainer rounded-figma-16 items-center justify-center"
-            onPress={() => {
-              setPoiDirections(selectedPoi);
-              setRouteOn(false);
-              setCenterTarget({
-                lat: (origin.latitude + selectedPoi.latitude) / 2,
-                lng: (origin.longitude + selectedPoi.longitude) / 2,
-                zoom: 14,
-              });
-            }}
-          >
-            <Text className="text-figma-14 font-inter-600 text-white">Directions</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            className="h-11 px-5 bg-surfaceContainer rounded-figma-16 items-center justify-center"
-            onPress={() => router.push('/search')}
-          >
-            <Text className="text-figma-14 font-inter-600 text-textPrimary">Visit</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  ) : null;
+  const placeCard = selectedSeller ? sellerCard : selectedCommunity ? communityCard : null;
 
   return (
-    <View className="flex-1">
-      <View
-        className="flex-row items-center justify-between px-4 border-b border-surfaceContainer bg-surface"
-        style={{ height: 64 + insets.top, paddingTop: insets.top }}
-      >
-        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/feed'))}>
-          <BackIcon size={20} color={colors.primaryContainer} />
-        </TouchableOpacity>
-        <Text className="text-figma-18 font-inter-700 text-primaryContainer">susej</Text>
-        <TouchableOpacity onPress={() => router.push('/notifications')}>
-          <BellIcon size={20} color={colors.primaryContainer} />
-        </TouchableOpacity>
-      </View>
-
-      {locDenied && (
-        <TouchableOpacity
-          className="flex-row items-center justify-between bg-surfaceContainerLow px-4 py-2.5 mx-4 mt-3 rounded-figma-16"
-          onPress={recenter}
-        >
-          <Text className="flex-1 text-figma-12 font-inter-500 text-textSecondary mr-3">
-            Location off — tap to retry and find places near you
-          </Text>
-          <GpsTargetIcon size={16} color={colors.primaryContainer} />
-        </TouchableOpacity>
-      )}
-
+    <View className="flex-1 bg-surface">
       {mapState === 'failed' ? (
         <View className="flex-1 bg-surface">
           <View className="px-4 pt-3">
@@ -738,13 +632,13 @@ export default function MapScreen() {
           <FlatList
             data={listData}
             keyExtractor={(item) => ('username' in item ? item.username : item.id)}
-            renderItem={({ item, index }) => ('username' in item ? renderSellerRow(item, index) : renderCommunityRow(item))}
+            renderItem={({ item }) => ('username' in item ? renderSellerRow(item) : renderCommunityRow(item))}
             contentContainerClassName="p-4"
             ListEmptyComponent={emptyList}
           />
         </View>
       ) : (
-        <View className="flex-1 overflow-hidden">
+        <View className="flex-1">
           <LeafletMapHost
             style={{ flex: 1 }}
             markers={mapMarkers}
@@ -752,60 +646,89 @@ export default function MapScreen() {
             focus={mapFocus}
             center={centerTarget}
             onMarkerPress={handleMarkerPress}
+            onMapPress={clearSelection}
+            onView={({ zoom }) => setMapZoom((z) => (Math.abs(z - zoom) < 0.01 ? z : zoom))}
             onReady={() => setMapState('ready')}
             onError={() => setMapState('failed')}
           />
 
-          {mapState === 'loading' && (
-            <View className="absolute inset-0 bg-surface items-center justify-center">
-              <ActivityIndicator size="large" color={colors.primaryContainer} />
-              <Text className="text-figma-14 font-inter-500 text-textSecondary mt-3">
-                Loading map...
-              </Text>
-            </View>
-          )}
-
-          {mapState === 'ready' && visibleCount === 0 && (
-            <View className="absolute inset-0 bg-surface items-center justify-center">
-              <MapPinIcon size={40} color={colors.primaryContainer} />
-              <Text className="text-figma-14 font-inter-500 text-textSecondary mt-3">
-                No {view.toLowerCase()} nearby yet
-              </Text>
-            </View>
-          )}
-
-          <View className="absolute top-3 left-4 right-4">{searchBar}</View>
-          <View className="absolute top-16 left-4">{segmented}</View>
-          <TouchableOpacity
-            className={`absolute top-16 right-4 px-4 py-2 rounded-figma-full ${routeOn ? 'bg-primaryContainer' : 'bg-surfaceContainerLowest'}`}
-            style={pillShadow}
-            onPress={() => setRouteOn((v) => !v)}
-          >
-            <Text className={`text-figma-12 font-inter-600 ${routeOn ? 'text-white' : 'text-secondary'}`}>
-              Route
-            </Text>
-          </TouchableOpacity>
-          {chips.length > 1 && <View className="absolute top-28 left-4 right-4">{chipsRow}</View>}
-
-<TouchableOpacity
-              className="absolute right-4 w-11 h-11 rounded-figma-full bg-surfaceContainerLowest items-center justify-center"
-              style={{
-                bottom: insets.bottom + (selectedPoi ? 300 : selectedSeller || selectedCommunity ? 220 : 150),
-                ...pillShadow,
-              }}
-              onPress={recenter}
-              accessibilityLabel="Recenter map"
+          {/* Floating search — back + field + alerts, Google-Maps style */}
+          <View className="absolute left-4 right-4" style={{ top: insets.top + 8 }}>
+            <View
+              className="flex-row items-center h-12 pl-1 pr-1 bg-surfaceContainerLowest rounded-figma-16"
+              style={pillShadow}
             >
-              <GpsTargetIcon size={20} color={colors.primaryContainer} />
-            </TouchableOpacity>
+              <TouchableOpacity
+                className="w-10 h-10 items-center justify-center"
+                onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/feed'))}
+                accessibilityLabel="Go back"
+              >
+                <BackIcon size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 flex-row items-center h-full"
+                onPress={() => router.push('/search')}
+              >
+                <SearchIcon size={18} color={colors.secondary} />
+                <Text className="flex-1 ml-2 text-figma-14 font-inter-400 text-textSecondary">
+                  Search nearby...
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="w-10 h-10 items-center justify-center"
+                onPress={() => router.push('/notifications')}
+                accessibilityLabel="Notifications"
+              >
+                <BellIcon size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            {locDenied && (
+              <TouchableOpacity
+                className="flex-row items-center justify-between bg-surfaceContainerLowest px-4 py-2.5 mt-2 rounded-figma-16"
+                style={pillShadow}
+                onPress={recenter}
+              >
+                <Text className="flex-1 text-figma-12 font-inter-500 text-textSecondary mr-3">
+                  Location off — tap to retry and find places near you
+                </Text>
+                <GpsTargetIcon size={16} color={colors.primaryContainer} />
+              </TouchableOpacity>
+            )}
+          </View>
 
-          {selectedSeller || selectedCommunity || selectedPoi
-            ? selectedSeller
-              ? sellerCard
-              : selectedCommunity
-                ? communityCard
-                : poiCard
-            : defaultCard}
+          {/* Loader chip floats over the live map — never covers it */}
+          {mapState === 'loading' && (
+            <View
+              className="absolute left-0 right-0 items-center"
+              style={{ top: insets.top + 132 }}
+              pointerEvents="none"
+            >
+              <View
+                className="flex-row items-center bg-surfaceContainerLowest rounded-figma-full px-4 py-2"
+                style={pillShadow}
+              >
+                <ActivityIndicator size="small" color={colors.primaryContainer} />
+                <Text className="text-figma-12 font-inter-500 text-textSecondary ml-2">Loading map…</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Location button — the map canvas stays clean otherwise */}
+          <TouchableOpacity
+            className="absolute right-4 w-12 h-12 rounded-figma-full bg-surfaceContainerLowest items-center justify-center"
+            style={{ bottom: placeCard ? 268 : 32, ...pillShadow }}
+            onPress={recenter}
+            accessibilityLabel="Recenter map"
+          >
+            <GpsTargetIcon size={22} color={colors.primaryContainer} />
+          </TouchableOpacity>
+
+          {/* Place card — appears only when a pin is tapped, like Google Maps */}
+          {placeCard && (
+            <View className="absolute left-0 right-0" style={{ bottom: 24 }}>
+              {placeCard}
+            </View>
+          )}
         </View>
       )}
     </View>

@@ -66,7 +66,7 @@ function getActionVariant(action: string): "info" | "success" | "danger" | "warn
 
 const auditColumns: ColumnDef<AuditLog>[] = [
   { accessorKey: "adminName", header: "Admin", cell: ({ row }) => <span className="font-medium text-[#18181B] ">{row.getValue("adminName") as string}</span> },
-  { accessorKey: "action", header: "Action", cell: ({ row }) => { const a = row.getValue("action") as string; return <Badge variant={getActionVariant(a)}>{a.replace("_", " ")}</Badge>; } },
+  { accessorKey: "action", header: "Action", cell: ({ row }) => { const a = row.getValue("action") as string; return <Badge variant={getActionVariant(a)}>{a.replaceAll("_", " ")}</Badge>; } },
   { accessorKey: "entity", header: "Entity", cell: ({ row }) => row.getValue("entity") as string },
   { accessorKey: "entityId", header: "Entity ID", cell: ({ row }) => <span className="font-mono text-sm text-gray-500">{row.getValue("entityId") as string}</span> },
   { accessorKey: "details", header: "Details", cell: ({ row }) => <span className="text-sm text-gray-500">{row.getValue("details") as string}</span> },
@@ -229,6 +229,10 @@ export default function AdminsPage() {
 
       <div>
         <h2 className="mb-4 text-lg font-semibold text-[#18181B] ">Roles & Permissions</h2>
+        <p className="mb-4 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-2.5 text-xs text-[#92400E]">
+          Access enforcement is role-based and hardcoded on the server (super_admin / manager / finance / moderator).
+          This matrix is recorded for the RBAC-v2 rollout and does not enforce anything yet — changing a checkbox here changes no access today.
+        </p>
         <div className="grid grid-cols-3 gap-6">
           {(["Super Admin", "Manager", "Moderator"] as const).map((role) => {
             const roleKey = role === "Super Admin" ? "super_admin" : role.toLowerCase() as "manager" | "moderator";
@@ -396,9 +400,10 @@ export default function AdminsPage() {
                         <Label>Admin</Label>
                         <Select value={adminFilter} onChange={(e) => setAdminFilter(e.target.value)} options={[
                           { label: "All Admins", value: "all" },
-                          { label: "Super Admin", value: "Super Admin" },
-                          { label: "Moderator Jane", value: "Moderator Jane" },
-                          { label: "Admin John", value: "Admin John" },
+                          ...admins
+                            .map((a) => a.name || "")
+                            .filter(Boolean)
+                            .map((name) => ({ label: name, value: name })),
                         ]} />
                       </div>
                       <div>

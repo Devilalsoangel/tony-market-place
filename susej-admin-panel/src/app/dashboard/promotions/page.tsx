@@ -29,6 +29,7 @@ const KIND_TONE: Record<PromotionKind, "primary" | "success" | "info"> = {
   topSeller: "primary",
   hotDeal: "success",
   featuredPost: "info",
+  spotlight: "success",
 };
 
 function daysLeft(endsAt?: string): number {
@@ -73,11 +74,13 @@ const makeColumns = (
     header: "Performance",
     cell: (info) => {
       const p = info.row.original;
-      const ctr = p.views > 0 ? ((p.clicks / p.views) * 100).toFixed(1) : "0.0";
+      const views = p.views ?? 0;
+      const clicks = p.clicks ?? 0;
+      const ctr = views > 0 ? ((clicks / views) * 100).toFixed(1) : "0.0";
       return (
         <div className="text-[12px] text-[#71717A] tabular-nums">
-          <div>{p.views.toLocaleString()} views</div>
-          <div>{p.clicks.toLocaleString()} clicks · {ctr}% CTR</div>
+          <div>{views.toLocaleString()} views</div>
+          <div>{clicks.toLocaleString()} clicks · {ctr}% CTR</div>
         </div>
       );
     },
@@ -146,6 +149,7 @@ export default function PromotionsPage() {
     fetch("/api/data/promotions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id, data }),
     }).finally(refresh);
   }
@@ -167,9 +171,9 @@ export default function PromotionsPage() {
 
   const active = (items ?? []).filter((p) => p.status === "active");
   const pending = (items ?? []).filter((p) => p.status === "pending_payment").length;
-  const revenue = (items ?? []).reduce((s, p) => s + p.amountPaid, 0);
-  const views = (items ?? []).reduce((s, p) => s + p.views, 0);
-  const clicks = (items ?? []).reduce((s, p) => s + p.clicks, 0);
+  const revenue = (items ?? []).filter((p) => p.status !== "refunded" && p.status !== "expired").reduce((s, p) => s + p.amountPaid, 0);
+  const views = (items ?? []).reduce((s, p) => s + (p.views ?? 0), 0);
+  const clicks = (items ?? []).reduce((s, p) => s + (p.clicks ?? 0), 0);
   const ctr = views > 0 ? ((clicks / views) * 100).toFixed(1) : "0.0";
 
   const counts = useMemo(() => {
@@ -178,6 +182,7 @@ export default function PromotionsPage() {
       topSeller: base.filter((p) => p.kind === "topSeller").length,
       hotDeal: base.filter((p) => p.kind === "hotDeal").length,
       featuredPost: base.filter((p) => p.kind === "featuredPost").length,
+      spotlight: base.filter((p) => p.kind === "spotlight").length,
     };
   }, [items]);
 
@@ -198,8 +203,8 @@ export default function PromotionsPage() {
         <StatTile label="Pending payment" value={pending} />
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        {(["topSeller", "hotDeal", "featuredPost"] as const).map((kind) => (
+      <div className="grid grid-cols-4 gap-4">
+        {(["topSeller", "hotDeal", "featuredPost", "spotlight"] as const).map((kind) => (
           <Card key={kind}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-[14px]">
@@ -216,6 +221,7 @@ export default function PromotionsPage() {
                 {kind === "topSeller" && "Pins the seller in the home Top Sellers rail. 7d ₹599 / 30d ₹1999."}
                 {kind === "hotDeal" && "Pins a product in Hot Deals with a URGENT badge. 7d ₹499 / 30d ₹1499."}
                 {kind === "featuredPost" && "Shows the post as Sponsored in buyer feeds. 7d ₹349 / 30d ₹999."}
+                {kind === "spotlight" && "Pin-to-Top: listing #1 in buyer feeds for a day. 24h ₹49 (impulse SKU)."}
               </p>
             </CardContent>
           </Card>
@@ -226,7 +232,7 @@ export default function PromotionsPage() {
         <CardHeader>
           <CardTitle>Campaign Queue</CardTitle>
           <div className="mt-3 flex gap-2">
-            {(["all", "topSeller", "hotDeal", "featuredPost"] as const).map((k) => (
+            {(["all", "spotlight", "topSeller", "hotDeal", "featuredPost"] as const).map((k) => (
               <Button
                 key={k}
                 size="sm"
@@ -274,7 +280,7 @@ export default function PromotionsPage() {
         </div>
       </Dialog>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="flex items-center gap-2 text-[13px] text-[#71717A]">
           <TrendingUp className="h-4 w-4" />
           {views.toLocaleString()} total views · {clicks.toLocaleString()} clicks · {ctr}% CTR across all campaigns

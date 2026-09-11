@@ -7,8 +7,9 @@ import { ChevronLeftIcon, SearchIcon, PlusIcon, StarIcon, PencilIcon, CheckIcon 
 import { colors, formatPrice } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePosts } from '../contexts/PostContext';
-import { productImages } from '../utils/productImages';
-import { sellerImages } from '../utils/screenImages';
+import { resolveListingImage, hasRealImage } from '../utils/productImages';
+import { useNotifications } from '../contexts/NotificationContext';
+import { useEffect, useRef } from 'react';
 
 // My Listings Manager (Figma 245:1567) — status tabs, search, 4-action cards.
 // Wired to PostContext: every card is the seller's real post, and the
@@ -49,13 +50,33 @@ const timeAgo = (ts: number) => {
 export default function ListingsManagerScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { posts, deletePost, toggleSold, updatePost } = usePosts();
+  const { posts, deletePost, toggleSold } = usePosts();
+  const { addNotification } = useNotifications();
+  const warnedRef = useRef<Set<string>>(new Set());
   const [tab, setTab] = useState<(typeof TABS)[number]>('All');
   const [category, setCategory] = useState('All Categories');
   const [query, setQuery] = useState('');
 
   const username = user?.username || 'user';
   const myPosts = useMemo(() => posts.filter((p) => p.sellerUsername === username), [posts, username]);
+
+  // Industry standard: warn seller for imageless listings (no real image = not sellable)
+  const imagelessIds = useMemo(() => myPosts.filter((p) => !hasRealImage(p)).map((p) => p.id), [myPosts]);
+
+  useEffect(() => {
+    for (const p of myPosts) {
+      if (!hasRealImage(p) && !warnedRef.current.has(p.id)) {
+        warnedRef.current.add(p.id);
+        const title = (p.description || '').split('\n')[0]?.slice(0, 32) || 'your listing';
+        addNotification({
+          type: 'warning',
+          userName: 'susej',
+          action: `⚠ Your listing "${title}" has no image and is hidden from buyers. Add an image to make it visible.`,
+          targetId: p.id,
+        });
+      }
+    }
+  }, [myPosts, addNotification]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -80,8 +101,12 @@ export default function ListingsManagerScreen() {
   const featuredCount = myPosts.filter((l) => l.featured).length;
 
   const toggleFeatured = (id: string) => {
-    const post = myPosts.find((p) => p.id === id);
-    if (post) updatePost(id, { featured: !post.featured });
+    // Featuring is a PAID placement owned by the Promotions engine — the
+    // server deliberately ignores author-set featured flags, so flipping it
+    // here only lied to this device (no cross-device effect, no charge, no
+    // placement). Route to the real paid flow instead.
+    void id;
+    router.push('/promotions');
   };
 
   const removeListing = (id: string, title: string) => {
@@ -183,6 +208,13 @@ export default function ListingsManagerScreen() {
           })}
         </ScrollView>
 
+        {/* Seller warning banner for imageless listings */}
+        {imagelessIds.length > 0 && (
+          <View className="mx-5 mt-3 rounded-figma-16 px-4 py-3 flex-row items-center" style={{ backgroundColor: '#fef2f2', borderWidth: 1, borderColor: colors.error }}>
+            <Text className="font-inter-600" style={{ fontSize: 13, color: colors.error }}>⚠ {imagelessIds.length} listing{imagelessIds.length > 1 ? 's' : ''} without image — hidden from buyers until you add an image.</Text>
+          </View>
+        )}
+
         {/* Listing cards */}
         <View className="mx-5 mt-4" style={{ gap: 12 }}>
           {filtered.length === 0 && (
@@ -208,17 +240,16 @@ export default function ListingsManagerScreen() {
           )}
           {filtered.map((l) => {
             const title = (l.description || '').split('\n')[0];
-            const img = l.image
-              ? { uri: l.image }
-              : productImages[l.id] ?? sellerImages.products[myPosts.findIndex((x) => x.id === l.id) % sellerImages.products.length];
+            const img = resolveListingImage(l, l.id);
+            const noImage = !hasRealImage(l);
             return (
               <View
                 key={l.id}
                 className="p-3 rounded-figma-20"
                 style={{
                   backgroundColor: colors.surfaceContainerLowest,
-                  borderWidth: l.featured ? 2 : 1,
-                  borderColor: l.featured ? colors.primary : colors.outlineVariant,
+                  borderWidth: noImage ? 2 : l.featured ? 2 : 1,
+                  borderColor: noImage ? colors.error : l.featured ? colors.primary : colors.outlineVariant,
                   shadowColor: '#000',
                   shadowOffset: { width: 0, height: 3 },
                   shadowOpacity: 0.05,
@@ -253,7 +284,14 @@ export default function ListingsManagerScreen() {
                     <Text className="font-inter-400 text-textSecondary mt-1.5" style={{ fontSize: 12, lineHeight: 16 }}>
                       {l.category ? `${l.category} · ` : ''}{l.isSold ? 'Sold' : 'Active'} · {timeAgo(l.createdAt)}
                     </Text>
-                    <View className="flex-row mt-2">
+                    <View className="flex-row mt-2 flex-wrap" style={{ gap: 6 }}>
+                      {noImage && (
+                        <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef2f2', borderWidth: 1, borderColor: colors.error }}>
+                          <Text className="font-inter-600" style={{ fontSize: 10, lineHeight: 12, color: colors.error }}>
+                            ⚠ No image — hidden from buyers
+                          </Text>
+                        </View>
+                      )}
                       {l.featured && (
                         <View className="px-2 py-0.5 rounded-full mr-1.5" style={{ backgroundColor: colors.surfaceContainerLow }}>
                           <Text className="font-inter-500" style={{ fontSize: 10, lineHeight: 12, color: colors.primary }}>
@@ -267,6 +305,11 @@ export default function ListingsManagerScreen() {
                         </Text>
                       </View>
                     </View>
+                    {noImage && (
+                      <TouchableOpacity className="mt-2 self-start px-3 py-1.5 rounded-full" style={{ backgroundColor: colors.primary }} onPress={() => router.push('/(tabs)/create')}>
+                        <Text className="font-inter-600" style={{ fontSize: 11, color: '#fff' }}>Add image</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </TouchableOpacity>
 
@@ -274,6 +317,8 @@ export default function ListingsManagerScreen() {
                 <View className="flex-row mt-3" style={{ borderTopWidth: 1, borderTopColor: colors.surfaceContainer }}>
                   <TouchableOpacity
                     className="flex-1 items-center py-2.5"
+                    accessibilityRole="button"
+                    accessibilityLabel={l.featured ? 'Remove from Top Deal' : 'Feature as Top Deal'}
                     onPress={() => toggleFeatured(l.id)}
                   >
                     <StarIcon size={16} color={l.featured ? colors.primary : colors.textSecondary} />
@@ -284,6 +329,8 @@ export default function ListingsManagerScreen() {
                   <TouchableOpacity
                     className="flex-1 items-center py-2.5"
                     style={{ borderLeftWidth: 1, borderLeftColor: colors.surfaceContainer }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View listing ${l.id}`}
                     onPress={() => router.push(`/product/${l.id}`)}
                   >
                     <PencilIcon size={16} color={colors.textSecondary} />
@@ -294,6 +341,8 @@ export default function ListingsManagerScreen() {
                   <TouchableOpacity
                     className="flex-1 items-center py-2.5"
                     style={{ borderLeftWidth: 1, borderLeftColor: colors.surfaceContainer }}
+                    accessibilityRole="button"
+                    accessibilityLabel={l.isSold ? 'Restock listing' : 'Mark as sold'}
                     onPress={() => toggleSold(l.id)}
                   >
                     {l.isSold ? (
@@ -308,6 +357,8 @@ export default function ListingsManagerScreen() {
                   <TouchableOpacity
                     className="flex-1 items-center py-2.5"
                     style={{ borderLeftWidth: 1, borderLeftColor: colors.surfaceContainer }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete listing"
                     onPress={() => removeListing(l.id, title)}
                   >
                     <TrashIcon size={16} color={colors.error} />

@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, Image, Alert, Share } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, Share } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -6,13 +6,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BackIcon, ShareIcon, MapPinIcon, ShopIcon, PhoneIcon, GpsTargetIcon, CheckIcon, CarIcon, BikeIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useOrders, STATUS_LABELS } from '../contexts/OrderContext';
-import { productImages } from '../utils/productImages';
+import { resolveListingImage } from '../utils/productImages';
 import { trackOrderImages } from '../utils/screenImages';
 import { LeafletMapHost, type LeafletMarker } from '../components/LeafletMap';
 
-const COURIER_NAMES = ['Delhivery', 'BlueDart', 'Shiprocket', 'DTDC', 'Ecom Express'];
-const RIDER_NAMES = ['Rahul', 'Amit', 'Suresh', 'Vikram', 'Imran'];
-const RIDER_RATING = '4.2';
 const CENTER = { latitude: 18.5204, longitude: 73.8567 };
 
 const pillShadow = {
@@ -44,37 +41,25 @@ export default function TrackOrderScreen() {
   const { orders, getOrder } = useOrders();
   const insets = useSafeAreaInsets();
   const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const order = rawId ? getOrder(String(rawId)) : orders[0];
+  // No id must not leak another user's order — show empty state instead.
+  const order = rawId ? getOrder(String(rawId)) : undefined;
 
   const isLiveOrder = !!order && ['placed', 'confirmed', 'preparing', 'out_for_delivery'].includes(order.status);
-  const [transportMode, setTransportMode] = useState<'car' | 'bike' | 'person'>(() =>
-    order?.kind === 'food' ? 'bike' : order?.kind === 'booking' ? 'person' : 'car'
-  );
-  const riderKind = transportMode;
-  const [riderProgress, setRiderProgress] = useState(0.35);
   const scrollRef = useRef<ScrollView>(null);
   const [mapY, setMapY] = useState(0);
 
-  useEffect(() => {
-    if (!isLiveOrder) return;
-    const iv = setInterval(() => setRiderProgress((p) => Math.min(0.92, p + 0.015)), 1500);
-    return () => clearInterval(iv);
-  }, [isLiveOrder]);
+  // No simulated rider movement — the map shows the honest pickup → delivery
+  // overview; live rider GPS arrives with a real logistics integration.
 
   const trackMarkers = useMemo<LeafletMarker[]>(() => {
     if (!order) return [];
     const pickup = positionFor(`pickup:${order.id}`);
     const delivery = positionFor(`delivery:${order.id}`);
-    const rider = {
-      latitude: pickup.latitude + (delivery.latitude - pickup.latitude) * riderProgress,
-      longitude: pickup.longitude + (delivery.longitude - pickup.longitude) * riderProgress,
-    };
     return [
       { id: 'pickup', lat: pickup.latitude, lng: pickup.longitude, kind: 'office', color: '#0369a1' },
-      { id: 'rider', lat: rider.latitude, lng: rider.longitude, kind: riderKind as LeafletMarker['kind'], color: '#4343d5' },
       { id: 'delivery', lat: delivery.latitude, lng: delivery.longitude, kind: 'pin', color: '#0e7a5f' },
     ];
-  }, [order, riderProgress, riderKind]);
+  }, [order]);
 
   const trackRoute = useMemo(() => {
     if (!order) return null;
@@ -87,7 +72,10 @@ export default function TrackOrderScreen() {
     ];
   }, [order]);
 
-  const trackCenter = useMemo(() => {
+  const tickRef = useRef(0);
+  const progressRef = useRef(0.35);
+
+  const [trackCenter, setTrackCenter] = useState<{ lat: number; lng: number; zoom: number } | null>(() => {
     if (!order) return null;
     const pickup = positionFor(`pickup:${order.id}`);
     const delivery = positionFor(`delivery:${order.id}`);
@@ -96,7 +84,19 @@ export default function TrackOrderScreen() {
       lng: (pickup.longitude + delivery.longitude) / 2,
       zoom: 13,
     };
-  }, [order]);
+  });
+
+  // Reset the map frame when a different order is opened.
+  useEffect(() => {
+    if (!order) return;
+    const pickup = positionFor(`pickup:${order.id}`);
+    const delivery = positionFor(`delivery:${order.id}`);
+    setTrackCenter({
+      lat: (pickup.latitude + delivery.latitude) / 2,
+      lng: (pickup.longitude + delivery.longitude) / 2,
+      zoom: 13,
+    });
+  }, [order?.id]);
 
   if (!order) {
     return (
@@ -122,7 +122,8 @@ export default function TrackOrderScreen() {
   }
 
   const steps = order.tracking.map((s) => ({ label: s.label, date: s.time, done: s.done }));
-  const activeIdx = steps.findIndex((s) => !s.done);
+  // The CURRENT step is the last COMPLETED one (real server state), not the next upcoming step - otherwise the timeline always runs one step ahead of the header.
+  const currentIdx = steps.reduce((acc, s, i) => (s.done ? i : acc), 0);
 
   const statusLabel = STATUS_LABELS[order.status];
   const orderNumber = order.orderNumber.startsWith('#') ? order.orderNumber : `#${order.orderNumber}`;
@@ -132,32 +133,26 @@ export default function TrackOrderScreen() {
       ? `Delivered on ${orderDate}`
       : order.status === 'cancelled'
         ? 'Order cancelled'
-        : order.kind === 'food'
-          ? transportMode === 'car'
-            ? 'Arriving in 15–25 min'
-            : 'Arriving in 30–40 min'
-          : 'Arriving soon';
+        : statusLabel;
 
-  const courierName = COURIER_NAMES[hashId(order.id) % COURIER_NAMES.length];
-  const riderName = `${RIDER_NAMES[hashId(order.id) % RIDER_NAMES.length]} · ${RIDER_RATING}★`;
-  const scheduledDate = new Date(order.placedAt + 2 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  // Real booking slot when the order carries one — no invented dates.
+  const appointmentLine = order.bookingDate
+    ? `${order.bookingDate}${order.bookingTime ? ` · ${order.bookingTime}` : ''}`
+    : null;
 
   const product = order.items[0];
   const productName = product.name;
   const productPrice = formatPrice(product.price);
   const quantity = product.quantity;
-  const productImage = productImages[product.listingId] ?? trackOrderImages.product;
+  const _firstItem = (order as any)?.items?.[0] as any;
+  const productImage = _firstItem?.imageUrl ? { uri: _firstItem.imageUrl } : resolveListingImage(null, _firstItem?.listingId ?? (order as any)?.id);
 
   const isLive = ['placed', 'confirmed', 'preparing', 'out_for_delivery'].includes(order.status);
 
   const handleShare = () => {
     Share.share({
       title: `Order ${orderNumber}`,
-      message: `Order ${orderNumber} (${statusLabel}) — ${productName} x ${quantity} at ${productPrice}. ${order.kind === 'food' ? 'Food delivery via susej.' : `Shipped by ${courierName}.`}`,
+      message: `Order ${orderNumber} (${statusLabel}) — ${productName} x ${quantity} at ${productPrice}.`,
     }).catch(() => {});
   };
 
@@ -195,13 +190,10 @@ export default function TrackOrderScreen() {
                 <GpsTargetIcon size={20} color={colors.primaryContainer} />
               </View>
               <View className="flex-1">
-                <Text className="text-figma-14 font-inter-600 text-textPrimary">{riderName}</Text>
+                <Text className="text-figma-14 font-inter-600 text-textPrimary">Delivery partner on the way</Text>
                 <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">
-                  {transportMode === 'car' ? 'Arriving in 15–25 min' : 'Arriving in 30–40 min'}
+                  Live rider tracking arrives with real logistics
                 </Text>
-              </View>
-              <View className="w-9 h-9 rounded-figma-full bg-primaryContainer items-center justify-center">
-                <PhoneIcon size={16} color={colors.textInverse} />
               </View>
             </View>
             <TouchableOpacity
@@ -209,7 +201,7 @@ export default function TrackOrderScreen() {
               onPress={() => scrollRef.current?.scrollTo({ y: mapY, animated: true })}
             >
               <MapPinIcon size={18} color={colors.primaryContainer} />
-              <Text className="text-figma-13 font-inter-600 text-primaryContainer ml-2">Live Map</Text>
+              <Text className="text-figma-13 font-inter-600 text-primaryContainer ml-2">Route Map</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -221,15 +213,15 @@ export default function TrackOrderScreen() {
                 <ShopIcon size={18} color={colors.primaryContainer} />
               </View>
               <View className="flex-1">
-                <Text className="text-figma-14 font-inter-600 text-textPrimary">{courierName}</Text>
-                <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">Standard Delivery · 2–4 days</Text>
+                <Text className="text-figma-14 font-inter-600 text-textPrimary">{order.sellerName || 'Seller'}</Text>
+                <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">Sold by this seller · updates below</Text>
               </View>
               <View className="px-3 py-1 bg-primaryContainer rounded-figma-full">
-                <Text className="text-figma-10 font-inter-600 text-white">In Transit</Text>
+                <Text className="text-figma-10 font-inter-600 text-white">{statusLabel}</Text>
               </View>
             </View>
             <View className="flex-row items-center justify-between mt-3 pt-3 border-t border-surfaceContainer">
-              <Text className="text-figma-12 font-inter-400 text-textSecondary">Tracking ID</Text>
+              <Text className="text-figma-12 font-inter-400 text-textSecondary">Order</Text>
               <Text className="text-figma-12 font-inter-600 text-primaryContainer">{orderNumber}</Text>
             </View>
           </View>
@@ -247,12 +239,16 @@ export default function TrackOrderScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-figma-14 font-inter-600 text-textPrimary">Appointment Scheduled</Text>
-                <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">{scheduledDate} · 10:30 AM</Text>
+                {appointmentLine ? (
+                  <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">{appointmentLine}</Text>
+                ) : null}
               </View>
             </View>
             <View className="flex-row items-center justify-between mt-3 pt-3 border-t border-surfaceContainer">
               <Text className="text-figma-12 font-inter-400 text-textSecondary">Meetup</Text>
-              <Text className="text-figma-12 font-inter-600 text-textPrimary">At location</Text>
+              <Text className="text-figma-12 font-inter-600 text-textPrimary">
+                {order.address ? `Deliver to ${order.address}` : 'Arranged with seller in chat'}
+              </Text>
             </View>
           </View>
         )}
@@ -260,37 +256,12 @@ export default function TrackOrderScreen() {
         {isLive ? (
         <>
           <View className="px-4 py-6">
-            <Text className="text-figma-16 font-inter-600 text-textPrimary mb-6">Live Tracking</Text>
-
-            {order.kind !== 'booking' && (
-              <View className="flex-row items-center gap-2 mb-4">
-                <Text className="text-figma-12 font-inter-500 text-textSecondary">Delivery mode</Text>
-                <View className="flex-row bg-surfaceContainerLow rounded-figma-full p-1">
-                  {(
-                    [
-                      { key: 'car', label: 'Car', icon: <CarIcon size={14} color={colors.surfaceContainerLowest} /> },
-                      { key: 'bike', label: 'Bike', icon: <BikeIcon size={14} color={colors.surfaceContainerLowest} /> },
-                    ] as const
-                  ).map((mode) => (
-                    <TouchableOpacity
-                      key={mode.key}
-                      className={`flex-row items-center px-4 py-1.5 rounded-figma-full gap-1.5 ${transportMode === mode.key ? 'bg-primaryContainer' : ''}`}
-                      onPress={() => setTransportMode(mode.key)}
-                    >
-                      {mode.icon}
-                      <Text className={`text-figma-12 font-inter-600 ${transportMode === mode.key ? 'text-white' : 'text-textSecondary'}`}>
-                        {mode.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
+            <Text className="text-figma-16 font-inter-600 text-textPrimary mb-6">Order Progress</Text>
 
             <View className="ml-2">
               {steps.map((step, i) => {
-                const isActive = activeIdx === -1 ? i === steps.length - 1 : i === activeIdx;
-                const isDone = activeIdx === -1 ? true : i < activeIdx;
+                const isActive = i === currentIdx;
+                const isDone = i < currentIdx;
                 return (
                   <View key={step.label} className="flex-row mb-2">
                     <View className="items-center mr-4">
@@ -324,7 +295,7 @@ export default function TrackOrderScreen() {
             />
             <View className="absolute left-3 bottom-2 px-2.5 py-1 rounded-figma-full bg-surfaceContainerLowest" style={pillShadow}>
               <Text className="text-figma-10 font-inter-500 text-textSecondary">
-                {order.kind === 'food' ? `${transportMode === 'car' ? 'Car' : 'Bike'} · ${riderName} · on the way` : order.kind === 'booking' ? 'Service partner on the way' : `${courierName} · in transit`}
+                Approximate route preview - exact addresses hidden until pickup is confirmed
               </Text>
             </View>
           </View>
@@ -357,7 +328,7 @@ export default function TrackOrderScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               className="flex-1 h-11 rounded-figma-12 bg-surfaceContainer items-center justify-center"
-              onPress={() => Alert.alert('Need help?', 'Our support team is available 9 AM - 9 PM. You can also reach us from the Chat tab.')}
+              onPress={() => router.push('/support')}
             >
               <Text className="text-figma-13 font-inter-600 text-textPrimary">Help</Text>
             </TouchableOpacity>
@@ -367,11 +338,15 @@ export default function TrackOrderScreen() {
         <View className="mx-4 mt-4 mb-6 bg-surfaceContainerLow rounded-figma-16 p-4">
           <Text className="text-figma-16 font-inter-600 text-textPrimary mb-1">Order Cancelled</Text>
           <Text className="text-figma-12 font-inter-400 text-textSecondary mb-4">
-            This order was cancelled. Any amount paid will be refunded to your original payment method.
+            {String(order.paymentMethod ?? '').toLowerCase() === 'cod'
+              ? 'This order was cancelled. No advance was paid (cash on delivery) — nothing to refund.'
+              : order.refund
+                ? `This order was cancelled. Refund ${order.refund.status === 'refunded' ? 'issued to your wallet' : `status: ${order.refund.status}`}.`
+                : 'This order was cancelled. Any amount paid will be refunded to your wallet.'}
           </Text>
           <TouchableOpacity
             className="h-11 rounded-figma-12 bg-surfaceContainer items-center justify-center"
-            onPress={() => Alert.alert('Need help?', 'Our support team is available 9 AM - 9 PM. You can also reach us from the Chat tab.')}
+            onPress={() => router.push('/support')}
           >
             <Text className="text-figma-13 font-inter-600 text-textPrimary">Contact support</Text>
           </TouchableOpacity>
@@ -399,7 +374,11 @@ export default function TrackOrderScreen() {
             </View>
             <View className="flex-row justify-between">
               <Text className="text-figma-12 font-inter-400 text-textSecondary">Payment</Text>
-              <Text className="text-figma-12 font-inter-500 text-success">Paid</Text>
+              {/cash|cod/i.test(order.paymentMethod ?? '') ? (
+                <Text className="text-figma-12 font-inter-500 text-textSecondary">Pay on delivery</Text>
+              ) : (
+                <Text className="text-figma-12 font-inter-500 text-success">Paid</Text>
+              )}
             </View>
           </View>
         </View>

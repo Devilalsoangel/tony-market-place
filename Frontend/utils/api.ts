@@ -9,8 +9,8 @@ import { Platform } from 'react-native';
 export const API_BASE = (
   (
     ((globalThis as any)?.process?.env?.EXPO_PUBLIC_API_BASE_URL as string) ||
-    'http://100.92.233.78:8000'
-  ).trim() || 'http://100.92.233.78:8000'
+    'http://127.0.0.1:8000'
+  ).trim() || 'http://127.0.0.1:8000'
 ).replace(/\/+$/, '');
 
 // ─── TOKEN STATE (module-level singletons) ───────────────────

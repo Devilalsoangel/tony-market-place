@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
@@ -8,6 +8,8 @@ import { colors, useAppearance, type ThemeMode } from '../utils/theme';
 import { t, getLocale, setLocale, type AppLocale } from '../utils/i18n';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
+import { getPermStatus, requestPerm, type PermKind, type PermState } from '../utils/permissions';
+import { useEffect } from 'react';
 
 const ICON_PATHS: Record<string, string> = {
   person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
@@ -99,17 +101,6 @@ const sections: SettingsSection[] = [
     title: 'SUPPORT',
     items: [{ label: 'Disputes & Refunds', icon: 'shield', route: '/disputes' }],
   },
-  {
-    title: 'ADMIN',
-    items: [
-      {
-        label: 'Admin',
-        icon: 'shield',
-        route: '/admin/verify',
-        subtitle: 'Verification & moderation queues',
-      },
-    ],
-  },
 ];
 
 export default function SettingsScreen() {
@@ -119,6 +110,30 @@ export default function SettingsScreen() {
   const { settings, updateSetting } = useSettings();
   const { logout } = useAuth();
   const insets = useSafeAreaInsets();
+
+  // App permissions — live status + tap to fire the OS popup
+  const PERMS: Array<{ kind: PermKind; icon: string; title: string; subtitle: string }> = [
+    { kind: 'location', icon: 'shipping', title: 'Location', subtitle: 'Find nearby sellers and deliver to your area' },
+    { kind: 'media', icon: 'orders', title: 'Photos & Videos', subtitle: 'Pick gallery media for your posts' },
+    { kind: 'camera', icon: 'bell', title: 'Camera', subtitle: 'Capture photos for listings and profile' },
+  ];
+  const [permStates, setPermStates] = useState<Record<string, PermState>>({});
+
+  const refreshPerms = async () => {
+    const entries = await Promise.all(
+      PERMS.map(async (p) => [p.kind, await getPermStatus(p.kind)] as const)
+    );
+    setPermStates(Object.fromEntries(entries));
+  };
+
+  useEffect(() => {
+    refreshPerms();
+  }, []);
+
+  const askPerm = async (kind: PermKind) => {
+    await requestPerm(kind);
+    refreshPerms();
+  };
 
   const changeTheme = (mode: ThemeMode) => {
     setThemeMode(mode);

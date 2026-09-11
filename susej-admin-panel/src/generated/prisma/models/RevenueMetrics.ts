@@ -1106,6 +1106,7 @@ export type RevenueMetricsCreateManyArgs<ExtArgs extends runtime.Types.Extension
    * The data used to create many RevenueMetrics.
    */
   data: Prisma.RevenueMetricsCreateManyInput | Prisma.RevenueMetricsCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1124,6 +1125,7 @@ export type RevenueMetricsCreateManyAndReturnArgs<ExtArgs extends runtime.Types.
    * The data used to create many RevenueMetrics.
    */
   data: Prisma.RevenueMetricsCreateManyInput | Prisma.RevenueMetricsCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

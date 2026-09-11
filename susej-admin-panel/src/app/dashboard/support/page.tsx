@@ -42,7 +42,7 @@ const columns = [
   }),
   columnHelper.accessor("assignee", {
     header: "Assignee",
-    cell: (info) => info.getValue() || <span className="text-gray-400">â€”</span>,
+    cell: (info) => info.getValue() || <span className="text-gray-400">—</span>,
   }),
   columnHelper.accessor("createdAt", {
     header: "Created",

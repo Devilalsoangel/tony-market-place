@@ -24,7 +24,7 @@ const tColumns = [
   }),
   tColumn.accessor("method", {
     header: "Method",
-    cell: (info) => <span className="capitalize text-[#71717A]">{info.getValue().replace("_", " ")}</span>,
+    cell: (info) => <span className="capitalize text-[#71717A]">{info.getValue().replaceAll("_", " ")}</span>,
   }),
   tColumn.accessor("amount", { header: "Amount", cell: (info) => <span className="font-medium tabular-nums">{formatCurrency(info.getValue())}</span> }),
   tColumn.accessor("status", {

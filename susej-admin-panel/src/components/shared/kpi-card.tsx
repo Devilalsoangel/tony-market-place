@@ -6,11 +6,13 @@ interface KPICardProps {
   value: string | number;
   icon: LucideIcon;
   trend?: { value: number; positive: boolean };
+  /** Honest context line under the value (e.g. "Gross X · refunds Y"). */
+  subtitle?: string;
   variant?: "default" | "primary" | "success" | "warning" | "danger" | "info";
   className?: string;
 }
 
-export function KPICard({ title, value, icon: Icon, trend, variant = "default", className }: KPICardProps) {
+export function KPICard({ title, value, icon: Icon, trend, subtitle, variant = "default", className }: KPICardProps) {
   const variantColors = {
     default: "bg-[#F4F4F5] text-[#71717A]",
     primary: "bg-[#6C3BFF]/10 text-[#6C3BFF]",
@@ -28,6 +30,9 @@ export function KPICard({ title, value, icon: Icon, trend, variant = "default", 
         <div className="space-y-1.5">
           <p className="text-[13px] font-medium text-[#71717A]">{title}</p>
           <p className="text-2xl font-semibold tabular-nums tracking-[-0.02em] text-[#18181B]">{value}</p>
+          {subtitle && (
+            <p className="text-xs tabular-nums text-[#A1A1AA]">{subtitle}</p>
+          )}
           {trend && (
             <span
               className={cn(

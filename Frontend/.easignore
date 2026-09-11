@@ -1,9 +1,8 @@
-# EAS build archive — exclude local junk that breaks tarball upload on Windows
-.omo/
-.codegraph/
-android/
-node_modules/
-.expo/
-.git/
+.omo
+.codegraph
+node_modules/.cache
 *.log
-.DS_Store
+.env.local
+.git
+node_modules
+

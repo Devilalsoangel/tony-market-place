@@ -8,8 +8,8 @@ import { colors, formatPrice } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePosts, Post } from '../contexts/PostContext';
 import { useOrders } from '../contexts/OrderContext';
-import { productImages } from '../utils/productImages';
-import { sellerDashboardImages } from '../utils/screenImages';
+import { resolveListingImage } from '../utils/productImages';
+import { sellerNetForOrders } from '../utils/marketplace';
 
 function ViewIcon({ size = 14, color = colors.primaryContainer }: { size?: number; color?: string }) {
   return (
@@ -75,21 +75,21 @@ function ClockIcon({ size = 16, color = colors.tertiary }: { size?: number; colo
   );
 }
 
-const VIEW_PATTERN = [0.55, 0.8, 1.15, 0.9, 1.3, 1.05, 1.0];
-
 export default function SellerDashboardScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { posts, deletePost, toggleSold } = usePosts();
   const { orders } = useOrders();
 
+  // Logged-out fallback is '' (matches nobody): 'user' previously rendered
+  // seller "user"'s listings + orders to logged-out viewers (cross-account leak).
   const myPosts = useMemo(
-    () => posts.filter((p) => p.sellerUsername === (user?.username || 'user')),
+    () => posts.filter((p) => p.sellerUsername === (user?.username ?? '')),
     [posts, user]
   );
 
   const totalListings = myPosts.length;
-  const totalLikes = myPosts.reduce((sum, p) => sum + p.likes, 0);
+  const totalLikes = myPosts.reduce((sum, p) => sum + (p.likes ?? 0), 0);
   const soldCount = myPosts.filter((p) => p.isSold).length;
 
   const confirmDelete = (item: Post) => {
@@ -104,11 +104,13 @@ export default function SellerDashboardScreen() {
   };
 
   const salesOrders = useMemo(
-    () => orders.filter((o) => o.sellerUsername === (user?.username || 'user')),
+    () => orders.filter((o) => o.sellerUsername === (user?.username ?? '')),
     [orders, user]
   );
   const salesCount = salesOrders.length;
-  const salesRevenue = salesOrders.reduce((sum, o) => sum + o.total, 0);
+  // Industry-standard: sellers see NET (after 8% commission) — the number
+  // that matches their wallet. Gross here would contradict the hub + wallet.
+  const salesRevenue = sellerNetForOrders(salesOrders);
 
   // Orders needing the seller's attention first (placed/confirmed), then latest.
   const recentOrders = useMemo(() => {
@@ -127,22 +129,25 @@ export default function SellerDashboardScreen() {
     return `${Math.floor(hours / 24)}d ago`;
   };
 
+  // Real activity: listings created per day over the last 7 days (from post
+  // timestamps). No synthetic view multipliers.
   const weekChart = useMemo(() => {
     const labels: string[] = [];
+    const values: number[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       labels.push(d.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0));
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      values.push(myPosts.filter((p) => p.createdAt >= dayStart && p.createdAt < dayStart + 86400000).length);
     }
-    const base = totalLikes > 0 ? totalLikes / 7 : 0;
-    const values = VIEW_PATTERN.map((f) => Math.round(base * f));
     const max = Math.max(...values, 1);
     return { labels, values, max };
-  }, [totalLikes]);
+  }, [myPosts]);
 
   const pending = user?.verification === 'pending';
   const rejected = user?.verification === 'rejected';
-  const verified = user?.verification === 'approved' || !user?.verification;
+  const verified = user?.verification === 'approved';
 
   return (
     <View className="flex-1 bg-surface">
@@ -172,7 +177,7 @@ export default function SellerDashboardScreen() {
               </View>
             </View>
             <Text className="text-figma-12 font-inter-400 text-white/80">
-              Typically takes 24-48 hrs. You can keep listing while we review your documents.
+              Listing, reels and live unlock the moment you are approved.
             </Text>
           </View>
         )}
@@ -251,10 +256,10 @@ export default function SellerDashboardScreen() {
         </View>
         <View className="flex-row gap-3 mb-4">
           <View className="flex-1 bg-surfaceContainerLow rounded-figma-16 p-4">
-            <Text className="text-figma-12 font-inter-400 text-textSecondary mb-1">Revenue</Text>
+            <Text className="text-figma-12 font-inter-400 text-textSecondary mb-1">Revenue (net)</Text>
             <Text className="text-figma-20 font-inter-700 text-textPrimary">{formatPrice(salesRevenue)}</Text>
             <Text className="text-figma-10 font-inter-500 text-textTertiary mt-0.5">
-              {salesCount === 0 ? 'No orders yet' : 'earned'}
+              {salesCount === 0 ? 'No orders yet' : 'delivered · after 8% fee'}
             </Text>
           </View>
           <View className="flex-1 bg-surfaceContainerLow rounded-figma-16 p-4">
@@ -270,7 +275,7 @@ export default function SellerDashboardScreen() {
         </View>
 
         <View className="bg-surfaceContainerLow rounded-figma-16 p-4 mb-6">
-          <Text className="text-figma-14 font-inter-600 text-textPrimary mb-1">Views — Last 7 Days</Text>
+          <Text className="text-figma-14 font-inter-600 text-textPrimary mb-1">New Listings — Last 7 Days</Text>
           <Text className="text-figma-12 font-inter-400 text-textSecondary mb-4">
             {totalLikes === 0 ? 'Post more to grow your audience' : `${totalLikes} likes across your listings`}
           </Text>
@@ -312,8 +317,8 @@ export default function SellerDashboardScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          myPosts.map((item, i) => {
-            const thumb = productImages[item.id] ?? sellerDashboardImages[i % 2];
+          myPosts.map((item) => {
+            const thumb = resolveListingImage(item, item.id);
             return (
               <View
                 key={item.id}

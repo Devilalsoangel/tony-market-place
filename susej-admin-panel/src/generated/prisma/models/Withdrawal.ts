@@ -1088,6 +1088,7 @@ export type WithdrawalCreateManyArgs<ExtArgs extends runtime.Types.Extensions.In
    * The data used to create many Withdrawals.
    */
   data: Prisma.WithdrawalCreateManyInput | Prisma.WithdrawalCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1106,6 +1107,7 @@ export type WithdrawalCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exte
    * The data used to create many Withdrawals.
    */
   data: Prisma.WithdrawalCreateManyInput | Prisma.WithdrawalCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiDelete } from "@/lib/api-mutate";
 import { formatDate, formatNumber } from "@/lib/utils";
 import { Images, Trash2 } from "lucide-react";
-import type { MockStory } from "@/services/mock-data";
+import type { MockStory } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockStory>();
 

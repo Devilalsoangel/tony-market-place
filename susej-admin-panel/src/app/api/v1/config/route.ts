@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAppKey, unauthorized } from "@/lib/promotions/api-auth";
 import { getPrisma } from "@/lib/db";
-import { PROMOTION_PACKAGES } from "@/lib/promotions/catalog";
+import {
+  PROMOTION_PACKAGES,
+  applyPriceOverrides,
+  getChatPinPrice,
+  DEFAULT_CHAT_PIN,
+} from "@/lib/promotions/catalog";
 
 /**
  * Public marketplace config for the mobile app (x-app-key guarded).
@@ -26,6 +31,7 @@ export async function GET(request: NextRequest) {
   if (!checkAppKey(request)) return unauthorized();
 
   let commission = FALLBACK;
+  let priceOverrides: Record<string, unknown> | null = null;
   const prisma = await getPrisma();
   if (prisma) {
     try {
@@ -43,14 +49,22 @@ export async function GET(request: NextRequest) {
           categoryOverrides: overrides.map((o) => ({ category: o.category, rate: asRate(o.rate) })),
         };
       }
+      // Admin-managed promo/chat-pin pricing (Commission & Fees page edits this).
+      const setting = await prisma.appSetting.findUnique({ where: { key: "promoPrices" } });
+      const value = setting?.value;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        priceOverrides = value as Record<string, unknown>;
+      }
     } catch {
       // DB hiccup — fall back to defaults below
     }
   }
 
+  const packages = applyPriceOverrides(priceOverrides);
+
   return NextResponse.json({
     commission,
-    promotions: PROMOTION_PACKAGES.map((p) => ({
+    promotions: packages.map((p) => ({
       id: p.id,
       kind: p.kind,
       name: p.name,
@@ -58,5 +72,9 @@ export async function GET(request: NextRequest) {
       price: p.price,
       days: p.durationDays,
     })),
+    chatPin: {
+      price: getChatPinPrice(priceOverrides),
+      days: DEFAULT_CHAT_PIN.days,
+    },
   });
 }

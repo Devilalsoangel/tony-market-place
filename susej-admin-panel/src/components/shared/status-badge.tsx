@@ -57,13 +57,17 @@ interface StatusBadgeProps {
   className?: string;
 }
 
+function formatStatusLabel(status: string): string {
+  return status.replace(/_/g, ' ');
+}
+
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const variant = statusMap[status as StatusType] || "default";
 
   return (
     <Badge variant={variant} className={cn("capitalize", className)}>
       <span className="mr-1 h-1.5 w-1.5 rounded-full bg-current opacity-80" />
-      {status}
+      {formatStatusLabel(status)}
     </Badge>
   );
 }

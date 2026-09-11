@@ -1,25 +1,37 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, ScrollView, TouchableOpacity, Image, Dimensions, Keyboard } from 'react-native';
 import { router } from 'expo-router';
-import { HamburgerIcon, SearchIcon, BagIcon } from '../../utils/icons';
+import { ChevronLeftIcon, SearchIcon } from '../../utils/icons';
 import { colors, CATEGORIES } from '../../utils/theme';
 import { usePosts } from '../../contexts/PostContext';
-import { categoryImages } from '../../utils/screenImages';
+import { resolveListingImage } from '../../utils/productImages';
+import { serverApi } from '../../utils/serverApi';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 const TILE_W = (width - 40 - 24) / 3; // Figma 1:2198: 3-col bento, 350 content, ~11.5 gap
 const CARD_W = 169;
 
-const TRENDING_BADGES = ['Trending', 'New', 'Hot'];
-
 export default function CategoryHubScreen() {
   const [search, setSearch] = useState('');
   const insets = useSafeAreaInsets();
   const { posts } = usePosts();
 
-  // Figma 1:2198 "Explore Industries" — all 17 verticals from the product spec
-  const industries = useMemo(() => CATEGORIES, []);
+  // Figma 1:2198 "Explore Industries" — tiles come from the ADMIN-OWNED
+  // catalog in Postgres (/api/app/categories) so a category added in the
+  // admin panel lands here. Local CATEGORIES stay only as the offline fallback.
+  const [adminCats, setAdminCats] = useState<{ id: string; label: string }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    serverApi.getCategories().then((res) => {
+      if (!alive) return;
+      if (res.ok && res.data?.categories?.length) {
+        setAdminCats(res.data.categories.map((c: { slug: string; name: string }) => ({ id: c.slug, label: c.name })));
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const industries = adminCats.length > 0 ? adminCats : CATEGORIES;
 
   // Trending Now — top posts by likes, Figma shows 3
   const trending = useMemo(
@@ -27,7 +39,11 @@ export default function CategoryHubScreen() {
     [posts]
   );
 
-  const slugFor = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
+  // Navigate by the catalog id (the server slug, e.g. "home-living").
+  // Deriving slugs from labels ("Home & Living" -> "home-&-living") 404s
+  // multiword categories — label-derived slugs are fallback-only.
+  const slugFor = (cat: { id?: string; label: string }) =>
+    cat.id && cat.id.trim() ? cat.id : cat.label.toLowerCase().replace(/\s+/g, '-');
 
   return (
     <View className="flex-1 bg-surface">
@@ -37,14 +53,12 @@ export default function CategoryHubScreen() {
         style={{ height: 52 + insets.top, paddingTop: insets.top }}
       >
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <HamburgerIcon size={18} color={colors.textSecondary} />
+          <ChevronLeftIcon size={22} color={colors.textSecondary} />
         </TouchableOpacity>
         <Text className="text-figma-20 font-inter-700 text-primary" style={{ letterSpacing: -0.5 }}>
           susej
         </Text>
-        <TouchableOpacity onPress={() => router.push('/cart')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <BagIcon size={22} color={colors.primary} />
-        </TouchableOpacity>
+        <View style={{ width: 22 }} />
       </View>
 
       <ScrollView
@@ -77,20 +91,20 @@ export default function CategoryHubScreen() {
 
         {/* Industries Bento Grid — Figma: 109x120 tiles, label 12/500 left-aligned */}
         <View className="flex-row flex-wrap justify-between mt-4">
-          {industries.map((cat, i) => (
+          {industries.map((cat) => (
             <TouchableOpacity
               key={cat.id}
               className="mb-3"
               style={{ width: TILE_W }}
               activeOpacity={0.8}
-              onPress={() => router.push(`/category/${slugFor(cat.label)}`)}
+              onPress={() => router.push(`/category/${slugFor(cat)}`)}
             >
               <View
                 className="w-full rounded-figma-16 overflow-hidden"
                 style={{ height: TILE_W * 0.9, backgroundColor: colors.surfaceContainer }}
               >
                 <Image
-                  source={categoryImages[i % categoryImages.length]}
+                  source={resolveListingImage(null, cat.id)}
                   className="w-full h-full"
                   resizeMode="cover"
                 />
@@ -119,7 +133,7 @@ export default function CategoryHubScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerClassName="gap-3 pb-1"
         >
-          {trending.map((post, i) => (
+          {trending.map((post) => (
             <TouchableOpacity
               key={post.id}
               className="bg-surfaceContainerLowest rounded-figma-16 overflow-hidden"
@@ -131,16 +145,8 @@ export default function CategoryHubScreen() {
                 {post.image ? (
                   <Image source={{ uri: post.image }} className="w-full h-full" resizeMode="cover" />
                 ) : (
-                  <Image source={categoryImages[(i + 3) % categoryImages.length]} className="w-full h-full" resizeMode="cover" />
+                  <Image source={resolveListingImage(null, post.id)} className="w-full h-full" resizeMode="cover" />
                 )}
-                <View
-                  className="absolute rounded-figma-8 px-3 py-1"
-                  style={{ top: 12, left: 12, backgroundColor: colors.inverseSurface }}
-                >
-                  <Text className="text-figma-12 font-inter-700 text-white">
-                    {TRENDING_BADGES[i % TRENDING_BADGES.length]}
-                  </Text>
-                </View>
               </View>
               <View className="p-3">
                 <Text className="text-figma-14 font-inter-600 text-textPrimary" numberOfLines={1}>
@@ -154,29 +160,6 @@ export default function CategoryHubScreen() {
           ))}
         </ScrollView>
       </ScrollView>
-
-      {/* Bottom Nav — Figma: 58px */}
-      <View
-        className="absolute bottom-0 left-0 right-0 bg-surface/80 flex-row items-center justify-around px-4"
-        style={{ height: 58 + insets.bottom, paddingBottom: insets.bottom }}
-      >
-        {['Feed', 'Explore', 'Create', 'Chat', 'Profile'].map((key) => (
-          <TouchableOpacity
-            key={key}
-            className="items-center justify-center py-1"
-            style={{ width: 64 }}
-            onPress={() => {
-              if (key === 'Feed') router.replace('/(tabs)/feed');
-              if (key === 'Explore') router.replace('/(tabs)/explore');
-              if (key === 'Create') router.replace('/(tabs)/create');
-              if (key === 'Chat') router.replace('/(tabs)/chat');
-              if (key === 'Profile') router.replace('/(tabs)/profile');
-            }}
-          >
-            <Text className="text-figma-12 font-inter-400 text-secondary/40">{key}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </View>
   );
 }

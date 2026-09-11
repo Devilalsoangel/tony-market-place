@@ -1044,6 +1044,7 @@ export type NotificationHistoryItemCreateManyArgs<ExtArgs extends runtime.Types.
    * The data used to create many NotificationHistoryItems.
    */
   data: Prisma.NotificationHistoryItemCreateManyInput | Prisma.NotificationHistoryItemCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1062,6 +1063,7 @@ export type NotificationHistoryItemCreateManyAndReturnArgs<ExtArgs extends runti
    * The data used to create many NotificationHistoryItems.
    */
   data: Prisma.NotificationHistoryItemCreateManyInput | Prisma.NotificationHistoryItemCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, MapPinIcon, CheckIcon, PlusIcon, CloseIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
+import { useAuth } from '../contexts/AuthContext';
 
 export interface SavedAddress {
   id: string;
@@ -26,40 +27,31 @@ export interface SavedAddress {
   phone: string;
 }
 
-export const ADDRESSES_KEY = '@susej_addresses';
-export const SELECTED_ADDRESS_KEY = '@susej_selected_address';
+export const ADDRESSES_KEY_BASE = '@susej_addresses';
+export const SELECTED_ADDRESS_KEY_BASE = '@susej_selected_address';
+// Back-compat aliases — prefer the BASE keys with per-user suffix.
+export const ADDRESSES_KEY = ADDRESSES_KEY_BASE;
+export const SELECTED_ADDRESS_KEY = SELECTED_ADDRESS_KEY_BASE;
 
-export const SEED_ADDRESSES: SavedAddress[] = [
-  {
-    id: 'home',
-    type: 'Home',
-    name: 'Sam Sharma',
-    street: 'B-402, Green Meadows, Baner',
-    city: 'Pune 411045',
-    phone: '+91 98765 43210',
-  },
-  {
-    id: 'work',
-    type: 'Work',
-    name: 'Sam Sharma',
-    street: 'WeWork Galaxy, Koregaon Park',
-    city: 'Pune 411001',
-    phone: '+91 98765 43210',
-  },
-  {
-    id: 'other',
-    type: 'Other',
-    name: 'Priya Mehta',
-    street: '12 Lake View Road, Viman Nagar',
-    city: 'Pune 411014',
-    phone: '+91 91234 56789',
-  },
-];
+function addressesKey(username?: string | null) {
+  const u = username?.trim();
+  return u ? `${ADDRESSES_KEY_BASE}:${u}` : ADDRESSES_KEY_BASE;
+}
+function selectedAddressKey(username?: string | null) {
+  const u = username?.trim();
+  return u ? `${SELECTED_ADDRESS_KEY_BASE}:${u}` : SELECTED_ADDRESS_KEY_BASE;
+}
 
-export async function getSelectedAddress(): Promise<SavedAddress | null> {
+export async function getSelectedAddress(username?: string | null): Promise<SavedAddress | null> {
   try {
-    const raw = await AsyncStorage.getItem(SELECTED_ADDRESS_KEY);
-    return raw ? (JSON.parse(raw) as SavedAddress) : null;
+    const raw = await AsyncStorage.getItem(selectedAddressKey(username ?? null));
+    if (raw) return JSON.parse(raw) as SavedAddress;
+    // Fallback legacy global only when per-user empty.
+    if (username) {
+      const legacy = await AsyncStorage.getItem(SELECTED_ADDRESS_KEY_BASE);
+      return legacy ? (JSON.parse(legacy) as SavedAddress) : null;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -69,6 +61,8 @@ const ADDRESS_TYPES = ['Home', 'Work', 'Other'];
 
 export default function AddressBookScreen() {
   const insets = useSafeAreaInsets();
+  const { user, tokenSeq } = useAuth();
+  const username = user?.username ?? null;
   const [addresses, setAddresses] = useState<SavedAddress[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -79,13 +73,20 @@ export default function AddressBookScreen() {
     let active = true;
     (async () => {
       try {
-        const stored = await AsyncStorage.getItem(ADDRESSES_KEY);
+        const key = addressesKey(username);
+        let stored = await AsyncStorage.getItem(key);
+        if (!stored && key !== ADDRESSES_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(ADDRESSES_KEY_BASE);
+          if (legacy) stored = legacy;
+        }
         const parsed = stored ? (JSON.parse(stored) as SavedAddress[]) : null;
         if (!active) return;
-        const merged = parsed && parsed.length > 0 ? parsed : SEED_ADDRESSES;
-        setAddresses(merged);
-        const selected = await getSelectedAddress();
-        if (active) setSelectedId(selected?.id ?? merged[0].id ?? null);
+        const real = (parsed ?? []).filter(
+          (a) => a && a.id && !['home', 'work', 'other'].includes(String(a.id))
+        );
+        setAddresses(real);
+        const selected = await getSelectedAddress(username);
+        if (active) setSelectedId(selected?.id ?? real[0]?.id ?? null);
       } catch {
         if (active) setLoadFailed(true);
       }
@@ -93,16 +94,16 @@ export default function AddressBookScreen() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [username, tokenSeq]);
 
   const persist = useCallback((next: SavedAddress[]) => {
-    AsyncStorage.setItem(ADDRESSES_KEY, JSON.stringify(next)).catch(() => {});
-  }, []);
+    AsyncStorage.setItem(addressesKey(username), JSON.stringify(next)).catch(() => {});
+  }, [username]);
 
   const selectAddress = useCallback((addr: SavedAddress) => {
-    AsyncStorage.setItem(SELECTED_ADDRESS_KEY, JSON.stringify(addr)).catch(() => {});
+    AsyncStorage.setItem(selectedAddressKey(username), JSON.stringify(addr)).catch(() => {});
     router.back();
-  }, []);
+  }, [username]);
 
   const canSave =
     form.name.trim().length > 0 &&
@@ -123,11 +124,11 @@ export default function AddressBookScreen() {
     const next = [addr, ...addresses];
     setAddresses(next);
     persist(next);
-    AsyncStorage.setItem(SELECTED_ADDRESS_KEY, JSON.stringify(addr)).catch(() => {});
+    AsyncStorage.setItem(selectedAddressKey(username), JSON.stringify(addr)).catch(() => {});
     setSelectedId(addr.id);
     setModalOpen(false);
     setForm({ name: '', phone: '', street: '', city: '', type: 'Home' });
-  }, [addresses, canSave, form, persist]);
+  }, [addresses, canSave, form, persist, username]);
 
   const openAdd = () => setModalOpen(true);
 

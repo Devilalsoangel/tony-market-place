@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
 
-const BOOKMARKS_KEY = '@susej_bookmarked_products';
+const BOOKMARKS_KEY_BASE = '@susej_bookmarked_products';
 
 export interface BookmarkedProduct {
   productId: string;
@@ -12,19 +13,6 @@ export interface BookmarkedProduct {
   imageUrl?: string;
   savedAt: number;
 }
-
-const SEED_BOOKMARKS: BookmarkedProduct[] = [
-  { productId: 'post_001', sellerName: 'NeoDrip Fashion', sellerUsername: 'luxe', price: 4999, description: 'Vintage silk saree with hand-embroidered border', imageUrl: 'https://picsum.photos/seed/susejp1/800/400', savedAt: Date.now() - 86400000 * 8 },
-  { productId: 'post_002', sellerName: 'TechVault', sellerUsername: 'techvault', price: 45999, description: 'MacBook Pro M3 - 16GB RAM, 512GB SSD', imageUrl: 'https://picsum.photos/seed/susejp2/800/400', savedAt: Date.now() - 86400000 * 7 },
-  { productId: 'post_003', sellerName: 'Urban Jungle', sellerUsername: 'urbanjungle', price: 1299, description: 'Handmade ceramic plant pot set of 3', imageUrl: 'https://picsum.photos/seed/susejp3/800/400', savedAt: Date.now() - 86400000 * 6 },
-  { productId: 'post_004', sellerName: 'Brush & Style Studio', sellerUsername: 'brushstyle', price: 7999, description: 'Professional interior painting & home styling', imageUrl: 'https://picsum.photos/seed/susejp4/800/400', savedAt: Date.now() - 86400000 * 5 },
-  { productId: 'post_005', sellerName: 'FreshBasket', sellerUsername: 'freshbasket', price: 499, description: 'Organic farm-fresh vegetable box — 5kg seasonal produce', imageUrl: 'https://picsum.photos/seed/susejp5/800/400', savedAt: Date.now() - 86400000 * 4 },
-  { productId: 'post_006', sellerName: 'CodeWorks Studio', sellerUsername: 'codeworks', price: 1800000, description: 'React Native developer - 3+ years, remote friendly', imageUrl: 'https://picsum.photos/seed/susejp6/800/400', savedAt: Date.now() - 86400000 * 3 },
-  { productId: 'post_007', sellerName: 'Skyline Realty', sellerUsername: 'skyline', price: 35000, description: '2BHK apartment for rent, sea facing', imageUrl: 'https://picsum.photos/seed/susejp7/800/400', savedAt: Date.now() - 86400000 * 2 },
-  { productId: 'post_008', sellerName: 'ThreadWorks', sellerUsername: 'threadworks', price: 420, description: 'Cotton grey fabric — 100% Indian raw cotton', imageUrl: 'https://picsum.photos/seed/susejp8/800/400', savedAt: Date.now() - 86400000 * 1 },
-  { productId: 'post_009', sellerName: 'Smile Dental', sellerUsername: 'smiledental', price: 500, description: 'Dental checkup with X-ray and cleaning', imageUrl: 'https://picsum.photos/seed/susejp9/800/400', savedAt: Date.now() - 3600000 * 20 },
-  { productId: 'post_010', sellerName: 'LearnSphere', sellerUsername: 'learnsphere', price: 25000, description: 'Full-stack web development bootcamp — 6 months', imageUrl: 'https://picsum.photos/seed/susejp10/800/400', savedAt: Date.now() - 3600000 * 10 },
-];
 
 interface BookmarkContextType {
   bookmarks: Map<string, BookmarkedProduct>;
@@ -40,39 +28,46 @@ const BookmarkContext = createContext<BookmarkContextType | null>(null);
 
 export function BookmarkProvider({ children }: { children: React.ReactNode }) {
   const [bookmarks, setBookmarks] = useState<Map<string, BookmarkedProduct>>(new Map());
+  const { user, tokenSeq } = useAuth();
+  const getKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${BOOKMARKS_KEY_BASE}:${u}` : BOOKMARKS_KEY_BASE;
+  }, [user?.username]);
 
-  // Load from AsyncStorage on mount
+  // Load per-user bookmarks — race-safe: token gates stale async loads when username flips quickly.
+  // tokenSeq forces reload on same-username re-switch (stale cache would otherwise survive).
   useEffect(() => {
-    AsyncStorage.getItem(BOOKMARKS_KEY)
+    const key = getKey();
+    let cancelled = false;
+    AsyncStorage.getItem(key)
       .then((data) => {
+        if (cancelled) return;
         if (data && data.length > 0) {
           try {
             const arr = JSON.parse(data) as BookmarkedProduct[];
             const map = new Map<string, BookmarkedProduct>();
             for (const item of arr) {
-              map.set(item.productId, item);
+              if (item && item.productId && !String(item.productId).startsWith('post_0')) {
+                map.set(item.productId, item);
+              }
             }
             setBookmarks(map);
           } catch {
-            // corrupted, reset
+            if (!cancelled) setBookmarks(new Map());
           }
         } else {
-          // First run — seed demo volume so saved screens look populated.
-          const map = new Map<string, BookmarkedProduct>();
-          for (const item of SEED_BOOKMARKS) {
-            map.set(item.productId, item);
-          }
-          setBookmarks(map);
-          AsyncStorage.setItem(BOOKMARKS_KEY, JSON.stringify(SEED_BOOKMARKS)).catch(() => {});
+          setBookmarks(new Map());
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => { if (!cancelled) setBookmarks(new Map()); });
+    return () => { cancelled = true; };
+  }, [getKey, tokenSeq]);
 
+  // Identity-bound saves: per-user key; reload when username changes.
   const persist = useCallback((updated: Map<string, BookmarkedProduct>) => {
     const arr = Array.from(updated.values());
-    AsyncStorage.setItem(BOOKMARKS_KEY, JSON.stringify(arr)).catch(() => {});
-  }, []);
+    AsyncStorage.setItem(getKey(), JSON.stringify(arr)).catch(() => {});
+  }, [getKey]);
 
   const isBookmarked = useCallback(
     (productId: string) => bookmarks.has(productId),

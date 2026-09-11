@@ -1094,6 +1094,7 @@ export type DeliveryZoneCreateManyArgs<ExtArgs extends runtime.Types.Extensions.
    * The data used to create many DeliveryZones.
    */
   data: Prisma.DeliveryZoneCreateManyInput | Prisma.DeliveryZoneCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1112,6 +1113,7 @@ export type DeliveryZoneCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ex
    * The data used to create many DeliveryZones.
    */
   data: Prisma.DeliveryZoneCreateManyInput | Prisma.DeliveryZoneCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

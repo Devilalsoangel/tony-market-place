@@ -25,7 +25,7 @@ const makeColumns = (onToggle: (c: Coupon) => void, onDelete: (c: Coupon) => voi
     header: "Value",
     cell: (info) => {
       const row = info.row.original;
-      return <span className="font-medium tabular-nums">{row.type === "percentage" ? `${row.value}%` : `$${row.value}`}</span>;
+      return <span className="font-medium tabular-nums">{row.type === "percentage" ? `${row.value}%` : `₹${row.value}`}</span>;
     },
   }),
   column.accessor("usedCount", {
@@ -42,11 +42,17 @@ const makeColumns = (onToggle: (c: Coupon) => void, onDelete: (c: Coupon) => voi
   column.accessor("expiresAt", { header: "Expires", cell: (info) => <span className="text-[#71717A]">{formatDate(info.getValue())}</span> }),
   column.accessor("status", {
     header: "Status",
-    cell: (info) => (
-      <Badge variant={info.getValue() === "active" ? "success" : info.getValue() === "expired" ? "default" : "warning"} className="capitalize">
-        {info.getValue()}
-      </Badge>
-    ),
+    cell: (info) => {
+      const c = info.row.original;
+      // Compute effective status: expired if expiry date is in the past
+      const isExpired = c.expiresAt && new Date(c.expiresAt) < new Date();
+      const effectiveStatus = isExpired ? "expired" : info.getValue();
+      return (
+        <Badge variant={effectiveStatus === "active" ? "success" : effectiveStatus === "expired" ? "default" : "warning"} className="capitalize">
+          {effectiveStatus}
+        </Badge>
+      );
+    },
   }),
   column.display({
     id: "actions",
@@ -91,9 +97,15 @@ export default function OffersPage() {
     setList(coupons ?? null);
   }, [coupons]);
 
-  const active = (list ?? []).filter((c) => c.status === "active");
+  // Compute effective status considering expiry date — a coupon with status "active"
+  // but a past expiry date is effectively expired (matches the column display logic).
+  const effectiveStatus = (c: Coupon) => {
+    const isExpired = c.expiresAt && new Date(c.expiresAt) < new Date();
+    return isExpired ? "expired" : c.status;
+  };
+  const active = (list ?? []).filter((c) => effectiveStatus(c) === "active");
   const redemptions = (list ?? []).reduce((s, c) => s + c.usedCount, 0);
-  const expired = (list ?? []).filter((c) => c.status === "expired").length;
+  const expired = (list ?? []).filter((c) => effectiveStatus(c) === "expired").length;
 
   function handleToggle(coupon: Coupon) {
     const next = coupon.status === "active" ? "disabled" : "active";
@@ -161,6 +173,11 @@ export default function OffersPage() {
         <StatTile label="Redemptions" value={redemptions} tone="purple" />
         <StatTile label="Expired" value={expired} tone="amber" />
       </div>
+      {(list ?? []).filter((c) => effectiveStatus(c) === "disabled").length > 0 && (
+        <div className="grid grid-cols-4 gap-4 -mt-2">
+          <StatTile label="Disabled" value={(list ?? []).filter((c) => effectiveStatus(c) === "disabled").length} tone="default" />
+        </div>
+      )}
 
       <Card>
         <CardHeader>

@@ -1,40 +1,86 @@
-// storyTray.ts — industry-style story tray (IG pattern): 8 seller stories shared by
-// Feed (row) and Story Viewer (per-user slides + tray navigation).
-// Avatars are REAL Figma assets — no picsum fallbacks needed.
+// storyTray.ts — REAL-data story helpers (IG pattern).
+// Stories are FIRST-CLASS entities posted via /api/app/stories (24h lifetime,
+// user-chosen display duration). They are NEVER derived from regular feed
+// posts — a post is not a story. Consumers: Feed tray row, Story Viewer.
 
-export type StoryUser = {
+/** Author-placed text overlay on the story image (marketplace markup:
+ *  price, condition, "2 left", etc). Zone = vertical placement band. */
+export interface StoryOverlay {
+  text: string;
+  zone: 'top' | 'middle' | 'bottom';
+}
+
+/** Product attached to a story — must reference the AUTHOR'S OWN listing
+ *  (server validates ownership); tapping it in the viewer opens the listing. */
+export interface StoryProductRef {
   id: string;
-  name: string; // display label under the ring
-  route: string; // seller username the story links to (also /story/<route>)
-  avatar: any; // require()'d Figma image
+  title: string;
+  image?: string;
+  price?: number;
+}
+
+export interface AppStory {
+  id: string;
+  username: string;
+  creatorName?: string | null;
+  image: string;
+  caption?: string | null;
+  /** Display duration in ms chosen by the author at posting time */
+  durationMs?: number | null;
+  overlays?: StoryOverlay[] | null;
+  productRef?: StoryProductRef | null;
+  views?: number | null;
+  createdAt: number;
+  expiresAt?: number | null;
+}
+
+export type StoryEntry = {
+  /** Author username — also the /story/<route> param */
+  username: string;
+  /** Display label under the ring (business name first, real rows only) */
+  name: string;
+  /** Latest story image used as the ring thumbnail */
+  avatar?: string;
 };
 
-export const STORY_TRAY: StoryUser[] = [
-  { id: '1', name: 'Aarav', route: 'elara_mod', avatar: require('../assets/images/screens/feed/img-223-48.png') },
-  { id: '2', name: 'Priya', route: 'arc_design', avatar: require('../assets/images/screens/feed/img-223-53.png') },
-  { id: '3', name: 'Neha', route: 'lux_gems', avatar: require('../assets/images/screens/feed/img-223-58.png') },
-  { id: '4', name: 'Rohan', route: 'hype_vault', avatar: require('../assets/images/screens/feed/img-223-63.png') },
-  { id: '5', name: 'Vintage Loft', route: 'vintage_loft', avatar: require('../assets/images/img-1-3626.png') },
-  { id: '6', name: 'TechNova', route: 'technova_labs', avatar: require('../assets/images/screens/feed/img-223-192.png') },
-  { id: '7', name: 'FluentFirst', route: 'fluentfirst', avatar: require('../assets/images/screens/feed/img-223-135.png') },
-  { id: '8', name: 'Urban Kicks', route: 'urban_kicks', avatar: require('../assets/images/screens/feed/img-223-148.png') },
-];
-
-/** Per-user slide captions (story viewer shows 3 slides per user, IG-style) */
-export const storySlides = (user: StoryUser): string[] => [
-  `Fresh drop from ${user.name} — check this out.`,
-  `Backstage look at what ${user.name} is making.`,
-  'Tap below to see everything we sell.',
-];
-
-export const storyById = (id: string): StoryUser | undefined => STORY_TRAY.find((s) => String(s.id) === id);
-
-export const storyByRoute = (route: string): StoryUser | undefined => STORY_TRAY.find((s) => s.route === route);
-
-export const storyAvatarByRoute = (route: string): any | undefined => {
-  const u = storyByRoute(route);
-  return u ? u.avatar : undefined;
+/** Group stories by author, newest author first, each author's stories newest first. */
+export const groupStoriesByAuthor = (stories: AppStory[], maxAuthors = 10): StoryEntry[] => {
+  const byAuthor = new Map<string, { name: string; avatar?: string; latestAt: number }>();
+  // Input is already newest-first from the API; keep first-seen order.
+  for (const s of stories) {
+    if (!s.username || !s.image) continue;
+    const cur = byAuthor.get(s.username);
+    if (!cur) {
+      byAuthor.set(s.username, {
+        name: s.creatorName || s.username,
+        avatar: s.image,
+        latestAt: s.createdAt,
+      });
+    }
+    if (byAuthor.size >= maxAuthors) break;
+  }
+  return Array.from(byAuthor.entries()).map(([username, v]) => ({
+    username,
+    name: v.name,
+    avatar: v.avatar,
+  }));
 };
 
-/** Serialize the whole tray into a deep-link param for the viewer (IG-style tray navigation) */
-export const trayParam = (): string => STORY_TRAY.map((s) => s.id).join(',');
+/** Serialize tray usernames into a deep-link param for the viewer (IG-style navigation). */
+export const trayParam = (usernames: string[]): string =>
+  usernames.filter(Boolean).join(',');
+
+/** Parse a serialized tray param back into ordered usernames (expo-router safe). */
+export const parseTrayParam = (param?: string | string[] | null): string[] => {
+  const raw = Array.isArray(param) ? param[0] ?? '' : param ?? '';
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
+/** All ACTIVE stories for one author, newest first — the viewer's slides. */
+export const storiesByUsername = (stories: AppStory[], username: string): AppStory[] =>
+  stories
+    .filter((s) => s.username === username && !!s.image)
+    .sort((a, b) => b.createdAt - a.createdAt);

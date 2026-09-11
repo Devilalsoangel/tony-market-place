@@ -1116,6 +1116,7 @@ export type BookingCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * The data used to create many Bookings.
    */
   data: Prisma.BookingCreateManyInput | Prisma.BookingCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1134,6 +1135,7 @@ export type BookingCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many Bookings.
    */
   data: Prisma.BookingCreateManyInput | Prisma.BookingCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

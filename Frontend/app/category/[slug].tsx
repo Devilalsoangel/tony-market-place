@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, Image, Dimensions } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { BackIcon, SearchIcon, HeartIcon } from '../../utils/icons';
 import { colors, CATEGORIES, formatPrice } from '../../utils/theme';
 import { usePosts } from '../../contexts/PostContext';
-import { productImages } from '../../utils/productImages';
-import { categoryImages } from '../../utils/screenImages';
+import { resolveListingImage } from '../../utils/productImages';
+import { serverApi } from '../../utils/serverApi';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
@@ -29,20 +29,71 @@ const slugToLabel = (s: string): string => {
     .join(' ');
 };
 
-// Legacy posts may use the old "Home" label — surface them under Home Services
+// Admin catalog slugs (food-grocery, beauty-health, ...) -> the app post label
+// they map to. Only true synonyms live here; everything else resolves via
+// slugToLabel and filters honestly (empty state when no posts exist).
+const SLUG_SYNONYMS: Record<string, string> = {
+  foodgrocery: 'Food',
+  grocery: 'Food',
+  beautyhealth: 'Beauty',
+  healthbeauty: 'Beauty',
+  sportsfitness: 'Fitness',
+  fitnesssports: 'Fitness',
+  bookseducation: 'Education',
+  educationbooks: 'Education',
+  automotive: 'Automobiles',
+  vehicles: 'Automobiles',
+};
+
+// Legacy posts may use the old "Home" label — surface them under Home Services.
+// Family slugs (mens-fashion, kids-fashion, audio-headphones) surface their
+// parent vertical so admin sub-categories still show real marketplace content.
 const matchesCategory = (postCategory: string, active: string): boolean => {
   const a = postCategory.toLowerCase();
   const b = active.toLowerCase();
   if (a === b) return true;
-  if (a === 'home' && b === 'home services') return true;
+  if (a === 'home' && (b === 'home services' || b === 'home living')) return true;
+  // containment either way with a real word stem ("fashion" ⊂ "kids fashion")
+  const na = a.replace(/[^a-z]/g, '');
+  const nb = b.replace(/[^a-z]/g, '');
+  if (na.length >= 5 && nb.length >= 5 && (na.includes(nb) || nb.includes(na))) return true;
   return false;
 };
 
 export default function CategoryDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState(
-    slug ? slugToLabel(slug) : 'Fashion'
+  const [activeCategory, setActiveCategory] = useState(() => {
+    if (!slug) return 'Fashion';
+    const norm = slug.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return SLUG_SYNONYMS[norm] ?? slugToLabel(slug);
+  });
+  // Admin-owned resolution: the DB catalog decides which listing categories
+  // belong to this slug (itself + its children). The legacy text matcher above
+  // is only the OFFLINE fallback when the catalog can't be fetched.
+  const [allowedNames, setAllowedNames] = useState<string[] | null>(null);
+  // Chip row mirrors the live admin catalog (fallback: static 17 industries)
+  const [chipNames, setChipNames] = useState<string[] | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      serverApi.getCategories().then((res) => {
+        if (!alive) return;
+        const cats = res.ok && res.data?.categories?.length ? res.data.categories : [];
+        if (cats.length) setChipNames(cats.map((c: { name: string }) => c.name));
+        const row = cats.find((c) => c.slug.toLowerCase().replace(/[^a-z0-9]/g, '') === String(slug ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+        if (!row) {
+          setAllowedNames(null); // keep legacy fallback behavior
+          return;
+        }
+        setActiveCategory(row.name);
+        setAllowedNames([row.name, ...(row.children ?? []).map((ch: any) => ch.name)]);
+      });
+      return () => {
+        alive = false;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [slug])
   );
   const insets = useSafeAreaInsets();
   const { posts } = usePosts();
@@ -52,14 +103,16 @@ export default function CategoryDetailScreen() {
     const term = search.trim().toLowerCase();
     return posts.filter(
       (p) =>
-        matchesCategory(p.category, activeCategory) &&
+        (allowedNames
+          ? allowedNames.some((n) => n.toLowerCase() === p.category.toLowerCase())
+          : matchesCategory(p.category, activeCategory)) &&
         (!term ||
           p.description.toLowerCase().includes(term) ||
           p.hashtags.some((h) => h.toLowerCase().includes(term)) ||
           p.sellerName.toLowerCase().includes(term) ||
           p.sellerUsername.toLowerCase().includes(term))
     );
-  }, [posts, activeCategory, search]);
+  }, [posts, activeCategory, search, allowedNames]);
 
   const isServiceCategory = activeCategory === 'Services' || activeCategory === 'Home Services';
 
@@ -114,7 +167,7 @@ export default function CategoryDetailScreen() {
             {/* Category Pills — horizontal scroll */}
             <FlatList
               horizontal
-              data={allCategories}
+              data={chipNames ?? allCategories}
               keyExtractor={(item) => item}
               showsHorizontalScrollIndicator={false}
               contentContainerClassName="gap-3 py-3"
@@ -151,20 +204,14 @@ export default function CategoryDetailScreen() {
             </Text>
           </View>
         }
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <TouchableOpacity
             className="bg-surfaceContainerLowest rounded-figma-12 overflow-hidden mb-2"
             style={{ width: CARD_W, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }}
             onPress={() => router.push(`/product/${item.id}`)}
           >
             <View className="w-full aspect-square bg-surfaceContainer">
-              {item.image ? (
-                <Image source={{ uri: item.image }} className="absolute inset-0 w-full h-full" resizeMode="cover" />
-              ) : productImages[item.id] ? (
-                <Image source={productImages[item.id]} className="absolute inset-0 w-full h-full" resizeMode="cover" />
-              ) : (
-                <Image source={categoryImages[index % categoryImages.length]} className="absolute inset-0 w-full h-full" resizeMode="cover" />
-              )}
+              <Image source={resolveListingImage(item, item.id)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
             </View>
             <View className="p-2.5">
               <Text className="text-figma-12 font-inter-400 text-secondary mb-0.5">{item.category}</Text>
@@ -182,26 +229,6 @@ export default function CategoryDetailScreen() {
           </TouchableOpacity>
         )}
       />
-
-      {/* Bottom Nav — Figma: 58px */}
-      <View className="absolute bottom-0 left-0 right-0 h-[58px] bg-surface/80 flex-row items-center justify-around px-4" style={{ height: 58 + insets.bottom, paddingBottom: insets.bottom }}>
-        {['Feed', 'Explore', 'Create', 'Chat', 'Profile'].map((key) => (
-          <TouchableOpacity
-            key={key}
-            className="items-center justify-center py-1"
-            style={{ width: 64 }}
-            onPress={() => {
-              if (key === 'Feed') router.replace('/(tabs)/feed');
-              if (key === 'Explore') router.replace('/(tabs)/explore');
-              if (key === 'Create') router.replace('/(tabs)/create');
-              if (key === 'Chat') router.replace('/(tabs)/chat');
-              if (key === 'Profile') router.replace('/(tabs)/profile');
-            }}
-          >
-            <Text className="text-figma-12 font-inter-400 text-secondary/40">{key}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </View>
   );
 }

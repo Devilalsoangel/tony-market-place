@@ -1088,6 +1088,7 @@ export type GatewayLogCreateManyArgs<ExtArgs extends runtime.Types.Extensions.In
    * The data used to create many GatewayLogs.
    */
   data: Prisma.GatewayLogCreateManyInput | Prisma.GatewayLogCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1106,6 +1107,7 @@ export type GatewayLogCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exte
    * The data used to create many GatewayLogs.
    */
   data: Prisma.GatewayLogCreateManyInput | Prisma.GatewayLogCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

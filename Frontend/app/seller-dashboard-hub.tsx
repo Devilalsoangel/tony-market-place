@@ -1,30 +1,24 @@
 import { View, Text, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { router } from 'expo-router';
+import { resolveAvatar, resolveListingImage } from '../utils/productImages';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useMemo, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ChevronLeftIcon, ChevronRightIcon, ShopIcon, PencilIcon, HeartIcon } from '../utils/icons';
+import { ChevronLeftIcon, ChevronRightIcon, ShopIcon, PencilIcon, StarIcon, PlusIcon, BellIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePosts } from '../contexts/PostContext';
 import { useOrders } from '../contexts/OrderContext';
 import { usePromotions } from '../contexts/PromotionContext';
+import { useFollow } from '../contexts/FollowContext';
 import { findMainCategory } from '../utils/categories';
+import { STORE_THEMES, saveStoreTheme } from '../utils/sellerUnlocks';
+import { sellerNetForOrders, getPackages, getChatPinPrice, getChatPinDays, loadMarketplaceConfig } from '../utils/marketplace';
 
-// Seller Dashboard Hub (Figma 245:286) — store hero, KPI stats grid,
-// 7-day views chart, storefront manager, my listings, manage profile.
-// KPIs + listings are wired to real app state (orders, posts, follow).
-
-function EyeIcon({ size = 24, color = '#4343d5' }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M1 12C1 12 5 4 12 4C19 4 23 12 23 12C23 12 19 20 12 20C5 20 1 12 1 12Z" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />
-      <Circle cx="12" cy="12" r="3.2" fill={color} />
-    </Svg>
-  );
-}
+// Seller Dashboard Hub — store hero, KPI stats, needs-action, quick actions,
+// recent orders, performance, growth tools, listings, storefront manager.
 
 function UsersIcon({ size = 24, color = '#4343d5' }: { size?: number; color?: string }) {
   return (
@@ -71,27 +65,36 @@ function GearIcon({ size = 20, color = '#464555' }: { size?: number; color?: str
   );
 }
 
-// Deterministic per-username follower demo (no real follower-back tracking yet)
-function seedFollowers(username: string): string {
-  let h = 0;
-  for (const ch of username) h = (h * 31 + ch.charCodeAt(0)) % 997;
-  const base = 800 + h;
-  return base > 999 ? `${(base / 1000).toFixed(1)}k` : String(base);
-}
-
-const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
 export default function SellerDashboardHubScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { posts, deletePost, toggleSold } = usePosts();
   const { orders } = useOrders();
   const { promotions } = usePromotions();
+  const { followerCounts } = useFollow();
 
   const username = user?.username || 'user';
   const shopName = user?.businessName || user?.name || 'My Store';
-  const avatar = user?.avatar || `https://picsum.photos/seed/avatar-${username}/200`;
-  const banner = `https://picsum.photos/seed/banner-${username}/1200/400`;
+  const avatar = user?.avatar || resolveAvatar(username ?? 'user').uri;
+  // Banner: real uploaded photo from edit-shop when set — no stock placeholder (per-user).
+  const [bannerUri, setBannerUri] = useState<string | null>(null);
+  useEffect(() => {
+    const key = username ? `@susej_shop_profile:${username}` : '@susej_shop_profile';
+    let cancelled = false;
+    setBannerUri(null);
+    AsyncStorage.getItem(key)
+      .then((raw) => {
+        if (cancelled || !raw) return;
+        try {
+          const parsed = JSON.parse(raw) as { photoUri?: unknown };
+          if (parsed && typeof parsed.photoUri === 'string' && parsed.photoUri) setBannerUri(parsed.photoUri);
+        } catch {
+          // corrupted profile cache — keep the token-gradient hero
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [username]);
   const verified = user?.verification === 'approved';
   const category = user?.category ? findMainCategory(user.category)?.label ?? user.category : null;
 
@@ -100,19 +103,80 @@ export default function SellerDashboardHubScreen() {
 
   const myPromos = useMemo(() => promotions.filter((p) => p.sellerUsername === username), [promotions, username]);
   const activePromoCount = myPromos.filter((p) => p.status === 'active').length;
-  const promoSpent = myPromos.reduce((s, p) => s + p.amountPaid, 0);
 
-  const revenue = useMemo(() => myOrders.reduce((sum, o) => sum + (o.chargedTotal ?? o.total), 0), [myOrders]);
-  const totalLikes = useMemo(() => myPosts.reduce((sum, p) => sum + (p.likes || 0), 0), [myPosts]);
+  // Live promo pricing (admin-editable) — hub cards must never show stale
+  // hardcoded prices. Refresh the marketplace config on mount.
+  const [promoTick, setPromoTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    loadMarketplaceConfig().then(() => {
+      if (alive) setPromoTick((t) => t + 1);
+    }).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const spotlightPrice = useMemo(
+    () => getPackages().find((p) => p.kind === 'spotlight')?.price ?? 49,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promoTick]
+  );
+  const chatPinPrice = useMemo(() => getChatPinPrice(), [promoTick]);
+  const chatPinDays = useMemo(() => getChatPinDays(), [promoTick]);
 
-  // 7-day view bars derived from my posts (likes distributed by day-of-week)
-  const week = useMemo(() => {
-    const dayIdx = (ts: number) => (new Date(ts).getDay() + 6) % 7; // Mon=0
-    const perDay = [0, 0, 0, 0, 0, 0, 0];
-    for (const p of myPosts) perDay[dayIdx(p.createdAt)] += Math.max(p.likes, 1);
-    const max = Math.max(...perDay, 1);
-    return WEEK_DAYS.map((day, i) => ({ day, v: Math.round((perDay[i] / max) * 96) + 6 }));
-  }, [myPosts]);
+  // Net revenue after commission — single definition shared with every
+  // seller surface (marketplace.sellerNetForOrders): goods-only net exactly
+  // like the server credits. Delivery float is never commissioned.
+  const revenue = useMemo(() => sellerNetForOrders(myOrders), [myOrders]);
+
+
+  // Orders waiting on the seller — the actionable number (placed + confirmed + preparing).
+  const toFulfill = useMemo(
+    () => myOrders.filter((o) => o.status === 'placed' || o.status === 'confirmed' || o.status === 'preparing').length,
+    [myOrders]
+  );
+
+  const recentOrders = useMemo(
+    () => [...myOrders].sort((a, b) => (b.placedAt || 0) - (a.placedAt || 0)).slice(0, 4),
+    [myOrders]
+  );
+
+  const [selectedTheme, setSelectedTheme] = useState<string>('violet');
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(`@susej_store_theme:${username}`);
+        if (alive && saved) setSelectedTheme(saved);
+      } catch {
+        // theme selection is cosmetic — defaults are fine offline
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [username]);
+
+  const pickTheme = async (themeId: string) => {
+    setSelectedTheme(themeId);
+    await saveStoreTheme(username, themeId);
+  };
+
+  // Real sales analytics (unlocked feature) — computed from real orders/posts only.
+  const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const analytics = useMemo(() => {
+    const funnel = ['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'] as const;
+    const counts = funnel.map((s) => myOrders.filter((o) => o.status === s).length);
+    const dayIdx = (ts: number) => (new Date(ts).getDay() + 6) % 7;
+    const revPerDay = [0, 0, 0, 0, 0, 0, 0];
+    for (const o of myOrders) {
+      if (o.status !== 'delivered') continue;
+      revPerDay[dayIdx(o.placedAt || Date.now())] += o.items.reduce((t, i) => t + i.price * i.quantity, 0);
+    }
+    const maxRev = Math.max(...revPerDay, 1);
+    const top = [...myPosts].sort((a, b) => (b.likes || 0) - (a.likes || 0))[0];
+    return { counts, revBars: revPerDay.map((v) => Math.round((v / maxRev) * 72) + 4), top };
+  }, [myOrders, myPosts]);
 
   const removeListing = (id: string) => {
     Alert.alert('Delete listing', 'Remove this listing permanently?', [
@@ -151,7 +215,14 @@ export default function SellerDashboardHubScreen() {
         {/* Store Hero */}
         <View className="mx-5 rounded-figma-24 overflow-hidden" style={{ backgroundColor: colors.inverseSurface, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.12, shadowRadius: 24, elevation: 4 }}>
           <View style={{ height: 132 }}>
-            <Image source={{ uri: banner }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            {bannerUri ? (
+              <Image source={{ uri: bannerUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            ) : (
+              <LinearGradient
+                colors={[colors.primaryContainer, colors.inverseSurface]}
+                style={{ width: '100%', height: '100%' }}
+              />
+            )}
             <LinearGradient
               colors={['rgba(93,95,239,0.45)', 'rgba(47,46,67,0.35)']}
               start={{ x: 0, y: 0 }}
@@ -211,8 +282,8 @@ export default function SellerDashboardHubScreen() {
           {[
             { label: 'Revenue', value: formatRevenue(revenue), icon: <WalletIcon size={20} color={colors.primary} />, route: '/wallet' },
             { label: 'Orders', value: String(myOrders.length), icon: <ShopIcon size={20} color={colors.primary} />, route: '/seller-orders' },
-            { label: 'Views', value: totalLikes >= 1000 ? `${(totalLikes / 1000).toFixed(1)}k` : String(totalLikes), icon: <EyeIcon size={20} color={colors.primary} />, route: null },
-            { label: 'Followers', value: seedFollowers(username), icon: <UsersIcon size={20} color={colors.primary} />, route: null },
+            { label: 'To Fulfill', value: String(toFulfill), icon: <BellIcon size={20} color={colors.primary} />, route: '/seller-orders' },
+            { label: 'Followers', value: String(followerCounts[username] ?? 0), icon: <UsersIcon size={20} color={colors.primary} />, route: null },
           ].map((s) => (
             <TouchableOpacity
               key={s.label}
@@ -240,50 +311,302 @@ export default function SellerDashboardHubScreen() {
           ))}
         </View>
 
-        {/* Promote & Grow — pay-per-use visibility (IG boost / OLX featured / FB promoted) */}
-        <TouchableOpacity
-          className="mx-5 mt-4 flex-row items-center p-4 rounded-figma-16"
-          style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 2 }}
-          onPress={() => router.push('/promotions')}
-        >
-          <View className="w-11 h-11 rounded-full items-center justify-center" style={{ backgroundColor: colors.primaryContainer }}>
-            <ShopIcon size={20} color={colors.onPrimary} />
-          </View>
-          <View className="flex-1 ml-3">
-            <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 15, lineHeight: 20 }}>
-              Promote & Grow
-            </Text>
-            <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 12, lineHeight: 16 }}>
-              {activePromoCount > 0
-                ? `${activePromoCount} active campaign${activePromoCount === 1 ? '' : 's'} · ${formatPrice(promoSpent)} spent — boost posts, Hot Deals & Top Seller slots`
-                : 'Boost posts, Hot Deals & Top Seller slots — pay-per-use from wallet'}
-            </Text>
-          </View>
-          <ChevronRightIcon size={14} color={colors.primary} />
-        </TouchableOpacity>
-
-        {/* 7-Day Views Chart (derived from my posts) */}
-        <View className="mx-5 mt-5 p-5 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 2 }}>
-          <View className="flex-row items-center justify-between">
-            <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 15, lineHeight: 20 }}>
-              Views — Last 7 Days
-            </Text>
-            <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 18, color: colors.primary }}>
-              {totalLikes >= 1000 ? `${(totalLikes / 1000).toFixed(1)}k` : String(totalLikes)} Views
-            </Text>
-          </View>
-          <View className="flex-row items-end justify-between mt-4" style={{ height: 112 }}>
-            {week.map((d, i) => (
-              <View key={i} className="flex-1 items-center">
-                <View
-                  className="w-full rounded-t-sm"
-                  style={{ height: d.v, backgroundColor: i === 5 ? colors.primaryContainer : colors.surfaceContainer, maxWidth: 22 }}
-                />
-                <Text className="font-inter-400 text-textSecondary mt-1.5" style={{ fontSize: 10, lineHeight: 12 }}>
-                  {d.day}
+        {/* Needs action — same actionable definition as the To Fulfill KPI
+            above (placed + confirmed + preparing), so the two numbers on one
+            screen can never disagree. */}
+        {(() => {
+          const pending = toFulfill;
+          if (pending === 0) return null;
+          return (
+            <TouchableOpacity
+              className="mx-5 mt-4 flex-row items-center px-4 py-3 rounded-figma-16"
+              style={{ backgroundColor: colors.surfaceContainer }}
+              onPress={() => router.push('/seller-orders')}
+            >
+              <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: colors.error }}>
+                <Text className="font-inter-700" style={{ fontSize: 12, lineHeight: 15, color: '#ffffff' }}>
+                  {pending}
                 </Text>
               </View>
-            ))}
+              <Text className="font-inter-600 text-textPrimary flex-1 ml-3" style={{ fontSize: 13, lineHeight: 18 }}>
+                order{pending === 1 ? '' : 's'} need your action — confirm & ship
+              </Text>
+              <ChevronRightIcon size={14} color={colors.textSecondary} />
+            </TouchableOpacity>
+          );
+        })()}
+
+        {/* Quick actions — the four things sellers open daily (Shopify/Meesho pattern) */}
+        <View className="mx-5 mt-5 flex-row" style={{ gap: 10 }}>
+          {[
+            { label: 'Add Product', icon: <PlusIcon size={22} color={colors.primary} />, route: '/(tabs)/create', badge: 0 },
+            { label: 'Orders', icon: <ShopIcon size={22} color={colors.primary} />, route: '/seller-orders', badge: toFulfill },
+            { label: 'Wallet', icon: <WalletIcon size={22} color={colors.primary} />, route: '/wallet', badge: 0 },
+            { label: 'Promote', icon: <StarIcon size={22} color={colors.primary} />, route: '/promotions', badge: activePromoCount },
+          ].map((a) => (
+            <TouchableOpacity
+              key={a.label}
+              className="flex-1 items-center py-4 rounded-figma-16"
+              style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 2 }}
+              onPress={() => router.push(a.route as never)}
+            >
+              <View>
+                {a.icon}
+                {a.badge > 0 && (
+                  <View className="absolute items-center justify-center rounded-full" style={{ top: -8, right: -12, minWidth: 18, height: 18, paddingHorizontal: 4, backgroundColor: colors.error }}>
+                    <Text className="font-inter-700" style={{ fontSize: 10, lineHeight: 12, color: '#ffffff' }}>
+                      {a.badge > 99 ? '99+' : a.badge}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text className="font-inter-500 text-textPrimary mt-2" style={{ fontSize: 12, lineHeight: 16 }}>
+                {a.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Recent orders — latest first with live status (Etsy/Amazon pattern) */}
+        <View className="mx-5 mt-6">
+          <View className="flex-row items-center mb-3">
+            <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 16, lineHeight: 24 }}>
+              Recent orders
+            </Text>
+            <View className="flex-1" />
+            <TouchableOpacity className="flex-row items-center" onPress={() => router.push('/seller-orders')}>
+              <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 18, color: colors.primary }}>
+                View all
+              </Text>
+              <ChevronRightIcon size={14} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+          {recentOrders.length === 0 ? (
+            <View className="items-center py-6 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
+              <Text className="font-inter-400" style={{ fontSize: 13, color: colors.textSecondary }}>
+                No orders yet — share your store to get the first sale
+              </Text>
+            </View>
+          ) : (
+            <View style={{ gap: 10 }}>
+              {recentOrders.map((o) => {
+                const amount = o.chargedTotal ?? o.total;
+                const chipBg =
+                  o.status === 'delivered' ? '#22c55e22'
+                  : o.status === 'cancelled' ? `${colors.error}22`
+                  : `${colors.primary}22`;
+                const chipFg =
+                  o.status === 'delivered' ? '#16a34a'
+                  : o.status === 'cancelled' ? colors.error
+                  : colors.primary;
+                return (
+                  <TouchableOpacity
+                    key={o.id}
+                    className="flex-row items-center p-3 rounded-figma-16"
+                    style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }}
+                    onPress={() => router.push('/seller-orders')}
+                  >
+                    <View className="flex-1">
+                      <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 19 }} numberOfLines={1}>
+                        {o.orderNumber || 'Order'}
+                      </Text>
+                      <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 12, lineHeight: 16 }}>
+                        {o.items.length} item{o.items.length === 1 ? '' : 's'} · {new Date(o.placedAt || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </Text>
+                    </View>
+                    <View className="items-end">
+                      <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 15, lineHeight: 20 }}>
+                        {formatPrice(amount)}
+                      </Text>
+                      <View className="mt-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: chipBg }}>
+                        <Text className="font-inter-600" style={{ fontSize: 10, lineHeight: 12, color: chipFg }}>
+                          {o.status.replace(/_/g, ' ')}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {/* Grow Your Shop — paid VISIBILITY only (OLX featured / FB boost model).
+            Insights and themes are free tools; listings, orders & chat stay free. */}
+        <View className="mx-5 mt-6">
+          <Text className="font-inter-700 text-textPrimary mb-1" style={{ fontSize: 16, lineHeight: 24, letterSpacing: 0.4 }}>
+            GROW YOUR SHOP
+          </Text>
+          <Text className="font-inter-400 text-textSecondary mb-3" style={{ fontSize: 12, lineHeight: 16 }}>
+            Paid visibility that brings buyers — listings, orders & chat are always free
+          </Text>
+
+          {/* Feed Spotlight (OLX Pin-to-Top): #1 slot in buyer feeds for 24h */}
+          <TouchableOpacity
+            className="flex-row items-center p-4 rounded-figma-16 mb-3"
+            style={{ backgroundColor: colors.surfaceContainerLowest, borderWidth: 1, borderColor: `${colors.primary}22`, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 2 }}
+            onPress={() => router.push('/promotions')}
+          >
+            <View className="w-10 h-10 rounded-figma-10 items-center justify-center" style={{ backgroundColor: colors.primaryContainer }}>
+              <ShopIcon size={20} color={colors.onPrimary} />
+            </View>
+            <View className="flex-1 ml-3">
+              <View className="flex-row items-center" style={{ gap: 6 }}>
+                <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 14, lineHeight: 19 }}>
+                  Feed Spotlight
+                </Text>
+                <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: colors.primary }}>
+                  <Text className="font-inter-700" style={{ fontSize: 10.5, lineHeight: 13, color: colors.onPrimary }}>
+                    {formatPrice(spotlightPrice)}
+                  </Text>
+                </View>
+              </View>
+              <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 11.5, lineHeight: 15 }}>
+                Pin a listing to the very top of buyer feeds for 24 hours
+              </Text>
+            </View>
+            <ChevronRightIcon size={14} color={colors.primary} />
+          </TouchableOpacity>
+
+          {/* Pinned Chat (OLX Elite): top of the buyer's inbox for 7 days */}
+          <TouchableOpacity
+            className="flex-row items-center p-4 rounded-figma-16 mb-3"
+            style={{ backgroundColor: colors.surfaceContainerLowest, borderWidth: 1, borderColor: `${colors.primary}22`, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 2 }}
+            onPress={() => router.push('/(tabs)/chat' as never)}
+          >
+            <View className="w-10 h-10 rounded-figma-10 items-center justify-center" style={{ backgroundColor: colors.surfaceContainerLow }}>
+              <UsersIcon size={20} color={colors.primary} />
+            </View>
+            <View className="flex-1 ml-3">
+              <View className="flex-row items-center" style={{ gap: 6 }}>
+                <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 14, lineHeight: 19 }}>
+                  Pinned Chat
+                </Text>
+                <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: colors.primary }}>
+                  <Text className="font-inter-700" style={{ fontSize: 10.5, lineHeight: 13, color: colors.onPrimary }}>
+                    {formatPrice(chatPinPrice)}
+                  </Text>
+                </View>
+              </View>
+              <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 11.5, lineHeight: 15 }}>
+                {`Stay at the top of a buyer's inbox for ${chatPinDays} days — open any chat and tap the pin`}
+              </Text>
+            </View>
+            <ChevronRightIcon size={14} color={colors.primary} />
+          </TouchableOpacity>
+
+          {/* Sales insights — free tool, computed from real orders/posts only */}
+          <View className="p-4 rounded-figma-16 mb-3" style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 2 }}>
+            <View className="flex-row items-center">
+              <View className="w-10 h-10 rounded-figma-10 items-center justify-center" style={{ backgroundColor: colors.surfaceContainerLow }}>
+                <WalletIcon size={20} color={colors.primary} />
+              </View>
+              <View className="flex-1 ml-3">
+                <View className="flex-row items-center" style={{ gap: 6 }}>
+                  <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 14, lineHeight: 19 }}>
+                    Sales insights
+                  </Text>
+                  <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: colors.surfaceContainer }}>
+                    <Text className="font-inter-600" style={{ fontSize: 9.5, lineHeight: 12, color: colors.secondary }}>
+                      Free
+                    </Text>
+                  </View>
+                </View>
+                <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 11.5, lineHeight: 15 }}>
+                  Order funnel · delivered revenue trend · top listing
+                </Text>
+              </View>
+            </View>
+
+            <View className="mt-4">
+                {myOrders.length === 0 ? (
+                  <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
+                    No orders yet — insights appear with your first sale.
+                  </Text>
+                ) : (
+                  <>
+                    <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                      {(['placed', 'delivered', 'cancelled'] as const).map((s) => (
+                        <View key={s} className="px-3 py-1.5 rounded-full" style={{ backgroundColor: colors.surfaceContainerLow }}>
+                          <Text className="font-inter-500" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
+                            {s.replace('_', ' ')}: <Text className="font-inter-700" style={{ color: colors.textPrimary }}>{myOrders.filter((o) => o.status === s).length}</Text>
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                    <View className="flex-row items-end justify-between mt-4" style={{ height: 84 }}>
+                      {WEEK_DAYS.map((day, i) => (
+                        <View key={i} className="flex-1 items-center">
+                          <View className="w-full rounded-t-sm" style={{ height: analytics.revBars[i], backgroundColor: i === 6 ? colors.primaryContainer : colors.surfaceContainer, maxWidth: 20 }} />
+                          <Text className="font-inter-400 text-textSecondary mt-1" style={{ fontSize: 9, lineHeight: 11 }}>{day}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <Text className="font-inter-400 text-textSecondary mt-1" style={{ fontSize: 10.5, lineHeight: 14 }}>
+                      Delivered revenue by day (last 7 days)
+                    </Text>
+                    {analytics.top && (
+                      <Text className="font-inter-400 text-textSecondary mt-3" style={{ fontSize: 12, lineHeight: 16 }} numberOfLines={1}>
+                        Top listing: <Text className="font-inter-600" style={{ color: colors.textPrimary }}>{(analytics.top.description || '').split('\n')[0]}</Text> ({analytics.top.likes || 0} likes)
+                      </Text>
+                    )}
+                  </>
+                )}
+              </View>
+          </View>
+
+          {/* Storefront theme — free personalization */}
+          <View className="p-4 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 2 }}>
+            <View className="flex-row items-center">
+              <View className="w-10 h-10 rounded-figma-10 items-center justify-center" style={{ backgroundColor: colors.surfaceContainerLow }}>
+                <ShopIcon size={20} color={colors.primary} />
+              </View>
+              <View className="flex-1 ml-3">
+                <View className="flex-row items-center" style={{ gap: 6 }}>
+                  <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 14, lineHeight: 19 }}>
+                    Storefront theme
+                  </Text>
+                  <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: colors.surfaceContainer }}>
+                    <Text className="font-inter-600" style={{ fontSize: 9.5, lineHeight: 12, color: colors.secondary }}>
+                      Free
+                    </Text>
+                  </View>
+                </View>
+                <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 11.5, lineHeight: 15 }}>
+                  Accent color buyers see on your public storefront
+                </Text>
+              </View>
+            </View>
+
+            <View className="flex-row mt-4" style={{ gap: 12 }}>
+                {STORE_THEMES.map((t) => {
+                  const active = selectedTheme === t.id;
+                  return (
+                    <TouchableOpacity
+                      key={t.id}
+                      onPress={() => pickTheme(t.id)}
+                      className="items-center"
+                    >
+                      <View
+                        className="items-center justify-center"
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 22,
+                          backgroundColor: t.accent,
+                          borderWidth: active ? 3 : 0,
+                          borderColor: colors.textPrimary,
+                        }}
+                      >
+                        {active ? <Text className="font-inter-700" style={{ fontSize: 12, color: '#ffffff' }}>✓</Text> : null}
+                      </View>
+                      <Text className="font-inter-500 text-textSecondary mt-1.5" style={{ fontSize: 10.5, lineHeight: 13 }}>
+                        {t.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
           </View>
         </View>
 
@@ -337,7 +660,7 @@ export default function SellerDashboardHubScreen() {
             {myPosts.slice(0, 3).map((p) => (
               <View key={p.id} className="flex-row items-center p-3 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }}>
                 <Image
-                  source={p.image ? { uri: p.image } : { uri: `https://picsum.photos/seed/${p.id}/200` }}
+                  source={resolveListingImage(p, p.id)}
                   style={{ width: 68, height: 68, borderRadius: 12 }}
                   resizeMode="cover"
                 />
@@ -348,16 +671,15 @@ export default function SellerDashboardHubScreen() {
                   <Text className="font-inter-700 text-primary mt-1" style={{ fontSize: 15, lineHeight: 20 }}>
                     {formatPrice(p.price)}
                   </Text>
-                  <View className="self-start mt-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: p.isSold ? colors.surfaceContainer : colors.surfaceContainerLow }}>
-                    <Text className="font-inter-500" style={{ fontSize: 10, lineHeight: 12, color: p.isSold ? colors.secondary : '#22c55e' }}>
-                      {p.isSold ? 'Sold Out' : 'Active'}
-                    </Text>
-                  </View>
-                </View>
-                <View className="items-center justify-between self-stretch py-1" style={{ gap: 10 }}>
                   <TouchableOpacity onPress={() => toggleSold(p.id)}>
-                    <HeartIcon size={18} color={p.isSold ? colors.primary : colors.textSecondary} />
+                    <View className="self-start px-2 py-0.5 rounded-full" style={{ backgroundColor: p.isSold ? colors.surfaceContainer : '#22c55e22' }}>
+                      <Text className="font-inter-500" style={{ fontSize: 10, lineHeight: 12, color: p.isSold ? colors.secondary : '#16a34a' }}>
+                        {p.isSold ? 'Sold Out · tap to restock' : 'Active · tap to mark sold'}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
+                </View>
+                <View className="items-center justify-center self-stretch py-1" style={{ gap: 14 }}>
                   <TouchableOpacity onPress={() => router.push(`/product/${p.id}`)}>
                     <PencilIcon size={16} color={colors.textSecondary} />
                   </TouchableOpacity>

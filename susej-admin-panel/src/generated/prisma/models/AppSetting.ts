@@ -898,6 +898,7 @@ export type AppSettingCreateManyArgs<ExtArgs extends runtime.Types.Extensions.In
    * The data used to create many AppSettings.
    */
   data: Prisma.AppSettingCreateManyInput | Prisma.AppSettingCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -916,6 +917,7 @@ export type AppSettingCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exte
    * The data used to create many AppSettings.
    */
   data: Prisma.AppSettingCreateManyInput | Prisma.AppSettingCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

@@ -1144,6 +1144,7 @@ export type RefundCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Intern
    * The data used to create many Refunds.
    */
   data: Prisma.RefundCreateManyInput | Prisma.RefundCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1162,6 +1163,7 @@ export type RefundCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensio
    * The data used to create many Refunds.
    */
   data: Prisma.RefundCreateManyInput | Prisma.RefundCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

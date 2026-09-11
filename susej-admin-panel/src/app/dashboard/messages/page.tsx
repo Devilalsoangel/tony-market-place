@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiDelete } from "@/lib/api-mutate";
 import { formatDate } from "@/lib/utils";
 import { VolumeX, ShieldBan, CheckCircle2 } from "lucide-react";
-import type { ReportedMessageRow } from "@/services/mock-data";
+import type { ReportedMessageRow } from "@/types/admin-rows";
 
 const column = createColumnHelper<ReportedMessageRow>();
 

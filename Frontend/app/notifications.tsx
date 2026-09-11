@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
 import { View, Text, Image, FlatList, TouchableOpacity } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon, HeartIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
 import { useNotifications, AppNotification, NotifType } from '../contexts/NotificationContext';
-import { notificationImages } from '../utils/screenImages';
+import { resolveAvatar } from '../utils/productImages';
 
 type Tab = 'All' | 'Orders' | 'Social';
 const tabs: Tab[] = ['All', 'Orders', 'Social'];
@@ -23,37 +22,6 @@ const timeAgo = (ts: number): string => {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return days === 1 ? 'Yesterday' : `${days}d ago`;
-};
-
-// Inline glyphs (Material-shape paths, per project rule: inline Svg icons)
-const GearPathIcon =
-  'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z';
-const TruckIcon = () => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
-      fill={colors.surfaceContainerLowest}
-    />
-  </Svg>
-);
-const TagIcon = () => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"
-      fill={colors.surfaceContainerLowest}
-    />
-  </Svg>
-);
-const GearIcon = () => (
-  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-    <Path d={GearPathIcon} fill={colors.primary} />
-  </Svg>
-);
-
-const AVATAR_KEYS: Record<string, number> = {};
-const avatarIndexFor = (id: string) => {
-  if (!(id in AVATAR_KEYS)) AVATAR_KEYS[id] = Object.keys(AVATAR_KEYS).length;
-  return AVATAR_KEYS[id] % notificationImages.length;
 };
 
 export default function NotificationsScreen() {
@@ -128,7 +96,7 @@ export default function NotificationsScreen() {
             className="w-[64px] h-[64px] rounded-full items-center justify-center relative"
             style={{ backgroundColor: colors.surfaceContainerLow }}
           >
-            <Image source={notificationImages[avatarIndexFor(n.id)]} className="w-full h-full rounded-full" resizeMode="cover" />
+            <Image source={resolveAvatar(n.userHandle || n.userName || n.id)} className="w-full h-full rounded-full" resizeMode="cover" />
             <View
               className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full items-center justify-center border-2"
               style={{ backgroundColor: '#E8DEF8', borderColor: colors.surface }}
@@ -143,7 +111,7 @@ export default function NotificationsScreen() {
             className="w-[64px] h-[64px] rounded-full items-center justify-center relative"
             style={{ backgroundColor: colors.surfaceContainerLow }}
           >
-            <Image source={notificationImages[avatarIndexFor(n.id)]} className="w-full h-full rounded-full" resizeMode="cover" />
+            <Image source={resolveAvatar(n.userHandle || n.userName || n.id)} className="w-full h-full rounded-full" resizeMode="cover" />
             <View className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full items-center justify-center border-2" style={{ backgroundColor: colors.surfaceContainer, borderColor: colors.surface }}>
               <Text style={{ fontSize: 10, lineHeight: 12, color: colors.primary }}>◆</Text>
             </View>
@@ -152,12 +120,12 @@ export default function NotificationsScreen() {
       case 'promotion':
         return (
           <View className="w-[64px] h-[64px] rounded-full items-center justify-center" style={{ backgroundColor: colors.primary }}>
-            <TagIcon />
+            <Text style={{ fontSize: 16, lineHeight: 18, color: '#FFFFFF' }}>★</Text>
           </View>
         );
       default:
         return (
-          <Image source={notificationImages[avatarIndexFor(n.id)]} className="w-[64px] h-[64px] rounded-full" resizeMode="cover" />
+          <Image source={resolveAvatar(n.userHandle || n.userName || n.id)} className="w-[64px] h-[64px] rounded-full" resizeMode="cover" />
         );
     }
   };
@@ -223,7 +191,7 @@ export default function NotificationsScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.surface }}>
-      {/* Header — Figma core: back + title centered + gear right */}
+      {/* Header — back + centered title + mark-all-read (Figma core) */}
       <View style={{ backgroundColor: colors.surface, paddingTop: insets.top }}>
         <View className="flex-row items-center h-[52px] px-5">
           <TouchableOpacity onPress={() => router.back()}>
@@ -237,9 +205,6 @@ export default function NotificationsScreen() {
               <Text className="font-inter-500 text-primary" style={{ fontSize: 12, lineHeight: 14 }}>
                 Mark all read
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/settings')} hitSlop={8}>
-              <GearIcon />
             </TouchableOpacity>
           </View>
         </View>

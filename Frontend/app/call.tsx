@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { colors } from '../utils/theme';
+import { resolveAvatar } from '../utils/productImages';
 
 function BackIcon({ size = 18, color = colors.inverseOnSurface }: { size?: number; color?: string }) {
   return (
@@ -101,7 +102,7 @@ export default function CallScreen() {
       <View className="flex-1 items-center justify-center px-8">
         <View className="rounded-full" style={{ borderWidth: 4, borderColor: colors.primaryContainer, padding: 6 }}>
           <Image
-            source={{ uri: `https://picsum.photos/seed/${avatarSeed}/240/240` }}
+            source={resolveAvatar(avatarSeed)}
             className="w-36 h-36 rounded-full"
             resizeMode="cover"
           />
@@ -115,11 +116,28 @@ export default function CallScreen() {
             style={{ backgroundColor: connected ? colors.success : colors.inversePrimary }}
           />
           <Text className="font-inter-500" style={{ fontSize: 13, lineHeight: 16, color: colors.inversePrimary }}>
-            {connected ? 'Video call' : 'Connecting…'}
+            {connected ? 'Demo call' : 'Connecting…'}
           </Text>
         </View>
+        {connected && (
+          <View
+            className="mt-4 items-center justify-center"
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 5,
+              borderRadius: 999,
+              backgroundColor: colors.inverseOnSurface,
+            }}
+          >
+            <Text className="font-inter-600" style={{ fontSize: 11, lineHeight: 14, color: colors.inversePrimary }}>
+              Demo preview
+            </Text>
+          </View>
+        )}
         <Text className="font-inter-400 mt-6 text-center" style={{ fontSize: 12, lineHeight: 16, color: colors.inversePrimary }}>
-          {connected ? `You're on a video call with ${partnerName}` : 'Waiting for the other person to join…'}
+          {connected
+            ? 'Preview only - this screen demonstrates the call UI. No live audio or video.'
+            : 'Waiting for the other person to join…'}
         </Text>
       </View>
 

@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch } from "@/lib/api-mutate";
 import { formatDate, formatNumber } from "@/lib/utils";
 import { Radio, Video, XCircle } from "lucide-react";
-import type { MockLiveStream } from "@/services/mock-data";
+import type { MockLiveStream } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockLiveStream>();
 

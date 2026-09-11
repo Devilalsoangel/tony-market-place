@@ -11,7 +11,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { formatNumber, formatDate } from "@/lib/utils";
 import { Gift, PlusCircle, MinusCircle } from "lucide-react";
-import type { MockLoyaltyUser } from "@/services/mock-data";
+import type { MockLoyaltyUser } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockLoyaltyUser>();
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { DollarSign, Users, ShoppingCart, Headphones } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { IndianRupee, Users, ShoppingCart, Headphones } from "lucide-react";
 import { KPICard } from "@/components/shared/kpi-card";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -9,9 +9,8 @@ import { RevenueChart } from "@/components/charts/revenue-chart";
 import { GrowthChart } from "@/components/charts/growth-chart";
 import { BarChart } from "@/components/charts/bar-chart";
 import { formatCurrency, formatNumber, formatDate } from "@/lib/utils";
-import { mockKPIs, mockRevenueData, mockGrowthData, mockTopCategories, mockOrders, mockAuditLogs } from "@/services/mock-data";
-import { useDbResource } from "@/hooks/use-db-resource";
-import type { KPIData, Order, AuditLog } from "@/types";
+import type { KPIData } from "@/types";
+import Link from "next/link";
 
 export default function DashboardPage() {
   const [today, setToday] = useState("");
@@ -27,17 +26,89 @@ export default function DashboardPage() {
     );
   }, []);
 
-  const { data: settings } = useDbResource<{ key: string; value: unknown }>("app-settings");
-  const { data: dbOrders } = useDbResource<Order>("orders");
-  const { data: dbAuditLogs } = useDbResource<AuditLog>("audit-logs");
+  // Server-aggregated KPIs: ONE bounded round trip, exact at any scale.
+  // (Replaces 8 unbounded full-table pulls + client-side aggregation.)
+  interface SummaryShape {
+    counts: Record<string, number>;
+    revenue: { gross: number; refundsOut: number; net: number };
+    revenueByMonth: { month: string; revenue: number }[];
+    growthByMonth: { month: string; users: number; sellers: number }[];
+    topCategories: { name: string; value: number }[];
+    recentOrders: { id: string; buyerName: string; amount: number; status: string; createdAt: string }[];
+    recentAudit: { id: string; details: string; adminName: string; timestamp: string }[];
+  }
+  const [summary, setSummary] = useState<SummaryShape | null>(null);
+  const [summaryErr, setSummaryErr] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    fetch("/api/data/summary", { cache: "no-store", credentials: "include", signal: controller.signal })
+      .then(async (res) => {
+        const body = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok) throw new Error(body?.error ?? "Failed to load");
+        setSummary(body as SummaryShape);
+        setSummaryErr(null);
+      })
+      .catch((e) => {
+        if (!cancelled) setSummaryErr(e instanceof Error ? e.message : "Failed to load");
+      })
+      .finally(() => clearTimeout(timer));
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
+  const dbDown = !!summaryErr;
 
-  const setting = (key: string) => settings?.find((s) => s.key === key)?.value;
-  const kpis = (setting("kpis") ?? mockKPIs) as KPIData;
-  const revenueData = (setting("revenueData") ?? mockRevenueData) as typeof mockRevenueData;
-  const growthData = (setting("growthData") ?? mockGrowthData) as typeof mockGrowthData;
-  const topCategories = (setting("topCategories") ?? mockTopCategories) as typeof mockTopCategories;
-  const recentOrders = (dbOrders ?? mockOrders).slice(0, 6);
-  const recentAudit = (dbAuditLogs ?? mockAuditLogs).slice(0, 6);
+  const monthLabel = (key: string) => {
+    const [y, m] = key.split("-").map(Number);
+    if (!y || !m) return key;
+    return new Date(y, m - 1).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  };
+
+  // KPIs computed from REAL rows — no fabricated business metrics.
+  const kpis = useMemo<KPIData>(() => {
+    const c = summary?.counts ?? {};
+    const num = (k: string) => Number(c[k] ?? 0) || 0;
+    return {
+      totalUsers: num("totalUsers"),
+      newUsersToday: num("newUsersToday"),
+      onlineUsers: num("onlineUsers"),
+      verifiedSellers: num("verifiedSellers"),
+      pendingSellerRequests: num("pendingSellerRequests"),
+      totalProducts: num("totalProducts"),
+      pendingProducts: num("pendingProducts"),
+      communities: num("communities"),
+      ordersToday: num("ordersToday"),
+      revenue: Number(summary?.revenue.gross ?? 0),
+      refundsOut: Number(summary?.revenue.refundsOut ?? 0),
+      netRevenue: Number(summary?.revenue.net ?? 0),
+      pendingReports: num("pendingReports"),
+      openSupportTickets: num("openSupportTickets"),
+    };
+  }, [summary]);
+
+  const revenueData = useMemo(() => {
+    // Trend chart stays on delivered GMV (shape signal); the KPI headline
+    // above is net of refunds. Server-bucketed — no row pulls.
+    return [...(summary?.revenueByMonth ?? [])]
+      .sort((a, b) => (a.month < b.month ? -1 : 1))
+      .map(({ month, revenue }) => ({ month: monthLabel(month), revenue }));
+  }, [summary]);
+  // Growth + categories arrive server-bucketed from /api/data/summary.
+  const growthData = useMemo(() => {
+    return [...(summary?.growthByMonth ?? [])]
+      .sort((a, b) => (a.month < b.month ? -1 : 1))
+      .map(({ month, users, sellers }) => ({ month: monthLabel(month), users, sellers }));
+  }, [summary]);
+  const topCategories = useMemo(() => {
+    return [...(summary?.topCategories ?? [])].sort((a, b) => b.value - a.value).slice(0, 6);
+  }, [summary]);
+
+  const recentOrders = summary?.recentOrders ?? [];
+  const recentAudit = summary?.recentAudit ?? [];
 
   return (
     <div className="space-y-6">
@@ -49,11 +120,23 @@ export default function DashboardPage() {
         <p className="shrink-0 text-[13px] font-medium text-[#A1A1AA]">{today}</p>
       </div>
 
+      {dbDown && (
+        <div className="rounded-[8px] border border-[#FCD34D]/40 bg-[#FEF9C3] px-4 py-2.5 text-[13px] text-[#92400E]">
+          Database unavailable — live data paused. KPIs show zeros until connection restores.
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-4">
-        <KPICard title="Total Revenue" value={formatCurrency(kpis.revenue)} icon={DollarSign} trend={{ value: 18, positive: true }} variant="primary" />
-        <KPICard title="Total Users" value={formatNumber(kpis.totalUsers)} icon={Users} trend={{ value: 12, positive: true }} variant="default" />
-        <KPICard title="Orders Today" value={kpis.ordersToday} icon={ShoppingCart} trend={{ value: 5, positive: true }} variant="default" />
-        <KPICard title="Open Tickets" value={kpis.openSupportTickets} icon={Headphones} variant="warning" />
+        <KPICard
+          title="Net Revenue"
+          value={formatCurrency(kpis.netRevenue)}
+          subtitle={`Gross ${formatCurrency(kpis.revenue)} · refunds ${formatCurrency(kpis.refundsOut)}`}
+          icon={IndianRupee}
+          variant="primary"
+        />
+        <KPICard title="Total Users" value={formatNumber(kpis.totalUsers)} icon={Users} variant="default" />
+        <KPICard title="Orders Today" value={kpis.ordersToday} icon={ShoppingCart} variant="default" />
+        <KPICard title="Open Support Tickets" value={kpis.openSupportTickets} icon={Headphones} variant="warning" />
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -68,19 +151,30 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Latest orders</CardTitle>
+            <div className="flex w-full items-center justify-between">
+              <CardTitle>Latest orders</CardTitle>
+              <Link
+                href="/dashboard/orders"
+                className="text-[13px] font-medium text-[#6C3BFF] hover:underline"
+              >
+                View all →
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="divide-y divide-[#E4E4E7]">
               {recentOrders.map((order) => (
-                <div key={order.id} className="flex items-center justify-between py-2">
+                <Link key={order.id} href={`/dashboard/orders/${order.id}`} className="flex items-center justify-between rounded-[6px] px-2 py-2 transition-colors hover:bg-[#F5F3FF]/40">
                   <div>
                     <p className="text-[13px] font-medium text-[#18181B]">{order.id}</p>
                     <p className="text-xs text-[#71717A]">{order.buyerName} — {formatCurrency(order.amount)}</p>
                   </div>
                   <StatusBadge status={order.status} />
-                </div>
+                </Link>
               ))}
+              {recentOrders.length === 0 && (
+                <p className="py-6 text-center text-sm text-[#A1A1AA]">No orders yet.</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -89,7 +183,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>User & seller growth</CardTitle>
+            <CardTitle>User &amp; seller growth</CardTitle>
           </CardHeader>
           <CardContent>
             <GrowthChart data={growthData} />
@@ -121,6 +215,9 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
+            {recentAudit.length === 0 && (
+              <p className="py-6 text-center text-sm text-[#A1A1AA]">No activity yet.</p>
+            )}
           </div>
         </CardContent>
       </Card>

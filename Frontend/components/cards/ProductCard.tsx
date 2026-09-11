@@ -6,16 +6,19 @@ import { colors, formatPrice } from '../../utils/theme';
 import { useBookmark } from '../../contexts/BookmarkContext';
 import { useRecentlyViewed } from '../../contexts/RecentlyViewedContext';
 import { usePosts } from '../../contexts/PostContext';
+import { CommentsSheet, LikersSheet, ShareSheet } from '../sheets/PostEngagementSheets';
 
 interface ProductCardProps {
   id?: string;
-  sellerAvatar?: string | number;
+  sellerAvatar?: string | number | { uri: string };
   sellerName: string;
   sellerUsername?: string;
   sellerLocation?: string;
   verified?: boolean;
   sponsored?: boolean;
-  productImage?: string | number;
+  /** Chip text used when sponsored is true (defaults to 'Sponsored'). */
+  sponsoredLabel?: string;
+  productImage?: string | number | { uri: string };
   price: number;
   description: string;
   likes: number;
@@ -25,11 +28,12 @@ interface ProductCardProps {
   className?: string;
 }
 
-// Helper to handle both require() (number) and uri string images
-const imageSource = (img: string | number | undefined): any => {
+// Helper to handle require() (number), uri strings, and { uri } objects
+const imageSource = (img: string | number | { uri: string } | undefined | null): any => {
   if (img === undefined || img === null) return null;
   if (typeof img === 'number') return img;
   if (typeof img === 'string' && img) return { uri: img };
+  if (typeof img === 'object' && 'uri' in img && img.uri) return img;
   return null;
 };
 
@@ -48,6 +52,7 @@ export function ProductCard({
   sellerLocation,
   verified = false,
   sponsored = false,
+  sponsoredLabel = 'Sponsored',
   productImage,
   price,
   description,
@@ -58,6 +63,7 @@ export function ProductCard({
 }: ProductCardProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuSection, setMenuSection] = useState<'main' | 'report'>('main');
+  const [sheet, setSheet] = useState<null | 'comments' | 'likers' | 'share'>(null);
   const { isBookmarked, toggleBookmark } = useBookmark();
   const { record } = useRecentlyViewed();
   const { posts, isLiked, toggleLike, hidePost, toggleMuteSeller, reportPost } = usePosts();
@@ -67,6 +73,12 @@ export function ProductCard({
     const post = posts.find((p) => p.id === id);
     return post ? post.likes : likes;
   }, [posts, id, likes]);
+
+  // Live comment count: follows the post record, bumps as the user comments.
+  const liveCommentCount = useMemo(() => {
+    const post = posts.find((p) => p.id === id);
+    return post ? post.comments : comments;
+  }, [posts, id, comments]);
 
   // Hashtags: explicit prop wins, otherwise parsed from description
   const tagList = useMemo(() => {
@@ -103,10 +115,15 @@ export function ProductCard({
 
   const closeMenu = () => setMenuVisible(false);
 
-  const handleReport = (reason: string) => {
-    reportPost(id, reason);
+  const handleReport = async (reason: string) => {
+    const filed = await reportPost(id, reason);
     closeMenu();
-    Alert.alert('Report sent', `Thanks for reporting this listing as ${reason.toLowerCase()}. Our team will review it.`);
+    Alert.alert(
+      filed ? 'Report sent' : 'Report not sent',
+      filed
+        ? `Thanks for reporting this listing as ${reason.toLowerCase()}. Our team will review it.`
+        : 'Check your connection and try again — nothing was filed.'
+    );
   };
 
   const handleHide = () => {
@@ -160,8 +177,8 @@ export function ProductCard({
             <Text className="text-secondary font-inter-400" style={{ fontSize: 11, lineHeight: 14 }} numberOfLines={1}>
               {sponsored
                 ? sellerLocation
-                  ? `${sellerLocation} • Sponsored`
-                  : 'Sponsored'
+                  ? `${sellerLocation} • ${sponsoredLabel}`
+                  : sponsoredLabel
                 : sellerLocation || ''}
             </Text>
           </View>
@@ -171,47 +188,62 @@ export function ProductCard({
         </TouchableOpacity>
       </View>
 
-      {/* Post image + price pill — pill only renders over a real image */}
+      {/* Post image + price pill — pill only renders over a real image. Square 1:1 keeps the
+          social feed scannable (industry commerce-card standard) instead of a dominating 4:5. */}
       <View>
-        <View className="w-full bg-surfaceContainer" style={{ aspectRatio: 390 / 488 }} />
+        <View className="w-full bg-surfaceContainer" style={{ aspectRatio: 1 }} />
         {productImage ? (
           <Image source={imageSource(productImage)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
         ) : null}
         {productImage ? (
           <View
-            className="absolute top-6 right-6 h-14 px-5 rounded-full items-center justify-center"
+            className="absolute top-4 right-4 h-11 px-4 rounded-full items-center justify-center"
             style={{ backgroundColor: colors.primaryContainer }}
           >
-            <Text className="font-inter-600 text-white" style={{ fontSize: 22, lineHeight: 28 }}>{formatPrice(price)}</Text>
+            <Text className="font-inter-600 text-white" style={{ fontSize: 16, lineHeight: 20 }}>{formatPrice(price)}</Text>
           </View>
         ) : null}
       </View>
 
-      {/* Post actions */}
+      {/* Post actions — Instagram arrangement: engagement cluster left, Save trailing.
+          Uniform 32px gaps give the cluster deliberate, predictable rhythm. */}
       <View className="flex-row items-center px-4 pt-4">
-        <View className="flex-row items-center" style={{ gap: 24 }}>
-          <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleToggleLike(); }} className="flex-row items-center" style={{ gap: 8 }}>
+        <View className="flex-row items-center" style={{ gap: 32 }}>
+          {/* One tap = like/unlike. LONG PRESS = who liked this (Instagram pattern). */}
+          <TouchableOpacity
+            onPress={(e) => { e.stopPropagation(); handleToggleLike(); }}
+            onLongPress={(e) => { e.stopPropagation(); setSheet('likers'); }}
+            delayLongPress={280}
+            className="flex-row items-center"
+            style={{ gap: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={liked ? `Unlike ${sellerName}'s post` : `Like ${sellerName}'s post`}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <HeartIcon size={24} color={liked ? colors.primary : colors.textSecondary} />
             <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 13, lineHeight: 16 }}>{formatCount(likeCount)}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={(e) => { e.stopPropagation(); router.push(`/product/${id}`); }} className="flex-row items-center" style={{ gap: 8 }}>
+          {/* Comment opens the Instagram-style comments sheet — NOT the product view */}
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); setSheet('comments'); }} className="flex-row items-center" style={{ gap: 8 }} accessibilityRole="button" accessibilityLabel="View comments" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <CommentIcon size={24} color={colors.textSecondary} />
-            <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 13, lineHeight: 16 }}>{formatCount(comments)}</Text>
+            <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 13, lineHeight: 16 }}>{formatCount(liveCommentCount)}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={(e) => e.stopPropagation()}>
-            <ShareIcon size={23} color={colors.textSecondary} />
+          {/* Share: into DMs, communities and external apps (Instagram pattern) */}
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); setSheet('share'); }} accessibilityRole="button" accessibilityLabel="Share listing" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <ShareIcon size={24} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
         <View className="flex-1" />
-        <TouchableOpacity onPress={(e) => { e.stopPropagation(); toggleBookmark({ productId: id, sellerName, sellerUsername, price, description, savedAt: Date.now() }); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <BookmarkIcon size={18} color={saved ? colors.primary : colors.textSecondary} />
+        <TouchableOpacity onPress={(e) => { e.stopPropagation(); toggleBookmark({ productId: id, sellerName, sellerUsername, price, description, savedAt: Date.now() }); }} accessibilityRole="button" accessibilityLabel={saved ? 'Remove from saved' : 'Save listing'} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <BookmarkIcon size={22} color={saved ? colors.primary : colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
-      {/* Description */}
+      {/* Description — caption attribution bolded (IG pattern) so the seller name reads
+          as a caption prefix, not a duplicate of the header */}
       <View className="px-4 pt-5 pb-4">
         <View className="flex-row flex-wrap">
-          <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 14, lineHeight: 23 }}>{sellerName} </Text>
+          <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 23 }}>{sellerName} </Text>
           <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 14, lineHeight: 23 }} numberOfLines={2}>
             {cleanDescription}
           </Text>
@@ -226,6 +258,23 @@ export function ProductCard({
           </View>
         )}
       </View>
+
+      {/* Engagement sheets (Instagram pattern): comments / likers / share */}
+      <CommentsSheet
+        visible={sheet === 'comments'}
+        postId={id}
+        onClose={() => setSheet(null)}
+      />
+      <LikersSheet
+        visible={sheet === 'likers'}
+        postId={id}
+        onClose={() => setSheet(null)}
+      />
+      <ShareSheet
+        visible={sheet === 'share'}
+        post={{ id, sellerName, sellerUsername, price, description }}
+        onClose={() => setSheet(null)}
+      />
 
       <Modal transparent animationType="fade" visible={menuVisible} onRequestClose={closeMenu} statusBarTranslucent>
         <TouchableOpacity activeOpacity={1} onPress={closeMenu} style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: colors.overlay }}>

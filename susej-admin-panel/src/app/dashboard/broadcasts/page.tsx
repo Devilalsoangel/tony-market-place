@@ -10,9 +10,11 @@ import { StatTile } from "@/components/shared/stat-tile";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { formatDate, formatNumber } from "@/lib/utils";
 import { RadioTower, XCircle, PlayCircle, Square } from "lucide-react";
-import type { MockBroadcast } from "@/services/mock-data";
+import type { MockBroadcast } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockBroadcast>();
+
+const TWO_HOURS = 2 * 60 * 60 * 1000;
 
 const statusVariant: Record<string, "danger" | "warning" | "default" | "success"> = {
   live: "danger",
@@ -23,10 +25,24 @@ const statusVariant: Record<string, "danger" | "warning" | "default" | "success"
 const makeColumns = (onEnd: (b: MockBroadcast) => void, onStart: (b: MockBroadcast) => void, onCancel: (b: MockBroadcast) => void) => [
   column.accessor("title", { header: "Broadcast", cell: (info) => <span className="font-medium text-[#18181B]">{info.getValue()}</span> }),
   column.accessor("hostName", { header: "Host", cell: (info) => info.getValue() }),
-  column.accessor("listeners", { header: "Listeners", cell: (info) => <span className="tabular-nums">{formatNumber(info.getValue())}</span> }),
+  column.accessor("listeners", {
+    header: "Listeners",
+    cell: (info) => {
+      const val = info.getValue();
+      const status = info.row.original.status;
+      // Only show listener count for live broadcasts; ended/scheduled show 0
+      return <span className="tabular-nums">{status === "live" ? formatNumber(val) : "—"}</span>;
+    },
+  }),
   column.accessor("status", {
     header: "Status",
-    cell: (info) => <Badge variant={statusVariant[info.getValue()]} className="capitalize">{info.getValue()}</Badge>,
+    cell: (info) => {
+      const raw = info.getValue();
+      const started = info.row.original.scheduledAt ? new Date(info.row.original.scheduledAt).getTime() : 0;
+      const stale = raw === "live" && started > 0 && (Date.now() - started) >= TWO_HOURS;
+      const display = stale ? "ended" : raw;
+      return <Badge variant={statusVariant[display] ?? "default"} className="capitalize">{display}</Badge>;
+    },
   }),
   column.accessor("scheduledAt", { header: "Time", cell: (info) => <span className="text-[#71717A]">{formatDate(info.getValue(), "long")}</span> }),
   column.display({
@@ -78,21 +94,34 @@ export default function BroadcastsPage() {
   }
 
   function endNow(b: MockBroadcast) {
-    patch(b.id, { status: "ended" });
+    patch(b.id, { status: "ended", listeners: 0 });
   }
 
   function startNow(b: MockBroadcast) {
-    patch(b.id, { status: "live", scheduledAt: new Date().toISOString() });
+    patch(b.id, { status: "live", scheduledAt: new Date().toISOString(), listeners: 0 });
   }
 
   function cancel(b: MockBroadcast) {
-    patch(b.id, { status: "ended" });
+    patch(b.id, { status: "ended", listeners: 0 });
   }
 
-  const live = (items ?? []).filter((b) => b.status === "live");
-  const liveListeners = live.reduce((s, b) => s + b.listeners, 0);
+  // Compute live status from timestamps: a broadcast is only truly "live" if it was
+  // started and not yet ended, AND started within the last 2 hours (otherwise it's stale).
+  const now = Date.now();
+  const isEffectivelyLive = (b: MockBroadcast) => {
+    if (b.status === "ended") return false;
+    if (b.status === "live") {
+      // Check if startedAt is recent (within 2h) — stale "live" entries are ended
+      const started = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+      return started > 0 && (now - started) < TWO_HOURS;
+    }
+    return false;
+  };
+  const live = (items ?? []).filter(isEffectivelyLive);
+  // Listeners only count for truly live broadcasts
+  const liveListeners = live.reduce((s, b) => s + (b.listeners || 0), 0);
   const scheduled = (items ?? []).filter((b) => b.status === "scheduled").length;
-  const ended = (items ?? []).filter((b) => b.status === "ended").length;
+  const ended = (items ?? []).filter((b) => b.status === "ended" || (b.status === "live" && !isEffectivelyLive(b))).length;
 
   return (
     <div className="space-y-6">

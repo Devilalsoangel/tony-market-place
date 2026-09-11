@@ -360,7 +360,7 @@ export default function CommunityDetailPage({ params }: { params: Promise<{ id: 
                           {i < community.moderationLog.length - 1 && <div className="mt-1 w-px flex-1 bg-[#E4E4E7]" />}
                         </div>
                         <div className="flex-1 pb-6">
-                          <p className="text-sm font-medium capitalize text-[#18181B] ">{m.action.replace("_", " ")}</p>
+                          <p className="text-sm font-medium capitalize text-[#18181B] ">{m.action.replaceAll("_", " ")}</p>
                           <p className="mt-0.5 text-sm text-gray-500">{m.note}</p>
                           <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
                             <ShieldCheck className="h-3 w-3" />

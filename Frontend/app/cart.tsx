@@ -4,41 +4,86 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BackIcon, CloseIcon, ShopIcon, MinusIcon, PlusIcon, ArrowRightIcon, ChevronRightIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
-import { useCart, DELIVERY_FEES, DEMO_DISCOUNT, type CartItem } from '../contexts/CartContext';
-import { productImages } from '../utils/productImages';
-import { cartImages } from '../utils/screenImages';
+import { useCart, DELIVERY_FEES, type CartItem } from '../contexts/CartContext';
+import { resolveListingImage } from '../utils/productImages';
+import { getRedeemedCoupons, setAppliedPromo, clearAppliedPromo } from '../utils/redeemedCoupons';
+import { serverApi } from '../utils/serverApi';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../contexts/AuthContext';
 
-const SAVED_KEY = '@susej_saved_for_later';
+const SAVED_KEY_BASE = '@susej_saved_for_later';
 
 type SavedItem = CartItem & { savedAt: number };
 
 export default function CartScreen() {
   const insets = useSafeAreaInsets();
-  const { cart, updateQuantity, removeFromCart, addToCart, subtotal } = useCart();
+  const { user } = useAuth();
+  const savedKey = user?.username ? `${SAVED_KEY_BASE}:${user.username}` : SAVED_KEY_BASE;
+  const { cart, updateQuantity, removeFromCart, restoreSavedItem, subtotal } = useCart();
   const [promoCode, setPromoCode] = useState('');
-const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null);
+const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?: boolean } | null>(null);
   const [saved, setSaved] = useState<SavedItem[]>([]);
   const [savedLoaded, setSavedLoaded] = useState(false);
   const [savedOpen, setSavedOpen] = useState(true);
+  const [offers, setOffers] = useState<Array<{ code: string; label: string }>>([]);
+
+  // Amazon/Flipkart "Available offers": live admin-created coupons surfaced as
+  // one-tap chips. Silent on failure — offers are a bonus, never a blocker.
+  useEffect(() => {
+    if (cart.length === 0) {
+      setOffers([]);
+      return;
+    }
+    let alive = true;
+    serverApi
+      .getCoupons()
+      .then((res) => {
+        if (!alive) return;
+        const list = res.ok && res.data?.coupons ? res.data.coupons : [];
+        setOffers(
+          list
+            .filter((c) => c && c.code)
+            .map((c) => ({
+              code: String(c.code),
+              label:
+                c.type === 'percent'
+                  ? String(c.value) + '% off'
+                  : c.type === 'free_delivery'
+                    ? 'Free delivery'
+                    : formatPrice(Number(c.value)) + ' off',
+            }))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [cart.length]);
 
   useEffect(() => {
-    AsyncStorage.getItem(SAVED_KEY)
+    let cancelled = false;
+    setSavedLoaded(false);
+    AsyncStorage.getItem(savedKey)
       .then((data) => {
+        if (cancelled) return;
         if (data) {
           try {
-            setSaved(JSON.parse(data) as SavedItem[]);
-          } catch {
-          }
+            const parsed = JSON.parse(data) as SavedItem[];
+            if (Array.isArray(parsed)) setSaved(parsed.filter((s) => s && s.listingId));
+            else setSaved([]);
+          } catch { if (!cancelled) setSaved([]); }
+        } else {
+          setSaved([]);
         }
+        if (!cancelled) setSavedLoaded(true);
       })
-      .catch(() => {})
-      .finally(() => setSavedLoaded(true));
-  }, []);
+      .catch(() => { if (!cancelled) setSavedLoaded(true); });
+    return () => { cancelled = true; };
+  }, [savedKey]);
 
   const persistSaved = (next: SavedItem[]) => {
     if (!savedLoaded) return;
-    AsyncStorage.setItem(SAVED_KEY, JSON.stringify(next)).catch(() => {});
+    AsyncStorage.setItem(savedKey, JSON.stringify(next)).catch(() => {});
   };
 
   const saveForLater = (item: CartItem) => {
@@ -51,8 +96,15 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
   };
 
   const moveToCart = (item: SavedItem) => {
-    addToCart(item);
-    if (item.quantity > 1) updateQuantity(item.listingId, item.quantity);
+    // Atomic single-transition restore (quantity preserved, no setTimeout
+    // patch race). Rejection means a different seller's cart is active.
+    if (!restoreSavedItem(item, item.quantity)) {
+      Alert.alert(
+        'Different seller',
+        'Your cart has items from another seller. Checkout or clear it first to move this item.'
+      );
+      return;
+    }
     setSaved((prev) => {
       const next = prev.filter((s) => s.listingId !== item.listingId);
       persistSaved(next);
@@ -69,9 +121,66 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
   };
 
   const hasFood = cart.some((item) => item.type === 'food_item');
-  const delivery = cart.length > 0 ? (hasFood ? DELIVERY_FEES.food_item : DELIVERY_FEES.product) : 0;
-  const discount = cart.length > 0 ? (promo ? promo.amount : DEMO_DISCOUNT) : 0;
-  const total = Math.max(0, subtotal + delivery - discount);
+  const delivery = cart.length > 0 ? (promo?.freeDelivery ? 0 : hasFood ? DELIVERY_FEES.food_item : DELIVERY_FEES.product) : 0;
+  const discount = cart.length > 0 ? (promo ? promo.amount : 0) : 0;
+  // Total preview matches checkout (subtotal + delivery). Coupon is settled
+  // server-side on the final bill, so cart shows the coupon as informational
+  // and does not subtract it here — prevents cart/checkout total mismatch.
+  const total = subtotal + delivery;
+
+  const applyPromo = async (override?: string) => {
+    const code = (override ?? promoCode).trim().toUpperCase();
+    if (override) setPromoCode(override.toUpperCase());
+    if (!code) return;
+    if (promo && promo.code === code) return;
+    let amount = 0;
+    let freeDelivery = false;
+    // Live coupons from server (prevents drift where cart discount differs from server charge).
+    let liveCoupons: Array<{ code: string; type: string; value: number }> = [];
+    try {
+      const res = await serverApi.getCoupons();
+      if (res.ok && res.data?.coupons) liveCoupons = res.data.coupons;
+    } catch {}
+    const live = liveCoupons.find((c) => c.code.toUpperCase() === code);
+    if (live) {
+      if (live.type === 'percent') amount = Math.round(subtotal * (live.value / 100));
+      else if (live.type === 'flat' || live.type === 'fixed') amount = live.value;
+      else if (live.type === 'free_delivery') freeDelivery = true;
+      else amount = Math.round(live.value);
+    } else {
+      // Loyalty rewards are NOT accepted at checkout yet (the gatekeeper
+      // strips them pre-order) — offering them here wastes the apply tap and
+      // contradicts the checkout screen. Single coupon truth: server codes
+      // only until the server supports loyalty redemption.
+      const redeemedList = await getRedeemedCoupons();
+      const match = redeemedList.find((c) => c.code.toUpperCase() === code);
+      if (match) {
+        setPromo(null);
+        await clearAppliedPromo().catch(() => {});
+        Alert.alert(
+          'Not accepted at checkout yet',
+          'Loyalty coupons stay in My Coupons — only platform codes apply to this order.'
+        );
+        return;
+      } else {
+        // No hardcoded fallback codes: invented codes (WELCOME20/SELLER50/…)
+        // always die at the server with 400 and vaporize the order. Unknown
+        // here means invalid — the server list is the only truth.
+        setPromo(null);
+        await clearAppliedPromo().catch(() => {});
+        Alert.alert('Invalid promo code', 'Try a code from Loyalty > My Coupons or a server coupon.');
+        return;
+      }
+    }
+    if (amount <= 0 && !freeDelivery) {
+      Alert.alert('Invalid promo code', 'Try a code from Loyalty > My Coupons or a server coupon.');
+      return;
+    }
+    const applied = { code, amount, ...(freeDelivery ? { freeDelivery: true } : {}) };
+    setPromo(applied);
+    // Checkout reads this so the discount reaches the real charged total.
+    setAppliedPromo(applied).catch(() => {});
+  };
 
   return (
     <View className="flex-1 bg-surface">
@@ -91,15 +200,15 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
         keyExtractor={(item) => item.listingId}
         contentContainerClassName="px-5 pb-[352px]"
         contentContainerStyle={{ rowGap: 24, paddingBottom: insets.bottom + 352 }}
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <View
             className="flex-row rounded-[24px] px-3 py-3"
-            style={{ width: 350, height: 120, backgroundColor: colors.surfaceContainerLowest, shadowColor: colors.textPrimary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 3 }}
+            style={{ width: '100%', height: 120, backgroundColor: colors.surfaceContainerLowest, shadowColor: colors.textPrimary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 3 }}
           >
             {/* Product Image — Figma: 96×96, cornerRadius 16, bg #f5f2ff */}
             <View className="w-24 h-24 rounded-[16px] items-center justify-center overflow-hidden" style={{ width: 96, height: 96, backgroundColor: colors.surfaceContainerLow }}>
               <Image
-                source={productImages[item.listingId] ?? cartImages[index % 3]}
+                source={resolveListingImage({ image: item.imageUrl }, item.listingId)}
                 className="w-full h-full"
                 style={{ width: 96, height: 96 }}
               />
@@ -138,7 +247,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
                   >
                     {formatPrice(item.price)}
                   </Text>
-                  <TouchableOpacity onPress={() => saveForLater(item)} className="mt-0.5 self-start">
+                  <TouchableOpacity onPress={() => saveForLater(item)} className="mt-0.5 self-start" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={`Save ${item.name} for later`}>
                     <Text
                       className="text-[12px] font-inter-500"
                       style={{ lineHeight: 16, color: colors.textSecondary }}
@@ -148,10 +257,13 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
                   </TouchableOpacity>
                 </View>
                 {/* Quantity stepper — Figma: pill 9999, bg #dedfe5, pad 4 */}
-                <View className="flex-row items-center rounded-full px-1 py-1" style={{ height: 40, backgroundColor: colors.secondaryContainer }}>
+                <View className="flex-row items-center rounded-full px-1 py-1" style={{ height: 44, backgroundColor: colors.secondaryContainer }}>
                   <TouchableOpacity
                     className="items-center justify-center"
-                    style={{ width: 32, height: 32 }}
+                    style={{ width: 44, height: 44 }}
+                    hitSlop={{ top: 2, bottom: 2, left: 4, right: 4 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Decrease quantity of ${item.name}`}
                     onPress={() => updateQuantity(item.listingId, item.quantity - 1)}
                   >
                     <MinusIcon size={11} color={colors.primary} />
@@ -164,7 +276,10 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
                   </Text>
                   <TouchableOpacity
                     className="items-center justify-center"
-                    style={{ width: 32, height: 32 }}
+                    style={{ width: 44, height: 44 }}
+                    hitSlop={{ top: 2, bottom: 2, left: 4, right: 4 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Increase quantity of ${item.name}`}
                     onPress={() => updateQuantity(item.listingId, item.quantity + 1)}
                   >
                     <PlusIcon size={11} color={colors.primary} />
@@ -176,7 +291,35 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
         )}
         ListHeaderComponent={
           cart.length > 0 ? (
-          /* Promo Code — Figma spec (only meaningful when cart has items) */
+          <>
+        {/* Available offers — REAL server coupons (Amazon/Flipkart pattern); hidden when none */}
+        {offers.length > 0 && (
+          <View className="mb-3" style={{ rowGap: 8 }}>
+            {offers.map((o) => {
+              const isApplied = promo?.code === o.code.toUpperCase();
+              return (
+                <TouchableOpacity
+                  key={o.code}
+                  className="flex-row items-center px-4 py-2 rounded-[16px]"
+                  style={{ backgroundColor: colors.secondaryContainer }}
+                  onPress={() => applyPromo(o.code)}
+                  accessibilityRole="button"
+                  accessibilityLabel={'Apply offer ' + o.code + ' — ' + o.label}
+                >
+                  <View className="flex-1">
+                    <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 13, lineHeight: 17 }}>
+                      {o.code} · {o.label}
+                    </Text>
+                  </View>
+                  <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: isApplied ? colors.primary : colors.tertiary }}>
+                    {isApplied ? 'Applied' : 'Apply'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+          {/* Promo Code — Figma spec (only meaningful when cart has items) */}
           <View className="pt-4">
             <View className="flex-row items-center h-14 rounded-[16px] overflow-hidden" style={{ backgroundColor: colors.surfaceContainerLow }}>
               <TextInput
@@ -190,24 +333,8 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
               <TouchableOpacity
                 className="rounded-[12px] px-4 py-3 mr-2"
                 style={{ height: 40, backgroundColor: promo ? colors.tertiary : colors.secondary, opacity: promoCode.trim() ? 1 : 0.5 }}
-                onPress={() => {
-                  const code = promoCode.trim().toUpperCase();
-                  if (!code) return;
-                  if (promo && promo.code === code) return;
-                  let amount = 0;
-                  // Coupons mirror susej-admin-panel coupon codes (mockCoupons in admin mock-data).
-                  if (code === 'WELCOME20') amount = Math.round(subtotal * 0.2);
-                  else if (code === 'SELLER50') amount = 50;
-                  else if (code === 'PREMIUM25') amount = Math.round(subtotal * 0.25);
-                  else if (code === 'FLASH30') amount = Math.round(subtotal * 0.3);
-                  else if (code === 'YEARLY100') amount = 100;
-                  else if (code === 'OLD10') amount = Math.round(subtotal * 0.1);
-                  if (amount <= 0) {
-                    Alert.alert('Invalid promo code', 'Try WELCOME20, SELLER50, PREMIUM25, FLASH30, YEARLY100 or OLD10.');
-                    return;
-                  }
-                  setPromo({ code, amount });
-                }}
+                disabled={!promoCode.trim()}
+                onPress={() => applyPromo()}
               >
                 <Text className="text-white text-[14px] font-inter-600" style={{ lineHeight: 16, letterSpacing: 0.14 }}>
                   {promo ? 'Applied' : 'Apply'}
@@ -215,6 +342,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
               </TouchableOpacity>
             </View>
           </View>
+          </>
           ) : null
         }
         ListFooterComponent={
@@ -236,17 +364,17 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
               </TouchableOpacity>
               {savedOpen ? (
                 <View style={{ rowGap: 16 }}>
-                  {saved.map((item, i) => (
+                  {saved.map((item) => (
                     <View
                       key={item.listingId}
                       className="rounded-[24px] px-3 py-3"
-                      style={{ width: 350, backgroundColor: colors.surfaceContainerLowest, shadowColor: colors.textPrimary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 3 }}
+                      style={{ width: '100%', backgroundColor: colors.surfaceContainerLowest, shadowColor: colors.textPrimary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 3 }}
                     >
                       <View className="flex-row">
                         {/* Saved image */}
                         <View className="w-24 h-24 rounded-[16px] items-center justify-center overflow-hidden" style={{ width: 96, height: 96, backgroundColor: colors.surfaceContainerLow }}>
                           <Image
-                            source={productImages[item.listingId] ?? cartImages[i % 3]}
+                            source={resolveListingImage({ image: item.imageUrl }, item.listingId)}
                             className="w-full h-full"
                             style={{ width: 96, height: 96 }}
                           />
@@ -280,12 +408,12 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
                         className="flex-row items-center mt-3 pt-3"
                         style={{ borderTopWidth: 1, borderTopColor: colors.surfaceContainerLow }}
                       >
-                        <TouchableOpacity onPress={() => moveToCart(item)}>
+                        <TouchableOpacity onPress={() => moveToCart(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right:  8 }} accessibilityRole="button" accessibilityLabel={`Move ${item.name} to cart`}>
                           <Text className="text-[13px] font-inter-600" style={{ lineHeight: 18, color: colors.primaryContainer }}>
                             Move to cart
                           </Text>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => removeSaved(item.listingId)} className="ml-6">
+                        <TouchableOpacity onPress={() => removeSaved(item.listingId)} className="ml-6" hitSlop={{ top: 8, bottom: 8, left: 8, right:  8 }} accessibilityRole="button" accessibilityLabel={`Remove ${item.name}from saved`}>
                           <Text className="text-[13px] font-inter-500" style={{ lineHeight: 18, color: colors.textSecondary }}>
                             Remove
                           </Text>
@@ -309,6 +437,17 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
             <Text className="text-[14px] font-inter-400 text-textSecondary text-center" style={{ lineHeight: 20 }}>
               Add items to start shopping
             </Text>
+            <TouchableOpacity
+              className="mt-6 h-12 px-8 items-center justify-center rounded-figma-full"
+              style={{ backgroundColor: colors.primaryContainer }}
+              accessibilityRole="button"
+              accessibilityLabel="Start shopping"
+              onPress={() => router.push('/feed')}
+            >
+              <Text className="text-white text-[14px] font-inter-600" style={{ lineHeight: 18, letterSpacing: 0.14 }}>
+                Start shopping
+              </Text>
+            </TouchableOpacity>
           </View>
         }
       />
@@ -330,13 +469,13 @@ const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null
             <Text className="text-[16px] font-inter-400 text-textSecondary" style={{ lineHeight: 24 }}>Delivery Fee</Text>
             <Text className="text-[16px] font-inter-400 text-textPrimary" style={{ lineHeight: 24 }}>{formatPrice(delivery)}</Text>
           </View>
-          {/* Discount */}
+          {/* Discount — informational; settled by server on checkout */}
           {discount > 0 && (
             <View className="flex-row justify-between items-center">
               <Text className="text-[16px] font-inter-400 text-textSecondary" style={{ lineHeight: 24 }}>
-                {promo ? `Discount (${promo.code})` : 'Discount'}
+                {promo ? `Coupon ${promo.code}` : 'Discount'}
               </Text>
-              <Text className="text-[16px] font-inter-400" style={{ lineHeight: 24, color: colors.tertiary }}>-{formatPrice(discount)}</Text>
+              <Text className="text-[13px] font-inter-400" style={{ lineHeight: 20, color: colors.textSecondary }}>Settled at checkout</Text>
             </View>
           )}
           {/* Divider */}

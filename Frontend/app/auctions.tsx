@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
-import { productImages } from '../utils/productImages';
+import { serverApi } from '../utils/serverApi';
 
 const AUCTIONS_KEY = '@susej_auctions';
 
@@ -34,76 +34,6 @@ export interface Auction {
   bids: AuctionBid[];
 }
 
-const SEED_AUCTIONS: Auction[] = [
-  {
-    id: 'auc_001',
-    title: 'Vintage Leather Watch',
-    seller: 'RetroRiches',
-    verified: true,
-    startPrice: 2000,
-    currentBid: 3450,
-    endTime: Date.now() + 2 * 60 * 60 * 1000 + 14 * 60 * 1000,
-    bidsCount: 12,
-    status: 'live',
-    imageKey: 'post_002',
-    bids: [
-      { id: 'b1', bidder: '@rahul_shah', amount: 3350, time: '5m ago' },
-      { id: 'b2', bidder: '@meera_k', amount: 3250, time: '12m ago' },
-      { id: 'b3', bidder: '@arjun_p', amount: 3100, time: '28m ago' },
-      { id: 'b4', bidder: '@sneha_d', amount: 2900, time: '1h ago' },
-    ],
-  },
-  {
-    id: 'auc_002',
-    title: 'Limited Edition Sneakers',
-    seller: 'HypeVault',
-    verified: true,
-    startPrice: 4000,
-    currentBid: 5200,
-    endTime: Date.now() + 60 * 60 * 1000 + 5 * 60 * 1000,
-    bidsCount: 8,
-    status: 'live',
-    imageKey: 'auc_002',
-    bids: [
-      { id: 'b1', bidder: '@vishal_k', amount: 5050, time: '4m ago' },
-      { id: 'b2', bidder: '@meera_k', amount: 4900, time: '15m ago' },
-      { id: 'b3', bidder: '@arjun_p', amount: 4600, time: '40m ago' },
-      { id: 'b4', bidder: '@sneha_d', amount: 4300, time: '1h ago' },
-    ],
-  },
-  {
-    id: 'auc_003',
-    title: 'DSLR Camera Body',
-    seller: 'ShutterSnap',
-    verified: false,
-    startPrice: 12000,
-    currentBid: 0,
-    endTime: 0,
-    bidsCount: 0,
-    status: 'upcoming',
-    imageKey: 'auc_003',
-    startsLabel: 'Starts tomorrow, 7:00 PM',
-    bids: [],
-  },
-  {
-    id: 'auc_004',
-    title: 'Studio Monitor Speakers',
-    seller: 'AudioNest',
-    verified: true,
-    startPrice: 8000,
-    currentBid: 11500,
-    endTime: Date.now() - 2 * 60 * 60 * 1000,
-    bidsCount: 9,
-    status: 'ended',
-    imageKey: 'auc_004',
-    bids: [
-      { id: 'b1', bidder: '@rohan_m', amount: 11500, time: '2h ago' },
-      { id: 'b2', bidder: '@kavya_r', amount: 11200, time: '3h ago' },
-      { id: 'b3', bidder: '@rohan_m', amount: 10900, time: '3h ago' },
-    ],
-  },
-];
-
 function normalizeAuction(a: any): Auction {
   return {
     id: String(a.id),
@@ -122,18 +52,8 @@ function normalizeAuction(a: any): Auction {
   };
 }
 
-// Seed auctions bake `Date.now() + 2h` at module scope and get persisted on
-// first load — after an app restart their endTime is in the past and every
-// seed shows ENDED. Re-baseline seed ids that expired so demo stays alive.
-function rebaseSeedEndTime(a: Auction): Auction {
-  if (a.status !== 'live' || a.endTime <= 0 || a.endTime > Date.now()) return a;
-  if (!SEED_AUCTIONS.some((s) => s.id === a.id)) return a;
-  return { ...a, endTime: Date.now() + 2 * 60 * 60 * 1000 };
-}
-
 function auctionImage(key: string) {
-  const cached = productImages[key];
-  return cached ?? { uri: `https://picsum.photos/seed/${key}/600/600` };
+  return { uri: `https://picsum.photos/seed/${key}/600/600` };
 }
 
 function formatEndsIn(ms: number): string {
@@ -169,29 +89,59 @@ export default function AuctionsScreen() {
             if (Array.isArray(parsed)) {
               const byId = new Map<string, Auction>();
               parsed.forEach((a: any) => {
-                if (a && typeof a.id === 'string') byId.set(a.id, normalizeAuction(a));
-              });
-              SEED_AUCTIONS.forEach((s) => {
-                if (!byId.has(s.id)) byId.set(s.id, s);
+                // Real auctions only — drop legacy demo seeds (auc_001..004).
+                if (a && typeof a.id === 'string' && !/^auc_00[1-4]$/.test(a.id)) {
+                  byId.set(a.id, normalizeAuction(a));
+                }
               });
               merged = [...byId.values()];
             }
           } catch {
-            // corrupted data — fall back to seeds
+            // corrupted cache — start empty; server sync repopulates
           }
         }
-        if (!merged.length) merged = SEED_AUCTIONS;
-        merged = merged.map(rebaseSeedEndTime);
         setAuctions(merged);
         setLoaded(true);
       })
       .catch(() => {
-        setAuctions(SEED_AUCTIONS);
+        setAuctions([]);
         setLoaded(true);
       });
   }, []);
 
   useFocusEffect(loadAuctions);
+
+  // Merge the shared backend's live auctions (real multi-user bids) into the
+  // list once per focus — server rows win on id, local seeds fill the rest.
+  useFocusEffect(
+    useCallback(() => {
+      serverApi.getAuctions().then((res) => {
+        if (!res.ok || !res.data?.auctions?.length) return;
+        const serverRows = res.data.auctions
+          .filter((a: any) => a && a.id)
+          .map((a: any) => ({
+            id: String(a.id),
+            title: String(a.title ?? 'Auction'),
+            seller: String(a.seller ?? a.sellerName ?? a.sellerUsername ?? ''),
+            sellerUsername: String(a.sellerUsername ?? ''),
+            currentBid: Number(a.currentBid ?? a.startingBid ?? 0),
+            startPrice: Number(a.startPrice ?? a.startingBid ?? 0),
+            status: (a.status === 'live' || a.status === 'upcoming' || a.status === 'ended' ? a.status : 'live') as Auction['status'],
+            imageKey: String(a.imageKey ?? ''),
+            bidsCount: Number(a.bidsCount ?? a.bids ?? 0),
+            endTime: typeof a.endTime === 'string' ? Date.parse(a.endTime) : Number(a.endTime ?? Date.now() + 3600000),
+            verified: false,
+            bids: [],
+            winner: a.winner ? String(a.winner) : undefined,
+          }));
+        setAuctions((prev) => {
+          const known = new Set(prev.map((p) => p.id));
+          const fresh = serverRows.filter((sa) => !known.has(sa.id));
+          return fresh.length ? [...fresh, ...prev] : prev;
+        });
+      });
+    }, [])
+  );
 
   useEffect(() => {
     if (!loaded) return;

@@ -30,7 +30,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sessionStorage } from './sessionStorage';
 
 export const ADMIN_URL_KEY = '@susej_admin_url';
-export const DEFAULT_ADMIN_URL = 'http://127.0.0.1:3000';
+// Production default = the deployed admin panel. Dev devices that need the
+// local panel set AsyncStorage @susej_admin_url to http://<PC-IP>:3000 (or use
+// adb reverse tcp:3000 tcp:3000). The old 127.0.0.1:3000 default sent every
+// production sync to a dead localhost — seller applications never reached the
+// admin queue at all.
+// PROD BUILD: phones sync with the Railway admin (same Neon DB as Vercel,
+// plus CLOUDINARY_URL + dev-code OTP which Vercel still lacks).
+export const DEFAULT_ADMIN_URL = 'https://susej-admin-production.up.railway.app';
 export const APP_KEY_KEY = '@susej_app_key';
 export const DEFAULT_APP_KEY = 'dev-key';
 
@@ -85,14 +92,31 @@ export async function getSyncUser(): Promise<{
   }
 }
 
+/** Resolve the logged-in user's Bearer token for authenticated admin sync. */
+async function getSyncToken(): Promise<string | null> {
+  try {
+    const session = await sessionStorage.getSession();
+    return session?.accessToken && session.accessToken.startsWith('susej_')
+      ? session.accessToken
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 async function post(resource: string, data: unknown): Promise<boolean> {
   try {
-    const [base, key] = await Promise.all([getAdminUrl(), getAppKey()]);
+    const [base, key, token] = await Promise.all([getAdminUrl(), getAppKey(), getSyncToken()]);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-app-key': key,
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(`${base}/api/data/${resource}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-app-key': key },
+      headers,
       body: JSON.stringify(data),
       signal: controller.signal,
     });
@@ -105,12 +129,17 @@ async function post(resource: string, data: unknown): Promise<boolean> {
 
 async function patch(resource: string, id: string, data: unknown): Promise<boolean> {
   try {
-    const [base, key] = await Promise.all([getAdminUrl(), getAppKey()]);
+    const [base, key, token] = await Promise.all([getAdminUrl(), getAppKey(), getSyncToken()]);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-app-key': key,
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(`${base}/api/data/${resource}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-app-key': key },
+      headers,
       body: JSON.stringify({ id, data }),
       signal: controller.signal,
     });
@@ -133,21 +162,24 @@ export async function syncOrderStatus(
   return patch('orders', id, patchData);
 }
 
-/** Mirror a refund status decision (seller/platform) to the admin refunds queue. */
+/** DEPRECATED — do not call. Refund decisions settle through
+ *  serverApi.respondRefund (PATCH /api/app/orders/[id] {refundDecision},
+ *  seller-only, idempotent money legs). This patched a duplicate mirror row
+ *  and moved no money. Kept as a no-op shell so old call sites fail safe. */
 export async function syncRefundStatus(
-  refundId: string,
-  status: string,
-  note?: string
+  _refundId: string,
+  _status: string,
+  _note?: string
 ): Promise<boolean> {
-  return patch('refunds', refundId, {
-    status,
-    respondedAt: iso(),
-    ...(note ? { note } : {}),
-  });
+  return false;
 }
 
-/** Mirror a refund request to the admin DB (admin refunds queue). */
-export async function syncRefundRequest(refund: {
+/** DEPRECATED — do not call. Refund requests are created server-side by
+ *  serverApi.updateOrder({ refundReason }) (single writer, canonical row with
+ *  seller link). This POSTed a SECOND duplicate row per request (local
+ *  ref_ id, no seller, client-supplied amount). Kept as a no-op shell so old
+ *  call sites fail safe. */
+export async function syncRefundRequest(_refund: {
   id: string;
   orderId: string;
   reason: string;
@@ -155,18 +187,7 @@ export async function syncRefundRequest(refund: {
   requestedAt: number;
   amount?: number;
 }): Promise<boolean> {
-  const user = await getSyncUser();
-  return post('refunds', {
-    id: refund.id,
-    orderRef: refund.orderId,
-    buyerName: user?.name ?? 'App User',
-    sellerName: 'App Seller',
-    reason: refund.reason,
-    amount: refund.amount ?? 0,
-    status: refund.status,
-    requestedAt: iso(refund.requestedAt),
-    respondedAt: null,
-  });
+  return false;
 }
 
 /** Mirror a freshly placed order to the admin DB (Order model shape). */
@@ -184,9 +205,12 @@ export async function syncOrder(order: {
   paymentMethod?: string;
 }): Promise<boolean> {
   const user = await getSyncUser();
+  const buyerName = order.buyerName ?? user?.name;
+  // Skip rather than invent an identity for the shared DB.
+  if (!buyerName) return false;
   return post('orders', {
     id: order.id,
-    buyerName: order.buyerName ?? user?.name ?? 'App Buyer',
+    buyerName,
     sellerName: order.sellerName,
     amount: order.chargedTotal ?? order.total,
     status: order.status,
@@ -199,7 +223,9 @@ export async function syncOrder(order: {
     actualDelivery: '',
     shippingAddress: order.address ?? '',
     paymentMethod: order.paymentMethod ?? 'wallet',
-    paymentStatus: 'paid',
+    // Industry-standard: COD is cash-on-DELIVERY — never 'paid' at placement.
+    // Marking every mirror paid corrupted the admin finance view.
+    paymentStatus: /cash|cod/i.test(order.paymentMethod ?? '') ? 'pending' : 'paid',
     createdAt: iso(order.placedAt),
     deliveryLog: [],
   });
@@ -210,32 +236,67 @@ export async function syncSellerApplicant(applicant: {
   username?: string;
   name: string;
   businessName: string;
+  /** Shop main category - one per shop (admin sees + corrects it). */
+  category?: string;
   email?: string;
   phone?: string;
   docs?: string[];
+  /** Store logo / seller avatar (uploaded image URL from the admin panel). */
+  logo?: string;
+  /** REAL uploaded verification documents (id card, selfie with ID, ...). */
+  documents?: Array<{ type: string; label: string; fileName: string; url: string }>;
+  /** Mandatory physical store location picked on the live map. */
+  storeLat?: number | null;
+  storeLng?: number | null;
+  storeAddress?: string | null;
+  /** Business tax identity (business sellers only). taxId reaches the admin
+   *  Seller row; pan/bankAccount ride along until Seller columns land. */
+  taxId?: string;
+  pan?: string;
+  bankAccount?: string;
+  /** CKYC identity binding — shown on the admin seller detail Identity card. */
+  idType?: string;
+  idNumber?: string;
+  nameOnId?: string;
+  dob?: string;
+  selfieUrl?: string;
 }): Promise<boolean> {
   const user = await getSyncUser();
   return post('sellers', {
     id: `app_${applicant.username ?? Date.now()}`,
     businessName: applicant.businessName,
     ownerName: applicant.name,
-    logo: '',
+    logo: applicant.logo ?? '',
     email: applicant.email ?? user?.email ?? '',
     phone: applicant.phone ?? user?.phone ?? '',
     address: '',
-    taxId: '',
+    category: applicant.category ?? '',
+    storeLat: typeof applicant.storeLat === 'number' ? applicant.storeLat : null,
+    storeLng: typeof applicant.storeLng === 'number' ? applicant.storeLng : null,
+    storeAddress: applicant.storeAddress ?? '',
+    taxId: applicant.taxId ?? '',
+    pan: applicant.pan ?? '',
+    bankAccount: applicant.bankAccount ?? '',
+    idType: applicant.idType ?? '',
+    idNumber: applicant.idNumber ?? '',
+    nameOnId: applicant.nameOnId ?? '',
+    dob: applicant.dob ?? '',
+    selfieUrl: applicant.selfieUrl ?? '',
     kycStatus: 'pending',
     gstStatus: 'pending',
     score: 0,
     productsCount: 0,
     joinedAt: iso(),
     submittedAt: iso(),
-    documents: (applicant.docs ?? []).map((label, i) => ({
+    // REAL documents only — every row carries the URL of a file actually
+    // uploaded to the admin panel. Doc-less applications are rejected in the
+    // app BEFORE this mirror runs, so no fabricated pdf rows here.
+    documents: (applicant.documents ?? []).map((d, i) => ({
       id: `doc_app_${Date.now()}_${i}`,
-      type: 'additional',
-      label,
-      fileName: `${label.toLowerCase().replace(/\s+/g, '_')}.pdf`,
-      url: '',
+      type: d.type,
+      label: d.label,
+      fileName: d.fileName,
+      url: d.url,
       uploadedAt: iso(),
       verified: false,
     })),
@@ -253,9 +314,11 @@ export async function syncTicket(ticket: {
   messageText?: string;
 }): Promise<boolean> {
   const user = await getSyncUser();
+  // Tickets need a real requester — skip when identity is unknown.
+  if (!user?.name) return false;
   const ok = await post('tickets', {
     id: ticket.id,
-    userName: user?.name ?? 'App User',
+    userName: user.name,
     subject: ticket.subject,
     priority: ticket.priority,
     status: ticket.status,
@@ -265,7 +328,7 @@ export async function syncTicket(ticket: {
   if (ok && ticket.messageText) {
     await post('messages', {
       threadId: ticket.id,
-      sender: user?.name ?? 'App User',
+      sender: user.name,
       senderRole: 'user',
       body: ticket.messageText,
       createdAt: iso(),
@@ -274,27 +337,43 @@ export async function syncTicket(ticket: {
   return ok;
 }
 
-/** Mirror a withdrawal payout request to the admin queue. */
-export async function syncWithdrawal(req: {
-  id: string;
-  amount: number;
-  status: string;
-  requestedAt: number;
-}): Promise<boolean> {
-  const user = await getSyncUser();
-  return post('withdrawals', {
-    id: req.id,
-    userName: user?.name ?? 'App User',
-    method: 'bank',
-    amount: req.amount,
-    status: req.status,
-    requestedAt: iso(req.requestedAt),
-    respondedAt: null,
-  });
+/**
+ * Poll payout verdicts made on the admin desk (approved/rejected/completed)
+ * so the app wallet reflects them without a manual refresh. Uses the app's
+ * Bearer token; the server maps rows to the caller's identity so a seller
+ * only ever receives their own payout records.
+ *
+ * (Payout SUBMISSION is not mirrored here anymore — it is a single
+ * transactional server call via serverApi.requestPayout.)
+ */
+export async function getWithdrawalStatuses(): Promise<
+  { id: string; amount: number; status: string; requestedAt: string; respondedAt: string | null }[] | null
+> {
+  try {
+    const [base, key, token] = await Promise.all([getAdminUrl(), getAppKey(), getSyncToken()]);
+    if (!token) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const headers: Record<string, string> = { 'x-app-key': key };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${base}/api/app/withdrawals`, { headers, signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const json: any = await res.json().catch(() => null);
+    return Array.isArray(json?.withdrawals) ? json.withdrawals : null;
+  } catch {
+    return null; // offline / server down — local state stays as-is
+  }
 }
 
+
 /** Mirror a promotion purchase so it appears in the admin campaign queue. */
-export async function syncPromotion(promo: {
+/** DEPRECATED — do not call. Campaign purchases go through
+ *  serverApi.purchasePromotion (atomic debit + ACTIVE placement, server
+ *  price, idempotent on checkoutRef). This POSTed a client-priced ACTIVE row
+ *  with no debit behind it (free-mint hole) and stranded money whenever it
+ *  failed after a client debit. Kept as a no-op shell so old call sites fail safe. */
+export async function syncPromotion(_promo: {
   id: string;
   kind: string;
   packageName: string;
@@ -305,24 +384,6 @@ export async function syncPromotion(promo: {
   postTitle?: string;
   createdAt?: number;
 }): Promise<boolean> {
-  const user = await getSyncUser();
-  return post('promotions', {
-    id: promo.id,
-    kind: promo.kind,
-    packageName: promo.packageName,
-    amountPaid: promo.price,
-    currency: 'INR',
-    durationDays: promo.days,
-    sellerId: promo.sellerUsername ?? user?.username ?? 'app_user',
-    sellerName: user?.name ?? promo.sellerUsername ?? 'App User',
-    postId: promo.postId,
-    postTitle: promo.postTitle,
-    provider: 'app',
-    checkoutRef: `app_${promo.id}`,
-    status: 'active',
-    isPinned: true,
-    startsAt: iso(promo.createdAt),
-    endsAt: iso((promo.createdAt ?? Date.now()) + promo.days * 86400000),
-    createdAt: iso(promo.createdAt),
-  });
+  void _promo;
+  return false;
 }

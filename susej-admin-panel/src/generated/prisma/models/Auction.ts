@@ -29,11 +29,13 @@ export type AggregateAuction = {
 export type AuctionAvgAggregateOutputType = {
   currentBid: number | null
   bids: number | null
+  startPrice: number | null
 }
 
 export type AuctionSumAggregateOutputType = {
   currentBid: number | null
   bids: number | null
+  startPrice: number | null
 }
 
 export type AuctionMinAggregateOutputType = {
@@ -45,6 +47,9 @@ export type AuctionMinAggregateOutputType = {
   bids: number | null
   sellerName: string | null
   sellerUsername: string | null
+  startPrice: number | null
+  imageKey: string | null
+  startsAt: Date | null
 }
 
 export type AuctionMaxAggregateOutputType = {
@@ -56,6 +61,9 @@ export type AuctionMaxAggregateOutputType = {
   bids: number | null
   sellerName: string | null
   sellerUsername: string | null
+  startPrice: number | null
+  imageKey: string | null
+  startsAt: Date | null
 }
 
 export type AuctionCountAggregateOutputType = {
@@ -67,6 +75,9 @@ export type AuctionCountAggregateOutputType = {
   bids: number
   sellerName: number
   sellerUsername: number
+  startPrice: number
+  imageKey: number
+  startsAt: number
   _all: number
 }
 
@@ -74,11 +85,13 @@ export type AuctionCountAggregateOutputType = {
 export type AuctionAvgAggregateInputType = {
   currentBid?: true
   bids?: true
+  startPrice?: true
 }
 
 export type AuctionSumAggregateInputType = {
   currentBid?: true
   bids?: true
+  startPrice?: true
 }
 
 export type AuctionMinAggregateInputType = {
@@ -90,6 +103,9 @@ export type AuctionMinAggregateInputType = {
   bids?: true
   sellerName?: true
   sellerUsername?: true
+  startPrice?: true
+  imageKey?: true
+  startsAt?: true
 }
 
 export type AuctionMaxAggregateInputType = {
@@ -101,6 +117,9 @@ export type AuctionMaxAggregateInputType = {
   bids?: true
   sellerName?: true
   sellerUsername?: true
+  startPrice?: true
+  imageKey?: true
+  startsAt?: true
 }
 
 export type AuctionCountAggregateInputType = {
@@ -112,6 +131,9 @@ export type AuctionCountAggregateInputType = {
   bids?: true
   sellerName?: true
   sellerUsername?: true
+  startPrice?: true
+  imageKey?: true
+  startsAt?: true
   _all?: true
 }
 
@@ -210,6 +232,9 @@ export type AuctionGroupByOutputType = {
   bids: number
   sellerName: string
   sellerUsername: string
+  startPrice: number | null
+  imageKey: string | null
+  startsAt: Date | null
   _count: AuctionCountAggregateOutputType | null
   _avg: AuctionAvgAggregateOutputType | null
   _sum: AuctionSumAggregateOutputType | null
@@ -244,6 +269,9 @@ export type AuctionWhereInput = {
   bids?: Prisma.IntFilter<"Auction"> | number
   sellerName?: Prisma.StringFilter<"Auction"> | string
   sellerUsername?: Prisma.StringFilter<"Auction"> | string
+  startPrice?: Prisma.FloatNullableFilter<"Auction"> | number | null
+  imageKey?: Prisma.StringNullableFilter<"Auction"> | string | null
+  startsAt?: Prisma.DateTimeNullableFilter<"Auction"> | Date | string | null
 }
 
 export type AuctionOrderByWithRelationInput = {
@@ -255,6 +283,9 @@ export type AuctionOrderByWithRelationInput = {
   bids?: Prisma.SortOrder
   sellerName?: Prisma.SortOrder
   sellerUsername?: Prisma.SortOrder
+  startPrice?: Prisma.SortOrderInput | Prisma.SortOrder
+  imageKey?: Prisma.SortOrderInput | Prisma.SortOrder
+  startsAt?: Prisma.SortOrderInput | Prisma.SortOrder
 }
 
 export type AuctionWhereUniqueInput = Prisma.AtLeast<{
@@ -269,6 +300,9 @@ export type AuctionWhereUniqueInput = Prisma.AtLeast<{
   bids?: Prisma.IntFilter<"Auction"> | number
   sellerName?: Prisma.StringFilter<"Auction"> | string
   sellerUsername?: Prisma.StringFilter<"Auction"> | string
+  startPrice?: Prisma.FloatNullableFilter<"Auction"> | number | null
+  imageKey?: Prisma.StringNullableFilter<"Auction"> | string | null
+  startsAt?: Prisma.DateTimeNullableFilter<"Auction"> | Date | string | null
 }, "id">
 
 export type AuctionOrderByWithAggregationInput = {
@@ -280,6 +314,9 @@ export type AuctionOrderByWithAggregationInput = {
   bids?: Prisma.SortOrder
   sellerName?: Prisma.SortOrder
   sellerUsername?: Prisma.SortOrder
+  startPrice?: Prisma.SortOrderInput | Prisma.SortOrder
+  imageKey?: Prisma.SortOrderInput | Prisma.SortOrder
+  startsAt?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.AuctionCountOrderByAggregateInput
   _avg?: Prisma.AuctionAvgOrderByAggregateInput
   _max?: Prisma.AuctionMaxOrderByAggregateInput
@@ -299,6 +336,9 @@ export type AuctionScalarWhereWithAggregatesInput = {
   bids?: Prisma.IntWithAggregatesFilter<"Auction"> | number
   sellerName?: Prisma.StringWithAggregatesFilter<"Auction"> | string
   sellerUsername?: Prisma.StringWithAggregatesFilter<"Auction"> | string
+  startPrice?: Prisma.FloatNullableWithAggregatesFilter<"Auction"> | number | null
+  imageKey?: Prisma.StringNullableWithAggregatesFilter<"Auction"> | string | null
+  startsAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Auction"> | Date | string | null
 }
 
 export type AuctionCreateInput = {
@@ -310,6 +350,9 @@ export type AuctionCreateInput = {
   bids: number
   sellerName: string
   sellerUsername: string
+  startPrice?: number | null
+  imageKey?: string | null
+  startsAt?: Date | string | null
 }
 
 export type AuctionUncheckedCreateInput = {
@@ -321,6 +364,9 @@ export type AuctionUncheckedCreateInput = {
   bids: number
   sellerName: string
   sellerUsername: string
+  startPrice?: number | null
+  imageKey?: string | null
+  startsAt?: Date | string | null
 }
 
 export type AuctionUpdateInput = {
@@ -332,6 +378,9 @@ export type AuctionUpdateInput = {
   bids?: Prisma.IntFieldUpdateOperationsInput | number
   sellerName?: Prisma.StringFieldUpdateOperationsInput | string
   sellerUsername?: Prisma.StringFieldUpdateOperationsInput | string
+  startPrice?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  imageKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  startsAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type AuctionUncheckedUpdateInput = {
@@ -343,6 +392,9 @@ export type AuctionUncheckedUpdateInput = {
   bids?: Prisma.IntFieldUpdateOperationsInput | number
   sellerName?: Prisma.StringFieldUpdateOperationsInput | string
   sellerUsername?: Prisma.StringFieldUpdateOperationsInput | string
+  startPrice?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  imageKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  startsAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type AuctionCreateManyInput = {
@@ -354,6 +406,9 @@ export type AuctionCreateManyInput = {
   bids: number
   sellerName: string
   sellerUsername: string
+  startPrice?: number | null
+  imageKey?: string | null
+  startsAt?: Date | string | null
 }
 
 export type AuctionUpdateManyMutationInput = {
@@ -365,6 +420,9 @@ export type AuctionUpdateManyMutationInput = {
   bids?: Prisma.IntFieldUpdateOperationsInput | number
   sellerName?: Prisma.StringFieldUpdateOperationsInput | string
   sellerUsername?: Prisma.StringFieldUpdateOperationsInput | string
+  startPrice?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  imageKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  startsAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type AuctionUncheckedUpdateManyInput = {
@@ -376,6 +434,9 @@ export type AuctionUncheckedUpdateManyInput = {
   bids?: Prisma.IntFieldUpdateOperationsInput | number
   sellerName?: Prisma.StringFieldUpdateOperationsInput | string
   sellerUsername?: Prisma.StringFieldUpdateOperationsInput | string
+  startPrice?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  imageKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  startsAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type AuctionCountOrderByAggregateInput = {
@@ -387,11 +448,15 @@ export type AuctionCountOrderByAggregateInput = {
   bids?: Prisma.SortOrder
   sellerName?: Prisma.SortOrder
   sellerUsername?: Prisma.SortOrder
+  startPrice?: Prisma.SortOrder
+  imageKey?: Prisma.SortOrder
+  startsAt?: Prisma.SortOrder
 }
 
 export type AuctionAvgOrderByAggregateInput = {
   currentBid?: Prisma.SortOrder
   bids?: Prisma.SortOrder
+  startPrice?: Prisma.SortOrder
 }
 
 export type AuctionMaxOrderByAggregateInput = {
@@ -403,6 +468,9 @@ export type AuctionMaxOrderByAggregateInput = {
   bids?: Prisma.SortOrder
   sellerName?: Prisma.SortOrder
   sellerUsername?: Prisma.SortOrder
+  startPrice?: Prisma.SortOrder
+  imageKey?: Prisma.SortOrder
+  startsAt?: Prisma.SortOrder
 }
 
 export type AuctionMinOrderByAggregateInput = {
@@ -414,11 +482,15 @@ export type AuctionMinOrderByAggregateInput = {
   bids?: Prisma.SortOrder
   sellerName?: Prisma.SortOrder
   sellerUsername?: Prisma.SortOrder
+  startPrice?: Prisma.SortOrder
+  imageKey?: Prisma.SortOrder
+  startsAt?: Prisma.SortOrder
 }
 
 export type AuctionSumOrderByAggregateInput = {
   currentBid?: Prisma.SortOrder
   bids?: Prisma.SortOrder
+  startPrice?: Prisma.SortOrder
 }
 
 
@@ -432,6 +504,9 @@ export type AuctionSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   bids?: boolean
   sellerName?: boolean
   sellerUsername?: boolean
+  startPrice?: boolean
+  imageKey?: boolean
+  startsAt?: boolean
 }, ExtArgs["result"]["auction"]>
 
 export type AuctionSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -443,6 +518,9 @@ export type AuctionSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Exten
   bids?: boolean
   sellerName?: boolean
   sellerUsername?: boolean
+  startPrice?: boolean
+  imageKey?: boolean
+  startsAt?: boolean
 }, ExtArgs["result"]["auction"]>
 
 export type AuctionSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -454,6 +532,9 @@ export type AuctionSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Exten
   bids?: boolean
   sellerName?: boolean
   sellerUsername?: boolean
+  startPrice?: boolean
+  imageKey?: boolean
+  startsAt?: boolean
 }, ExtArgs["result"]["auction"]>
 
 export type AuctionSelectScalar = {
@@ -465,9 +546,12 @@ export type AuctionSelectScalar = {
   bids?: boolean
   sellerName?: boolean
   sellerUsername?: boolean
+  startPrice?: boolean
+  imageKey?: boolean
+  startsAt?: boolean
 }
 
-export type AuctionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "status" | "currentBid" | "endsAt" | "bids" | "sellerName" | "sellerUsername", ExtArgs["result"]["auction"]>
+export type AuctionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "status" | "currentBid" | "endsAt" | "bids" | "sellerName" | "sellerUsername" | "startPrice" | "imageKey" | "startsAt", ExtArgs["result"]["auction"]>
 
 export type $AuctionPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Auction"
@@ -481,6 +565,9 @@ export type $AuctionPayload<ExtArgs extends runtime.Types.Extensions.InternalArg
     bids: number
     sellerName: string
     sellerUsername: string
+    startPrice: number | null
+    imageKey: string | null
+    startsAt: Date | null
   }, ExtArgs["result"]["auction"]>
   composites: {}
 }
@@ -912,6 +999,9 @@ export interface AuctionFieldRefs {
   readonly bids: Prisma.FieldRef<"Auction", 'Int'>
   readonly sellerName: Prisma.FieldRef<"Auction", 'String'>
   readonly sellerUsername: Prisma.FieldRef<"Auction", 'String'>
+  readonly startPrice: Prisma.FieldRef<"Auction", 'Float'>
+  readonly imageKey: Prisma.FieldRef<"Auction", 'String'>
+  readonly startsAt: Prisma.FieldRef<"Auction", 'DateTime'>
 }
     
 
@@ -1122,6 +1212,7 @@ export type AuctionCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * The data used to create many Auctions.
    */
   data: Prisma.AuctionCreateManyInput | Prisma.AuctionCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1140,6 +1231,7 @@ export type AuctionCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many Auctions.
    */
   data: Prisma.AuctionCreateManyInput | Prisma.AuctionCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -10,8 +10,9 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { EmptyState } from "@/components/shared/empty-state";
 import { apiPatch, apiPost } from "@/lib/api-mutate";
-import { Save, Copy, Eye, EyeOff, Plus, Check, CheckCircle2 } from "lucide-react";
+import { Save, Copy, Plus, Check, CheckCircle2, KeyRound } from "lucide-react";
 
 interface AppSettingRow {
   key: string;
@@ -25,6 +26,32 @@ async function persistSetting(key: string, value: unknown) {
     // key may not exist yet - create it
     await apiPost("app-settings", { key, value });
   }
+}
+
+// Loads every saved app-settings row so tabs hydrate real values instead of
+// useState defaults (same pattern as the apiKeys tab).
+function useSavedSettings(): Record<string, unknown> {
+  const [saved, setSaved] = useState<Record<string, unknown>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/data/app-settings", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((body) => {
+        if (cancelled) return;
+        const next: Record<string, unknown> = {};
+        for (const row of (body.rows as AppSettingRow[] | undefined) ?? []) {
+          next[row.key] = row.value;
+        }
+        setSaved(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return saved;
 }
 
 function SaveChangesButton({ onSave }: { onSave: () => Promise<void> }) {
@@ -81,15 +108,28 @@ const tabs = [
 ];
 
 function GeneralSettings() {
+  const saved = useSavedSettings();
   const [siteName, setSiteName] = useState("SUSEJ");
   const [tagline, setTagline] = useState("Social Commerce Marketplace");
   const [supportEmail, setSupportEmail] = useState("support@susej.com");
   const [language, setLanguage] = useState("en");
   const [timezone, setTimezone] = useState("utc");
-  const [currency, setCurrency] = useState("usd");
+  const [currency, setCurrency] = useState("inr");
   const [maintenance, setMaintenance] = useState(false);
   const [registrations, setRegistrations] = useState(true);
   const [guestCheckout, setGuestCheckout] = useState(true);
+
+  useEffect(() => {
+    if (typeof saved.siteName === "string") setSiteName(saved.siteName);
+    if (typeof saved.tagline === "string") setTagline(saved.tagline);
+    if (typeof saved.supportEmail === "string") setSupportEmail(saved.supportEmail);
+    if (typeof saved.defaultLanguage === "string") setLanguage(saved.defaultLanguage);
+    if (typeof saved.timezone === "string") setTimezone(saved.timezone);
+    if (typeof saved.currency === "string") setCurrency(saved.currency);
+    if (typeof saved.maintenanceMode === "boolean") setMaintenance(saved.maintenanceMode);
+    if (typeof saved.allowNewRegistrations === "boolean") setRegistrations(saved.allowNewRegistrations);
+    if (typeof saved.allowGuestCheckout === "boolean") setGuestCheckout(saved.allowGuestCheckout);
+  }, [saved]);
 
   async function save() {
     await Promise.all([
@@ -113,7 +153,7 @@ function GeneralSettings() {
         <div><Label>Support Email</Label><Input value={supportEmail} onChange={(e) => setSupportEmail(e.target.value)} /></div>
         <div><Label>Default Language</Label><Select options={[{ label: "English", value: "en" }, { label: "Hindi", value: "hi" }, { label: "Spanish", value: "es" }]} value={language} onChange={(e) => setLanguage(e.target.value)} /></div>
         <div><Label>Timezone</Label><Select options={[{ label: "UTC", value: "utc" }, { label: "IST", value: "ist" }, { label: "EST", value: "est" }]} value={timezone} onChange={(e) => setTimezone(e.target.value)} /></div>
-        <div><Label>Currency</Label><Select options={[{ label: "USD ($)", value: "usd" }, { label: "INR (₹)", value: "inr" }, { label: "EUR (€)", value: "eur" }]} value={currency} onChange={(e) => setCurrency(e.target.value)} /></div>
+        <div><Label>Currency (locked to INR — money formatting is INR-only)</Label><Select options={[{ label: "INR (₹)", value: "inr" }]} value={currency} onChange={(e) => setCurrency(e.target.value)} /></div>
       </div>
       <Separator />
       <div className="space-y-4">
@@ -127,11 +167,20 @@ function GeneralSettings() {
 }
 
 function SecuritySettings() {
+  const saved = useSavedSettings();
   const [timeoutMins, setTimeoutMins] = useState("60");
   const [maxAttempts, setMaxAttempts] = useState("5");
   const [require2fa, setRequire2fa] = useState(true);
   const [loginAlerts, setLoginAlerts] = useState(true);
   const [rateLimit, setRateLimit] = useState(true);
+
+  useEffect(() => {
+    if (typeof saved.sessionTimeout === "number") setTimeoutMins(String(saved.sessionTimeout));
+    if (typeof saved.maxLoginAttempts === "number") setMaxAttempts(String(saved.maxLoginAttempts));
+    if (typeof saved.require2faForAdmins === "boolean") setRequire2fa(saved.require2faForAdmins);
+    if (typeof saved.loginAlerts === "boolean") setLoginAlerts(saved.loginAlerts);
+    if (typeof saved.rateLimitApi === "boolean") setRateLimit(saved.rateLimitApi);
+  }, [saved]);
 
   async function save() {
     await Promise.all([
@@ -145,6 +194,9 @@ function SecuritySettings() {
 
   return (
     <div className="space-y-6">
+      <p className="rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-2.5 text-xs text-[#92400E]">
+        Recorded settings — session timeout, 2FA, login alerts and API rate limiting are saved but not enforced yet. Enforcement is on the security roadmap; do not rely on these toggles today.
+      </p>
       <div className="grid grid-cols-2 gap-4">
         <div><Label>Session Timeout (minutes)</Label><Input value={timeoutMins} onChange={(e) => setTimeoutMins(e.target.value)} type="number" /></div>
         <div><Label>Max Login Attempts</Label><Input value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} type="number" /></div>
@@ -160,6 +212,7 @@ function SecuritySettings() {
 }
 
 function EmailSettings() {
+  const saved = useSavedSettings();
   const [smtpHost, setSmtpHost] = useState("smtp.sendgrid.net");
   const [smtpPort, setSmtpPort] = useState("587");
   const [smtpUser, setSmtpUser] = useState("apikey");
@@ -167,6 +220,15 @@ function EmailSettings() {
   const [fromEmail, setFromEmail] = useState("noreply@susej.com");
   const [fromName, setFromName] = useState("SUSEJ");
   const [testEmailSent, setTestEmailSent] = useState(false);
+
+  useEffect(() => {
+    if (typeof saved.smtpHost === "string") setSmtpHost(saved.smtpHost);
+    if (typeof saved.smtpPort === "number") setSmtpPort(String(saved.smtpPort));
+    if (typeof saved.smtpUsername === "string") setSmtpUser(saved.smtpUsername);
+    if (typeof saved.smtpPassword === "string" && saved.smtpPassword.length > 0) setSmtpPass(saved.smtpPassword);
+    if (typeof saved.fromEmail === "string") setFromEmail(saved.fromEmail);
+    if (typeof saved.fromName === "string") setFromName(saved.fromName);
+  }, [saved]);
 
   async function save() {
     await Promise.all([
@@ -191,26 +253,36 @@ function EmailSettings() {
         <div><Label>From Name</Label><Input value={fromName} onChange={(e) => setFromName(e.target.value)} /></div>
       </div>
       <Separator />
-      <h3 className="text-lg font-semibold text-[#18181B] ">Test Email</h3>
+      <h3 className="text-lg font-semibold text-[#18181B] ">Test Email (save-only — no SMTP send yet)</h3>
       <div className="flex items-end gap-4">
         <div className="flex-1"><Label>Send Test To</Label><Input placeholder="admin@susej.com" /></div>
         <Button variant="secondary" onClick={async () => {
           await save();
           setTestEmailSent(true);
-        }}>Send Test</Button>
+        }}>Save Config</Button>
       </div>
-      {testEmailSent && <p className="text-sm text-[#16A34A]">Test email configuration saved. (SMTP delivery is simulated in demo.)</p>}
+      {testEmailSent && <p className="text-sm text-[#16A34A]">SMTP settings saved. No test email was sent — wire an SMTP provider to enable delivery.</p>}
       <SaveChangesButton onSave={save} />
     </div>
   );
 }
 
 function StorageSettings() {
+  const saved = useSavedSettings();
   const [maxSize, setMaxSize] = useState("10");
   const [quality, setQuality] = useState("80");
   const [cdnUrl, setCdnUrl] = useState("https://cdn.susej.com");
   const [fileTypes, setFileTypes] = useState<string[]>(["jpg", "png", "gif", "webp", "pdf", "mp4"]);
   const allTypes = ["jpg", "png", "gif", "webp", "pdf", "mp4", "mp3", "zip", "docx", "xlsx", "svg"];
+
+  useEffect(() => {
+    if (typeof saved.maxUploadSize === "number") setMaxSize(String(saved.maxUploadSize));
+    if (typeof saved.imageQuality === "number") setQuality(String(saved.imageQuality));
+    if (typeof saved.cdnUrl === "string") setCdnUrl(saved.cdnUrl);
+    if (Array.isArray(saved.allowedFileTypes)) {
+      setFileTypes(saved.allowedFileTypes.filter((t): t is string => typeof t === "string"));
+    }
+  }, [saved]);
 
   function toggleType(type: string) {
     setFileTypes((prev) =>
@@ -262,17 +334,53 @@ function StorageSettings() {
   );
 }
 
+interface ApiKeyEntry {
+  name: string;
+  key: string;
+  lastUsed: string;
+  permissions?: string[];
+  expiresAt?: string | null;
+  createdAt?: string;
+}
+
+function isApiKeyEntry(value: unknown): value is ApiKeyEntry {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as ApiKeyEntry).name === "string" &&
+    typeof (value as ApiKeyEntry).key === "string" &&
+    typeof (value as ApiKeyEntry).lastUsed === "string"
+  );
+}
+
 function ApiKeysSettings() {
-  const [showKey, setShowKey] = useState(false);
-  const [keys, setKeys] = useState([
-    { name: "Production API Key", key: "susej_prod_xxxxx1234", lastUsed: "2 hours ago" },
-    { name: "Staging API Key", key: "susej_stag_xxxxx5678", lastUsed: "1 day ago" },
-  ]);
+  const [keys, setKeys] = useState<ApiKeyEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [keyName, setKeyName] = useState("");
   const [permissions, setPermissions] = useState<string[]>(["read"]);
   const [expiration, setExpiration] = useState("30 days");
   const [newKey, setNewKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/data/app-settings", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((body) => {
+        if (cancelled) return;
+        const row = (body.rows as AppSettingRow[] | undefined)?.find((r) => r.key === "apiKeys");
+        if (Array.isArray(row?.value)) {
+          setKeys(row.value.filter(isApiKeyEntry));
+        }
+        setLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const permissionOptions = [
     { label: "Read", value: "read" },
@@ -296,14 +404,21 @@ function ApiKeysSettings() {
   function handleCreate() {
     if (!keyName.trim()) return;
     const key = generateKey();
-    setKeys((prev) => [
-      { name: keyName.trim(), key, lastUsed: "Never" },
-      ...prev,
-    ]);
-    void persistSetting("apiKeys", [
-      { name: keyName.trim(), key, lastUsed: "Never" },
+    // Permissions + expiry are persisted (previously chosen in the dialog then
+    // silently dropped). Expiry is advisory until the API gateway enforces it.
+    const next: ApiKeyEntry[] = [
+      {
+        name: keyName.trim(),
+        key,
+        lastUsed: "Never",
+        permissions: [...permissions],
+        expiresAt: expiration === "never" || expiration === "Never" ? null : expiration,
+        createdAt: new Date().toISOString(),
+      },
       ...keys,
-    ]);
+    ];
+    setKeys(next);
+    void persistSetting("apiKeys", next);
     setNewKey(key);
     setKeyName("");
     setPermissions(["read"]);
@@ -318,22 +433,39 @@ function ApiKeysSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-3">
-        {keys.map((k, i) => (
-          <div key={i} className="flex items-center justify-between rounded-xl border border-[#E4E4E7] px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-[#18181B] ">{k.name}</p>
-              <div className="flex items-center gap-2">
-                <code className="text-xs text-gray-500">{showKey ? k.key : "••••••••••••••••"}</code>
-                <button onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff className="h-3.5 w-3.5 text-gray-400" /> : <Eye className="h-3.5 w-3.5 text-gray-400" />}</button>
-                <button onClick={() => navigator.clipboard.writeText(k.key)}><Copy className="h-3.5 w-3.5 text-gray-400" /></button>
+      <p className="rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-2.5 text-xs text-[#92400E]">
+        Keys are shown once at creation. The list below shows only the last 4 characters — there is no bulk reveal.
+        Permissions and expiry are stored with each key; expiry is advisory until the API gateway enforces it.
+      </p>
+      {keys.length > 0 && (
+        <div className="space-y-3">
+          {keys.map((k, i) => (
+            <div key={i} className="flex items-center justify-between rounded-xl border border-[#E4E4E7] px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-[#18181B] ">{k.name}</p>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs text-gray-500">••••{k.key.slice(-4)}</code>
+                  <button title="Copy full key" onClick={() => navigator.clipboard.writeText(k.key)}><Copy className="h-3.5 w-3.5 text-gray-400" /></button>
+                </div>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  Last used: {k.lastUsed}
+                  {(k.permissions?.length ?? 0) > 0 ? ` · ${k.permissions!.join(", ")}` : ""}
+                  {k.expiresAt ? ` · expires ${k.expiresAt}` : ""}
+                </p>
               </div>
-              <p className="mt-0.5 text-xs text-gray-400">Last used: {k.lastUsed}</p>
+              <Button variant="danger" size="sm" onClick={() => handleRevoke(k.name)}>Revoke</Button>
             </div>
-            <Button variant="danger" size="sm" onClick={() => handleRevoke(k.name)}>Revoke</Button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+      {loaded && keys.length === 0 && (
+        <EmptyState
+          icon={<KeyRound className="h-8 w-8 text-gray-300" />}
+          title="No API keys issued yet"
+          description="Generate an API key to grant programmatic access to the platform."
+          className="py-8"
+        />
+      )}
       <Button variant="secondary" onClick={() => setDialogOpen(true)}>
         <Plus className="h-4 w-4" /> Add New Key
       </Button>
@@ -411,8 +543,14 @@ function ApiKeysSettings() {
 }
 
 function MaintenanceSettings() {
+  const saved = useSavedSettings();
   const [enabled, setEnabled] = useState(false);
   const [message, setMessage] = useState("We are currently undergoing scheduled maintenance. Please check back shortly.");
+
+  useEffect(() => {
+    if (typeof saved.maintenanceMode === "boolean") setEnabled(saved.maintenanceMode);
+    if (typeof saved.maintenanceMessage === "string") setMessage(saved.maintenanceMessage);
+  }, [saved]);
 
   async function save() {
     await Promise.all([

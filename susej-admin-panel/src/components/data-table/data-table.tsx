@@ -37,6 +37,7 @@ interface DataTableProps<TData> {
   filename?: string;
   exportColumns?: { key: string; label: string }[];
   onRowClick?: (row: TData) => void;
+  onBulkDelete?: (selectedRows: TData[]) => Promise<void> | void;
 }
 
 export function DataTable<TData>({
@@ -52,6 +53,7 @@ export function DataTable<TData>({
   filename = "export",
   exportColumns,
   onRowClick,
+  onBulkDelete,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -92,6 +94,15 @@ export function DataTable<TData>({
     onGlobalFilterChange: setGlobalFilter,
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
+    // When searchKey is set, restrict global filter to that column only (industry: targeted search).
+    // Otherwise fall back to default fuzzy across all visible cells.
+    globalFilterFn: searchKey
+      ? (row, _columnId, filterValue) => {
+          const raw = row.getValue(searchKey);
+          if (raw == null) return false;
+          return String(raw).toLowerCase().includes(String(filterValue).toLowerCase());
+        }
+      : undefined,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -270,11 +281,21 @@ export function DataTable<TData>({
         </div>
       )}
 
-      {selectable && (
+      {selectable && onBulkDelete && (
         <BulkActionsBar
           selectedCount={selectedCount}
           actions={[
-            { label: "Delete Selected", onClick: () => {}, variant: "danger" },
+            {
+              label: "Delete Selected",
+              variant: "danger",
+              onClick: async () => {
+                const rows = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
+                if (!rows.length) return;
+                if (!confirm(`Soft-delete ${rows.length} selected row(s)? (use row menu hard-delete to permanently remove)`)) return;
+                await onBulkDelete(rows);
+                setRowSelection({});
+              },
+            },
           ]}
         />
       )}

@@ -1038,6 +1038,7 @@ export type WebhookEventCreateManyArgs<ExtArgs extends runtime.Types.Extensions.
    * The data used to create many WebhookEvents.
    */
   data: Prisma.WebhookEventCreateManyInput | Prisma.WebhookEventCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1056,6 +1057,7 @@ export type WebhookEventCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ex
    * The data used to create many WebhookEvents.
    */
   data: Prisma.WebhookEventCreateManyInput | Prisma.WebhookEventCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

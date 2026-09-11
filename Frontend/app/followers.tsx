@@ -3,9 +3,9 @@ import { View, Text, Image, FlatList, TouchableOpacity } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BackIcon, VerifiedIcon } from '../utils/icons';
+import { BackIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
-import { storyAvatars, sellerAvatars } from '../utils/productImages';
+import { resolveAvatar } from '../utils/productImages';
 import { useFollow } from '../contexts/FollowContext';
 
 function WalletPathIcon({ size = 20, color = colors.primary }: { size?: number; color?: string }) {
@@ -23,25 +23,11 @@ interface SeedUser {
   avatar: any;
 }
 
-const SEED_USERS: SeedUser[] = [
-  { username: 'elara_mod', name: 'Elara Moda', avatar: storyAvatars['1'] },
-  { username: 'arc_design', name: 'Arc Design Studio', avatar: storyAvatars['2'] },
-  { username: 'lux_gems', name: 'Lux Gems', avatar: storyAvatars['3'] },
-  { username: 'hype_vault', name: 'Hype Vault', avatar: storyAvatars['4'] },
-  { username: 'luxe', name: 'Luxe Thread Studio', avatar: sellerAvatars['post_001'] },
-  { username: 'techvault', name: 'TechVault', avatar: sellerAvatars['post_002'] },
-  { username: 'urbanjungle', name: 'Urban Jungle', avatar: { uri: 'https://randomuser.me/api/portraits/women/44.jpg' } },
-  { username: 'brushstyle', name: 'Brush & Style', avatar: { uri: 'https://randomuser.me/api/portraits/men/32.jpg' } },
-  { username: 'freshbasket', name: 'FreshBasket Pune', avatar: { uri: 'https://randomuser.me/api/portraits/women/68.jpg' } },
-  { username: 'shopnoir', name: 'Shop Noir', avatar: { uri: 'https://randomuser.me/api/portraits/men/51.jpg' } },
-];
-
-const userFor = (username: string): SeedUser =>
-  SEED_USERS.find((u) => u.username === username) ?? {
-    username,
-    name: username,
-    avatar: { uri: `https://picsum.photos/seed/${username}/200/200` },
-  };
+const userFor = (username: string): SeedUser => ({
+  username,
+  name: username,
+  avatar: resolveAvatar(username),
+});
 
 type Tab = 'followers' | 'following';
 
@@ -49,13 +35,17 @@ export default function FollowersScreen() {
   const params = useLocalSearchParams<{ tab?: string }>();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>(params.tab === 'following' ? 'following' : 'followers');
-  const { followedList, followedSellers, toggleFollow } = useFollow();
+  const { followedList, followedSellers, followersList, toggleFollow } = useFollow();
 
+  // REAL data only — both lists come from the server Follow table via FollowContext.
   const followingRows = useMemo(
     () => followedList.map((username) => userFor(username)),
     [followedList]
   );
-  const followersRows = useMemo(() => SEED_USERS, []);
+  const followersRows = useMemo(
+    () => followersList.map((username) => userFor(username)),
+    [followersList]
+  );
 
   const rows = tab === 'following' ? followingRows : followersRows;
 
@@ -116,7 +106,6 @@ export default function FollowersScreen() {
                   <Text className="font-inter-600" numberOfLines={1} style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: colors.textPrimary }}>
                     {item.name}
                   </Text>
-                  {item.username === 'luxe' || item.username === 'freshbasket' ? <VerifiedIcon size={14} /> : null}
                 </View>
                 <Text className="font-inter-400 mt-0.5" style={{ fontSize: 13, lineHeight: 16, color: colors.textSecondary }}>
                   @{item.username}

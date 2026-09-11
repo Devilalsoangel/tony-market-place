@@ -51,8 +51,8 @@ const lColumns = [
 ];
 
 export default function WalletPage() {
-  const { data: txns, loading: txnsLoading } = useDbResource<Transaction>("transactions");
-  const { data: ledger, loading: ledgerLoading } = useDbResource<LedgerEntry>("ledger");
+  const { data: txns, loading: txnsLoading } = useDbResource<Transaction>("transactions", { take: 500 });
+  const { data: ledger, loading: ledgerLoading } = useDbResource<LedgerEntry>("ledger", { take: 500 });
 
   const totals = useMemo(() => {
     const inTotal = (ledger ?? []).filter((l) => l.direction === "in").reduce((s, l) => s + l.amount, 0);

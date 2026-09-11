@@ -3,7 +3,6 @@ import {
   verifyPassword,
   signSession,
   signChallenge,
-  hashPassword,
   SESSION_COOKIE,
   SESSION_MAX_AGE,
   CHALLENGE_COOKIE,
@@ -13,7 +12,6 @@ import {
   getClientIp,
 } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
-import { mockAdmins } from "@/services/mock-data";
 import type { PrismaClient } from "@/generated/prisma/client";
 
 type AdminLike = {
@@ -70,31 +68,19 @@ export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
   const prisma = await getPrisma();
 
-  let db: AdminLike | null = null;
-  if (prisma) {
-    try {
-      db = await prisma.admin.findUnique({ where: { loginId } });
-    } catch {
-      db = null;
-    }
+  // FAIL CLOSED: no DB connection means no login — no mock credential fallback.
+  if (!prisma) {
+    return NextResponse.json(
+      { error: "Authentication service unavailable. The database is unreachable." },
+      { status: 503 }
+    );
   }
-  if (!db) {
-    const mock = mockAdmins.find((a) => a.loginId === loginId);
-    if (mock) {
-      db = {
-        id: mock.id,
-        name: mock.name,
-        loginId: mock.loginId,
-        email: mock.email ?? null,
-        avatar: mock.avatar ?? null,
-        role: mock.role,
-        status: mock.status,
-        passwordHash: mock.password ? hashPassword(mock.password) : "",
-        twoFactorEnabled: false,
-        lockedUntil: null,
-        failedAttempts: 0,
-      };
-    }
+
+  let db: AdminLike | null = null;
+  try {
+    db = await prisma.admin.findUnique({ where: { loginId } });
+  } catch {
+    db = null;
   }
 
   if (!db) {

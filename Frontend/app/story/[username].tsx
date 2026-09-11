@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef, type ReactElement } from 'react';
-import { View, Text, Image, TouchableOpacity, ActivityIndicator, Animated, StyleSheet } from 'react-native';
+import { useState, useEffect, useRef, useMemo, type ReactElement } from 'react';
+import { View, Text, Image, TouchableOpacity, ActivityIndicator, Animated, StyleSheet, Share } from 'react-native';
 import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CloseIcon, CheckIcon } from '../../utils/icons';
+import { CloseIcon, CheckIcon, ShareIcon } from '../../utils/icons';
 import { colors, shadows } from '../../utils/theme';
-import { STORY_TRAY, storyById, storyByRoute, storySlides } from '../../utils/storyTray';
-import { loadMyStory, storyAge, type MyStory } from '../../utils/myStory';
+import { parseTrayParam, trayParam, storiesByUsername, type AppStory, type StoryOverlay, type StoryProductRef } from '../../utils/storyTray';
+import { serverApi } from '../../utils/serverApi';
+import { loadMyStory, storyAge, clampStoryDuration, type MyStory } from '../../utils/myStory';
 
-const STORY_DURATION = 4000;
+const DEFAULT_SLIDE_MS = 5000;
 
 const imgSource = (img: any): any => {
   if (img === undefined || img === null) return null;
@@ -54,13 +55,6 @@ const HeartEyesGlyph = ({ color }: { color: string }) => (
   </Svg>
 );
 
-const EyeGlyph = ({ color }: { color: string }) => (
-  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-    <Path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" stroke={color} strokeWidth="2" fill="none" strokeLinejoin="round" />
-    <Circle cx="12" cy="12" r="3" fill={color} />
-  </Svg>
-);
-
 type GlyphProps = { color: string };
 type ReactionDef = { id: string; label: string; glyph: (p: GlyphProps) => ReactElement };
 
@@ -71,24 +65,6 @@ const REACTIONS: ReactionDef[] = [
   { id: 'love', label: 'Love', glyph: HeartEyesGlyph },
 ];
 
-// ─── Poll (slide 2) ──────────────────────────────────────────
-const POLL_OPTIONS = ['Yes', 'Maybe'];
-const POLL_SEED: Record<string, number> = { Yes: 60, Maybe: 40 };
-
-// ─── Viewers (last slide) ────────────────────────────────────
-const VIEWERS = [
-  { name: 'priya.shop', time: '2m ago' },
-  { name: 'rahul.designs', time: '4m ago' },
-  { name: 'mina_threads', time: '6m ago' },
-  { name: 'dev.crafts', time: '9m ago' },
-  { name: 'aisha.vintage', time: '12m ago' },
-  { name: 'karan_studio', time: '15m ago' },
-  { name: 'neha.picks', time: '18m ago' },
-  { name: 'tariq.goods', time: '22m ago' },
-];
-
-const avatarUri = (seed: string) => ({ uri: `https://picsum.photos/seed/${seed}/100/100` });
-
 export default function StoryViewerScreen() {
   const { username, tray, idx, mine } = useLocalSearchParams<{ username: string; tray?: string; idx?: string; mine?: string }>();
   const insets = useSafeAreaInsets();
@@ -96,10 +72,10 @@ export default function StoryViewerScreen() {
   const [ready, setReady] = useState(false);
   const [myStory, setMyStory] = useState<MyStory | null>(null);
   const [myStoryChecked, setMyStoryChecked] = useState(false);
+  // REAL stories for the viewed author — first-class /api/app/stories rows.
+  // Feed posts are never rendered as stories.
+  const [authorStories, setAuthorStories] = useState<AppStory[] | null>(null);
   const [reaction, setReaction] = useState<string | null>(null);
-  const [pollVotes, setPollVotes] = useState<Record<string, number>>({ ...POLL_SEED });
-  const [pollChoice, setPollChoice] = useState<string | null>(null);
-  const [viewersOpen, setViewersOpen] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
 
   // ── Own story (feed "Your Story" tile passes mine=1): render the SAVED image + caption
@@ -112,24 +88,43 @@ export default function StoryViewerScreen() {
       });
     } else {
       setMyStoryChecked(true);
+      serverApi.getStories().then((res) => {
+        const all = res.ok && res.data?.stories ? (res.data.stories as AppStory[]) : [];
+        setAuthorStories(storiesByUsername(all, String(username || '')));
+      });
     }
-  }, [isMine]);
+  }, [isMine, username]);
 
   // ── Tray navigation (IG-style): viewer walks the whole story tray ──
-  const trayIdsRaw = Array.isArray(tray) ? tray[0] : tray;
-  const trayIds = (trayIdsRaw || '').split(',').filter(Boolean);
-  // Current position: use the tid param if in the tray, else by route, else first unviewed
+  const trayIds = parseTrayParam(tray);
+  // Current position: use the idx param if in the tray, else first entry
   let trayIndex = trayIds.indexOf(username || '');
   if (trayIndex < 0) trayIndex = Math.max(0, parseInt(String(idx ?? '0'), 10) || 0);
-  // "Your Story" sits BEFORE the tray: next user is tray[0] (Aarav), no prev user
+  // "Your Story" sits BEFORE the tray: no prev user
   if (isMine) trayIndex = -1;
   if (trayIndex >= trayIds.length) trayIndex = 0;
-  const routeUser = storyByRoute(username || '');
-  const currentUser = (trayIds.length ? storyById(trayIds[trayIndex]) : undefined) ?? routeUser ?? STORY_TRAY[0];
-  const safeName = isMine ? 'Your Story' : currentUser.route;
-  const slides = isMine ? [myStory?.caption?.trim() || 'Your story'] : storySlides(currentUser);
+  const activeUsername = isMine ? '' : (trayIds.length ? trayIds[trayIndex] : username || '');
+  // Slides = the author's real posted stories, newest first. Each slide keeps
+  // its own display duration (author's choice at posting time).
+  const slides = useMemo<string[]>(
+    () =>
+      isMine
+        ? [myStory?.caption?.trim() || 'Your story']
+        : (authorStories ?? []).map((s) => s.caption?.trim() || 'New story'),
+    [isMine, myStory, authorStories]
+  );
+  const slideImages = useMemo(
+    () => (isMine ? [myStory?.image ?? ''] : (authorStories ?? []).map((s) => s.image)),
+    [isMine, myStory, authorStories]
+  );
   const STORY_COUNT = slides.length;
-  const avatar = isMine ? undefined : currentUser.avatar;
+  const currentStory = !isMine ? authorStories?.[index] : undefined;
+  // Marketplace markup: overlays + attached product (mine from local post, others from server)
+  const currentOverlays: StoryOverlay[] = (isMine ? myStory?.overlays : currentStory?.overlays) ?? [];
+  const currentProduct = isMine ? myStory?.productRef : (currentStory?.productRef ?? null);
+  const avatar = isMine ? undefined : slideImages[0] || undefined;
+  const hasStory = isMine ? !!myStory : (authorStories?.length ?? 0) > 0;
+  const safeName = isMine ? 'Your Story' : authorStories?.[0]?.creatorName || activeUsername || '';
 
   const imageSource = isMine ? (myStory ? { uri: myStory.image } : null) : imgSource(avatar);
 
@@ -137,11 +132,9 @@ export default function StoryViewerScreen() {
   const goToUser = (uidx: number) => {
     const next = trayIds[uidx];
     if (!next) return false;
-    const u = storyById(next);
-    if (!u) return false;
     router.replace({
-      pathname: `/story/${u.route}`,
-      params: { tray: trayIdsRaw || '', idx: String(uidx) },
+      pathname: `/story/${next}`,
+      params: { tray: trayParam(trayIds), idx: String(uidx) },
     });
     return true;
   };
@@ -162,33 +155,39 @@ export default function StoryViewerScreen() {
       closeViewer();
       return;
     }
+    // Non-mine views wait for the server stories fetch so an EMPTY result can
+    // never flash the "No story available" state while still loading.
+    if (!isMine && authorStories === null) return;
     const t = setTimeout(() => setReady(true), 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMine, myStoryChecked, myStory]);
+  }, [isMine, myStoryChecked, myStory, authorStories]);
 
-  // Auto-advance every 4s. Advance slides; on the LAST slide of a user,
-  // hop to the NEXT USER in the tray (IG behavior). No wrap on final user.
+  // Auto-advance per slide using the AUTHOR'S chosen display duration
+  // (own story: duration picked in create-story; server stories: author's
+  // stored durationMs). Advances slides; on the LAST slide of a user, the
+  // separate effect below hops to the next user in the tray (IG behavior).
   useEffect(() => {
     if (!ready || (isMine && !myStory)) return;
+    const dur = isMine
+      ? clampStoryDuration(myStory?.duration ?? DEFAULT_SLIDE_MS)
+      : clampStoryDuration(currentStory?.durationMs ?? DEFAULT_SLIDE_MS);
     progress.setValue(0);
     const anim = Animated.timing(progress, {
       toValue: 1,
-      duration: STORY_DURATION,
+      duration: dur,
       useNativeDriver: false,
     });
     anim.start();
-    const timer = setInterval(() => {
-      setIndex((i) => {
-        if (i < STORY_COUNT - 1) return i + 1;
-        return i;
-      });
-    }, STORY_DURATION);
+    const timer = setTimeout(() => {
+      setIndex((i) => (i < STORY_COUNT - 1 ? i + 1 : i));
+    }, dur);
     return () => {
       anim.stop();
-      clearInterval(timer);
+      clearTimeout(timer);
     };
-  }, [ready, index, progress, trayIndex, trayIdsRaw, STORY_COUNT]);
+    // currentStory.id restarts the timer whenever the slide's source changes
+  }, [ready, index, STORY_COUNT, isMine, myStory, currentStory?.id, progress]);
 
   // Last slide of a user: briefly pause, then walk to next user in the tray; close on final user
   useEffect(() => {
@@ -211,15 +210,6 @@ export default function StoryViewerScreen() {
     else closeViewer();
   };
 
-  const castVote = (option: string) => {
-    if (pollChoice) return;
-    setPollChoice(option);
-    setPollVotes((v) => ({ ...v, [option]: (v[option] ?? 0) + 1 }));
-  };
-
-  const totalVotes = POLL_OPTIONS.reduce((sum, o) => sum + (pollVotes[o] ?? 0), 0);
-  const pollPct = (option: string) => (totalVotes > 0 ? Math.round(((pollVotes[option] ?? 0) / totalVotes) * 100) : 0);
-
   if (!ready) {
     return (
       <View className="flex-1 items-center justify-center" style={{ backgroundColor: colors.inverseSurface }}>
@@ -228,11 +218,36 @@ export default function StoryViewerScreen() {
     );
   }
 
+  // Honest empty state: this seller has no real posts to show as a story
+  if (!isMine && !hasStory) {
+    return (
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: colors.inverseSurface, gap: 12 }}>
+        <Text className="text-white font-inter-600" style={{ fontSize: 15, lineHeight: 20 }}>
+          No story available
+        </Text>
+        <TouchableOpacity
+          onPress={closeViewer}
+          className="bg-primaryContainer rounded-full px-6 py-2.5"
+          accessibilityRole="button"
+          accessibilityLabel="Close story viewer"
+        >
+          <Text className="text-white font-inter-700" style={{ fontSize: 14, lineHeight: 16 }}>
+            Close
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1" style={{ backgroundColor: colors.inverseSurface }}>
-      {/* Story media */}
+      {/* Story media: the seller's REAL post image for this slide */}
       <Image
-        source={isMine ? { uri: myStory?.image ?? '' } : { uri: `https://picsum.photos/seed/${safeName}-${index}/400/700` }}
+        source={
+          isMine
+            ? { uri: myStory?.image ?? '' }
+            : { uri: String(slideImages[index]) }
+        }
         className="absolute inset-0 w-full h-full"
         resizeMode="cover"
       />
@@ -249,9 +264,10 @@ export default function StoryViewerScreen() {
         <View className="w-8 h-8 rounded-full bg-surfaceContainer overflow-hidden">
           <Image source={imageSource} className="w-8 h-8 rounded-full" />
         </View>
-        <Text className="flex-1 text-white font-inter-700" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }}>
+        <Text className="flex-1 text-white font-inter-700" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }} numberOfLines={1}>
           {safeName}
           {isMine && myStory ? ` · ${storyAge(myStory.time)}` : ''}
+          {!isMine && currentStory ? ` · ${storyAge(currentStory.createdAt)}` : ''}
         </Text>
         <TouchableOpacity onPress={() => router.back()}>
           <CloseIcon size={22} color={colors.surfaceContainerLowest} />
@@ -284,35 +300,29 @@ export default function StoryViewerScreen() {
         ))}
       </View>
 
-      {/* Viewers panel (last slide) */}
-      {isLast && viewersOpen && (
-        <View
-          className="absolute left-4 right-4"
-          style={{ bottom: 170, zIndex: 40, backgroundColor: colors.surfaceContainerLowest, borderRadius: 16, padding: 14, ...shadows.card }}
-        >
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="font-inter-700" style={{ fontSize: 14, lineHeight: 18, color: colors.textPrimary }}>
-              Viewers
-            </Text>
-            <TouchableOpacity onPress={() => setViewersOpen(false)} hitSlop={8}>
-              <CloseIcon size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          <View style={{ gap: 10 }}>
-            {VIEWERS.map((v) => (
-              <View key={v.name} className="flex-row items-center" style={{ gap: 10 }}>
-                <View className="w-9 h-9 rounded-full overflow-hidden" style={{ backgroundColor: colors.surfaceContainer }}>
-                  <Image source={avatarUri(v.name)} className="w-9 h-9 rounded-full" />
-                </View>
-                <Text className="flex-1 font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: colors.textPrimary }}>
-                  {v.name}
-                </Text>
-                <Text style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>{v.time}</Text>
-              </View>
+      {/* Marketplace text overlays at their zones */}
+      {(['top', 'middle', 'bottom'] as const).map((zone) => {
+        const items = currentOverlays.filter((o) => o.zone === zone);
+        if (!items.length) return null;
+        return (
+          <View
+            key={zone}
+            className="absolute left-0 right-0 items-center px-8"
+            pointerEvents="none"
+            style={{ zIndex: 25, ...(zone === 'top' ? { top: insets.top + 70 } : zone === 'bottom' ? { bottom: 250 } : { top: '45%' }) }}
+          >
+            {items.map((o, i) => (
+              <Text
+                key={`${i}-${o.zone}`}
+                className="text-white text-center font-inter-700"
+                style={{ fontSize: 22, lineHeight: 28, textShadowColor: 'rgba(0,0,0,0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 }}
+              >
+                {o.text}
+              </Text>
             ))}
           </View>
-        </View>
-      )}
+        );
+      })}
 
       {/* Caption + engagement stack */}
       <View className="absolute bottom-0 left-0 right-0 px-5" style={{ paddingBottom: 48, zIndex: 30 }}>
@@ -361,113 +371,90 @@ export default function StoryViewerScreen() {
           )}
         </View>
 
-        {/* Poll (slide 2) */}
-        {index === 1 && (
-          <View
-            style={{ backgroundColor: colors.surfaceContainerLowest, borderRadius: 16, padding: 14, marginBottom: 12 }}
+        {/* Attached product chip -> product detail */}
+        {currentProduct ? (
+          <TouchableOpacity
+            onPress={() => router.push(`/product/${currentProduct.id}`)}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel={`View attached product ${currentProduct.title}`}
+            className="flex-row items-center rounded-figma-16 overflow-hidden mb-3"
+            style={{ backgroundColor: 'rgba(255,255,255,0.94)' }}
           >
-            <View className="flex-row items-center justify-between">
-              <Text className="font-inter-700" style={{ fontSize: 14, lineHeight: 18, color: colors.textPrimary }}>
-                Quick poll
+            {currentProduct.image ? (
+              <Image source={{ uri: currentProduct.image }} style={{ width: 44, height: 44 }} resizeMode="cover" />
+            ) : null}
+            <View className="flex-1 px-3 py-2">
+              <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: colors.textPrimary }} numberOfLines={1}>
+                {currentProduct.title}
               </Text>
-              {pollChoice && (
-                <View className="flex-row items-center" style={{ gap: 4 }}>
-                  <CheckIcon size={12} color={colors.primary} />
-                  <Text style={{ fontSize: 12, lineHeight: 14, color: colors.textSecondary }}>You voted</Text>
-                </View>
-              )}
+              {typeof currentProduct.price === 'number' ? (
+                <Text className="font-inter-700" style={{ fontSize: 12, lineHeight: 16, color: colors.primary }}>
+                  Rs {currentProduct.price.toLocaleString('en-IN')}
+                </Text>
+              ) : null}
             </View>
-            <Text className="font-inter-500 mt-1 mb-3" style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
-              Do you like the sneak peek?
-            </Text>
-            <View style={{ gap: 8 }}>
-              {POLL_OPTIONS.map((opt) => {
-                const selected = pollChoice === opt;
-                const pct = pollPct(opt);
-                return (
-                  <TouchableOpacity
-                    key={opt}
-                    onPress={() => castVote(opt)}
-                    activeOpacity={0.8}
-                    style={{
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderColor: selected ? colors.primaryContainer : colors.outlineVariant,
-                      backgroundColor: selected ? colors.primaryBg : colors.surfaceContainerLow,
-                    }}
-                  >
-                    <View className="flex-row items-center" style={{ gap: 8 }}>
-                      <Text className="flex-1 font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: colors.textPrimary }}>
-                        {opt}
-                      </Text>
-                      {pollChoice && (
-                        <Text className="font-inter-700" style={{ fontSize: 13, lineHeight: 16, color: colors.textSecondary }}>
-                          {pct}%
-                        </Text>
-                      )}
-                      {selected && <CheckIcon size={16} color={colors.primaryContainer} />}
-                    </View>
-                    {pollChoice && (
-                      <View className="mt-2" style={{ height: 4, borderRadius: 2, backgroundColor: colors.surfaceContainer }}>
-                        <View
-                          style={{
-                            height: 4,
-                            borderRadius: 2,
-                            backgroundColor: selected ? colors.primaryContainer : colors.primaryFixedDim,
-                            width: `${pct}%`,
-                          }}
-                        />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        )}
+          </TouchableOpacity>
+        ) : null}
 
         {/* Caption */}
         <Text className="text-white font-inter-500" style={{ fontSize: 14, lineHeight: 20 }}>
           {slides[index]}
         </Text>
 
-        {/* Viewers row (last slide) */}
-        {isLast && (
-          <View className="flex-row items-center justify-between">
-            <TouchableOpacity
-              onPress={() => setViewersOpen((o) => !o)}
-              className="flex-row items-center"
-              activeOpacity={0.7}
-              style={{
-                marginTop: 12,
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                borderRadius: 999,
-                backgroundColor: colors.overlay,
-                gap: 6,
-                alignSelf: 'flex-start',
-              }}
-            >
-              <EyeGlyph color={colors.surfaceContainerLowest} />
-              <Text className="text-white font-inter-600" style={{ fontSize: 13, lineHeight: 16 }}>
-                Viewers 24
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {isLast && !isMine && (
+        {isLast && !isMine && activeUsername ? (
           <TouchableOpacity
             className="self-start bg-primaryContainer rounded-full px-6 py-2.5 mt-4"
-            onPress={() => router.push(`/seller/${safeName}`)}
+            onPress={() => router.push(`/seller/${activeUsername}`)}
           >
             <Text className="text-white font-inter-700" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }}>
               View profile
             </Text>
           </TouchableOpacity>
-        )}
+        ) : null}
+
+        {/* IG-style reply bar — opens a REAL DM thread with this seller */}
+        {!isMine && activeUsername ? (
+          <View className="flex-row items-center mt-4" style={{ gap: 10 }}>
+            <TouchableOpacity
+              className="flex-1 h-11 justify-center px-4 rounded-full border"
+              style={{ borderColor: 'rgba(255,255,255,0.6)', backgroundColor: colors.overlay }}
+              onPress={() =>
+                router.push({
+                  pathname: '/(tabs)/chat',
+                  params: {
+                    to: activeUsername,
+                    msg: `Replied to your story: "${slides[index] || ''}" - is it still available?`,
+                  },
+                })
+              }
+            >
+              <Text className="text-white font-inter-400" style={{ fontSize: 13, lineHeight: 16 }}>
+                Send message
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Like story"
+              onPress={() => setReaction((cur) => (cur === 'heart' ? null : 'heart'))}
+              className="w-11 h-11 items-center justify-center rounded-full"
+              style={{ backgroundColor: reaction === 'heart' ? colors.primaryContainer : colors.overlay }}
+            >
+              <HeartGlyph color={colors.surfaceContainerLowest} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Share story"
+              onPress={() =>
+                Share.share({ message: `Check out ${safeName}'s story on susej` }).catch(() => {})
+              }
+              className="w-11 h-11 items-center justify-center rounded-full"
+              style={{ backgroundColor: colors.overlay }}
+            >
+              <ShareIcon size={18} color={colors.surfaceContainerLowest} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     </View>
   );

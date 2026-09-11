@@ -11,7 +11,7 @@ import { useDbResource } from "@/hooks/use-db-resource";
 import { apiDelete } from "@/lib/api-mutate";
 import { formatDate } from "@/lib/utils";
 import { MessageSquareX, CheckCircle2 } from "lucide-react";
-import type { ReportedCommentRow } from "@/services/mock-data";
+import type { ReportedCommentRow } from "@/types/admin-rows";
 
 const column = createColumnHelper<ReportedCommentRow>();
 
@@ -46,7 +46,18 @@ export default function ReportedCommentsPage() {
     setItems(rows ?? []);
   }, [rows]);
 
-  async function remove(r: ReportedCommentRow) {
+  async function deleteComment(r: ReportedCommentRow) {
+    setItems((prev) => (prev ?? []).filter((x) => x.id !== r.id));
+    try {
+      await apiDelete("reported-comments", r.id);
+      refresh();
+    } catch (e) {
+      setItems(rows ?? []);
+      console.error(e);
+    }
+  }
+
+  async function dismissReport(r: ReportedCommentRow) {
     setItems((prev) => (prev ?? []).filter((x) => x.id !== r.id));
     try {
       await apiDelete("reported-comments", r.id);
@@ -79,7 +90,7 @@ export default function ReportedCommentsPage() {
         </CardHeader>
         <CardContent>
           <DataTable
-            columns={makeColumns(remove, remove)}
+            columns={makeColumns(deleteComment, dismissReport)}
             data={items ?? []}
             searchable
             searchKey="text"

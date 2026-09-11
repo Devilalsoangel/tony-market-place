@@ -1,20 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Share } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, ShareIcon, CheckIcon } from '../utils/icons';
-import { colors, formatPrice, shadows } from '../utils/theme';
+import { colors, shadows } from '../utils/theme';
+import { useAuth } from '../contexts/AuthContext';
 
-const REFERRALS_KEY = '@susej_referrals';
+const REFERRALS_KEY_BASE = '@susej_referrals';
 
 const REFER_CODE = 'SUSEJ100';
-
-const SEED_REFERRALS: Referral[] = [
-  { id: 'r1', name: 'Priya Sharma', date: 'Jul 31', reward: 100, status: 'paid' },
-  { id: 'r2', name: 'Arjun Kulkarni', date: 'Jul 27', reward: 100, status: 'pending' },
-];
 
 interface Referral {
   id: string;
@@ -27,7 +23,7 @@ interface Referral {
 const STEPS = [
   { title: 'Share your code', detail: 'Send SUSEJ100 to a friend on WhatsApp or anywhere else.' },
   { title: 'Friend joins & buys', detail: 'They sign up with susej and place their first order.' },
-  { title: 'You both get ₹100', detail: 'Your friend gets ₹100 off — and ₹100 lands in your wallet.' },
+  { title: 'Rewards are on the way', detail: 'Referral rewards are coming soon — your code is ready to share today.' },
 ];
 
 function GiftIcon({ size = 20, color = colors.primary }: { size?: number; color?: string }) {
@@ -56,49 +52,79 @@ function ChatIcon({ size = 18, color = colors.textPrimary }: { size?: number; co
 
 export default function ReferScreen() {
   const insets = useSafeAreaInsets();
+  const { user, tokenSeq } = useAuth();
+  const getKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${REFERRALS_KEY_BASE}:${u}` : REFERRALS_KEY_BASE;
+  }, [user?.username]);
   const [loaded, setLoaded] = useState(false);
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(REFERRALS_KEY)
-      .then((data) => {
+    let cancelled = false;
+    const key = getKey();
+    setLoaded(false);
+    const load = async () => {
+      try {
+        const data = await AsyncStorage.getItem(key);
+        if (cancelled) return;
         if (data) {
           try {
             const parsed = JSON.parse(data);
             if (Array.isArray(parsed)) {
-              setReferrals(parsed);
+              const real = (parsed as Referral[]).filter((r) => r && !/^r[12]$/.test(String(r.id)));
+              setReferrals(real);
               setLoaded(true);
               return;
             }
-          } catch {
-            // corrupted data — fall through to seed
+          } catch {}
+        }
+        if (key !== REFERRALS_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(REFERRALS_KEY_BASE);
+          if (!cancelled && legacy) {
+            try {
+              const parsed = JSON.parse(legacy);
+              if (Array.isArray(parsed)) {
+                const real = (parsed as Referral[]).filter((r) => r && !/^r[12]$/.test(String(r.id)));
+                if (real.length) {
+                  setReferrals(real);
+                  try { await AsyncStorage.setItem(key, JSON.stringify(real)); } catch {}
+                  setLoaded(true);
+                  return;
+                }
+              }
+            } catch {}
           }
         }
-        setReferrals(SEED_REFERRALS);
-        setLoaded(true);
-      })
-      .catch(() => {
-        setReferrals(SEED_REFERRALS);
-        setLoaded(true);
-      });
-  }, []);
+        if (!cancelled) { setReferrals([]); setLoaded(true); }
+      } catch { if (!cancelled) { setReferrals([]); setLoaded(true); } }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [getKey, tokenSeq]);
 
   useEffect(() => {
     if (!loaded) return;
-    AsyncStorage.setItem(REFERRALS_KEY, JSON.stringify(referrals)).catch(() => {});
-  }, [referrals, loaded]);
+    AsyncStorage.setItem(getKey(), JSON.stringify(referrals)).catch(() => {});
+  }, [referrals, loaded, getKey]);
 
-  const handleCopy = () => {
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // No clipboard dependency installed - share sheet is the real system action.
+  const handleShareCode = () => {
+    Share.share({ message: REFER_CODE })
+      .then((res) => {
+        if (res.action !== 'sharedAction' && res.action !== 'dismissedAction') return;
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {});
   };
 
   const handleShare = (channel: 'whatsapp' | 'generic') => {
     const message =
       channel === 'whatsapp'
-        ? `Join me on susej — India's social marketplace! Use my code ${REFER_CODE} and we both get ${formatPrice(100)}.`
-        : `Check out susej — shop, sell and socialise. Use my code ${REFER_CODE} to get ${formatPrice(100)} off your first order.`;
+        ? `Join me on susej — India's social marketplace! Use my code ${REFER_CODE}.`
+        : `Check out susej — shop, sell and socialise. Use my code ${REFER_CODE} when you sign up.`;
     Share.share({ message }).catch(() => {});
   };
 
@@ -120,10 +146,7 @@ export default function ReferScreen() {
           </Text>
         </View>
         <View className="items-end">
-          <Text className="font-inter-700" style={{ fontSize: 14, lineHeight: 18, color: colors.primary }}>
-            +{formatPrice(item.reward)}
-          </Text>
-          <View className="mt-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: paid ? colors.primaryContainer : colors.surfaceContainer }}>
+          <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: paid ? colors.primaryContainer : colors.surfaceContainer }}>
             <Text className="font-inter-600" style={{ fontSize: 10, lineHeight: 12, color: paid ? colors.onPrimary : colors.textTertiary }}>
               {paid ? 'Paid' : 'Pending'}
             </Text>
@@ -166,10 +189,10 @@ export default function ReferScreen() {
                   </Text>
                 </View>
                 <Text className="font-inter-700 mt-3" style={{ fontSize: 28, lineHeight: 36, letterSpacing: -0.5, color: colors.onPrimary }}>
-                  Give {formatPrice(100)}, get {formatPrice(100)}
+                  Invite friends to susej
                 </Text>
                 <Text className="font-inter-400 mt-1" style={{ fontSize: 13, lineHeight: 18, color: colors.onPrimary }}>
-                  When your friend makes their first purchase.
+                  Referral rewards coming soon.
                 </Text>
 
                 <View className="mt-5 flex-row items-center px-4 py-3" style={{ borderRadius: 16, backgroundColor: colors.surfaceContainerLowest }}>
@@ -185,21 +208,21 @@ export default function ReferScreen() {
                     <View className="flex-row items-center px-4 h-10" style={{ borderRadius: 999, backgroundColor: colors.primaryContainer }}>
                       <CheckIcon size={14} color={colors.onPrimary} />
                       <Text className="font-inter-600 ml-1.5" style={{ fontSize: 13, lineHeight: 16, color: colors.onPrimary }}>
-                        Copied ✓
+                        Shared
                       </Text>
                     </View>
                   ) : (
-                    <TouchableOpacity className="flex-row items-center px-4 h-10" style={{ borderRadius: 999, backgroundColor: colors.primary }} onPress={handleCopy}>
+                    <TouchableOpacity className="flex-row items-center px-4 h-10" style={{ borderRadius: 999, backgroundColor: colors.primary }} onPress={handleShareCode}>
                       <CopyIcon size={14} color={colors.onPrimary} />
                       <Text className="font-inter-600 ml-1.5" style={{ fontSize: 13, lineHeight: 16, color: colors.onPrimary }}>
-                        Copy
+                        Share
                       </Text>
                     </TouchableOpacity>
                   )}
                 </View>
 
                 <Text className="font-inter-400 mt-3" style={{ fontSize: 11, lineHeight: 14, color: colors.onPrimary }}>
-                  Reward lands in your susej wallet once your friend's order is delivered.
+                  Referral rewards are coming soon — sharing your code today gets you ready.
                 </Text>
               </View>
 
@@ -256,7 +279,7 @@ export default function ReferScreen() {
                 No referrals yet
               </Text>
               <Text className="font-inter-400 mt-1 text-center" style={{ fontSize: 14, lineHeight: 20, color: colors.textSecondary }}>
-                Share your code with friends and earn {formatPrice(100)} for every friend who joins.
+                Share your code with friends — referral rewards are coming soon.
               </Text>
             </View>
           }

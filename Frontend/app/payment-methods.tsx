@@ -5,7 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, CheckIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
-import { getWallet } from '../utils/walletStore';
+import { getWallet, syncWalletFromServer } from '../utils/walletStore';
+import { useAuth } from '../contexts/AuthContext';
 
 export interface PaymentMethod {
   id: string;
@@ -14,16 +15,39 @@ export interface PaymentMethod {
 }
 
 export const PAYMENT_KEY = '@susej_payment';
+export const PAYMENT_KEY_BASE = PAYMENT_KEY;
 
+async function getPaymentKey(): Promise<string> {
+  try {
+    const raw = await AsyncStorage.getItem('app_user');
+    if (raw) {
+      const u = JSON.parse(raw) as { username?: string };
+      const name = typeof u?.username === 'string' ? u.username.trim() : '';
+      if (name) return `${PAYMENT_KEY_BASE}:${name}`;
+    }
+  } catch {}
+  return PAYMENT_KEY_BASE;
+}
+
+// Industry-standard honesty: only offer rails the platform actually settles.
+// Server truth: wallet = atomic server debit; COD = settles on delivery.
+// UPI/Card have NO backend settlement path yet - offering them would be fake
+// rails, so they stay OUT until wired (UPI intent + KYC'd merchant ID).
 export const PAYMENT_METHODS: PaymentMethod[] = [
-  { id: 'upi', label: 'UPI', detail: 'sam@upi' },
-  { id: 'card', label: 'Visa', detail: '•••• 4242' },
   { id: 'cod', label: 'Cash on Delivery', detail: 'Pay at your doorstep' },
 ];
 
 export async function getSelectedPayment(): Promise<PaymentMethod | null> {
   try {
-    const raw = await AsyncStorage.getItem(PAYMENT_KEY);
+    const key = await getPaymentKey();
+    let raw = await AsyncStorage.getItem(key);
+    if (raw === null && key !== PAYMENT_KEY_BASE) {
+      const legacy = await AsyncStorage.getItem(PAYMENT_KEY_BASE);
+      if (legacy !== null) {
+        try { await AsyncStorage.setItem(key, legacy); } catch {}
+        raw = legacy;
+      }
+    }
     return raw ? (JSON.parse(raw) as PaymentMethod) : null;
   } catch {
     return null;
@@ -32,18 +56,27 @@ export async function getSelectedPayment(): Promise<PaymentMethod | null> {
 
 export default function PaymentMethodsScreen() {
   const insets = useSafeAreaInsets();
+  const { tokenSeq } = useAuth();
   const [methods, setMethods] = useState<PaymentMethod[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  // Bumped by Retry so the effect below genuinely re-runs (same-route
+  // router.replace does not reliably remount this screen).
+  const [retrySeq, setRetrySeq] = useState(0);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
+        // Server-synced first: the gate below must judge real money, and the
+        // row must display it — never a stale cache snapshot.
+        await syncWalletFromServer().catch(() => false);
         const [selected, wallet] = await Promise.all([getSelectedPayment(), getWallet()]);
         if (!active) return;
         // Wallet sits at the top with the live balance; the rest follow.
         const walletMethod: PaymentMethod = { id: 'wallet', label: 'Wallet', detail: `Balance ${formatPrice(wallet.balance)}` };
+        setWalletBalance(wallet.balance);
         setMethods([walletMethod, ...PAYMENT_METHODS]);
         setSelectedId(selected?.id ?? 'wallet');
       } catch {
@@ -53,16 +86,17 @@ export default function PaymentMethodsScreen() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [tokenSeq, retrySeq]);
 
   const selectMethod = useCallback((method: PaymentMethod) => {
-    if (method.id === 'wallet' && method.detail === 'Balance ₹0') {
+    // Numeric gate on the synced balance — never a formatted-string match.
+    if (method.id === 'wallet' && walletBalance <= 0) {
       Alert.alert('Empty wallet', 'Add money in the Wallet tab before paying with wallet.');
       return;
     }
-    AsyncStorage.setItem(PAYMENT_KEY, JSON.stringify(method)).catch(() => {});
+    void getPaymentKey().then((k) => AsyncStorage.setItem(k, JSON.stringify(method)).catch(() => {}));
     router.back();
-  }, []);
+  }, [walletBalance]);
 
   return (
     <View className="flex-1 bg-surface">
@@ -91,7 +125,11 @@ export default function PaymentMethodsScreen() {
           <TouchableOpacity
             className="px-6 py-3 rounded-full"
             style={{ backgroundColor: colors.primaryContainer }}
-            onPress={() => router.replace('/payment-methods')}
+            onPress={() => {
+              setLoadFailed(false);
+              setMethods(null);
+              setRetrySeq((s) => s + 1);
+            }}
           >
             <Text className="text-[14px] font-inter-600 text-white">Retry</Text>
           </TouchableOpacity>

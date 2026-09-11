@@ -2,6 +2,7 @@ import '../global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform, StyleSheet } from 'react-native';
 // react-native-web throws "Cannot manually set color scheme" unless darkMode flag is 'class'.
 // Expo's web bootstrap sets data-color-scheme; this flag makes manual scheme setting legal.
@@ -35,7 +36,7 @@ import { CommunityProvider } from '../contexts/CommunityContext';
 import { RecentlyViewedProvider } from '../contexts/RecentlyViewedContext';
 import { HashtagProvider } from '../contexts/HashtagContext';
 import { PromotionProvider } from '../contexts/PromotionContext';
-import { LeafletMapProvider } from '../components/LeafletMap';
+import { OfflineBanner } from '../components/OfflineBanner';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -81,6 +82,7 @@ export default function RootLayout() {
   }
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
       <AppearanceContext.Provider value={{ themeMode, setThemeMode }}>
       <AuthProvider>
@@ -95,11 +97,11 @@ export default function RootLayout() {
   <RecentlyViewedProvider>
   <HashtagProvider>
 <PromotionProvider>
-  <LeafletMapProvider>
 
+                        {/* Global offline strip — sits above every screen when device is offline */}
+                        <OfflineBanner />
                         <StatusBar style={themeMode === 'dark' ? 'light' : 'dark'} />
                         <Stack key={themeMode} screenOptions={{ headerShown: false }} />
-  </LeafletMapProvider>
 </PromotionProvider>
   </HashtagProvider>
   </RecentlyViewedProvider>
@@ -115,5 +117,6 @@ export default function RootLayout() {
     </AuthProvider>
       </AppearanceContext.Provider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

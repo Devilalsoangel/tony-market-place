@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
 
-const RECENTLY_VIEWED_KEY = '@susej_recently_viewed';
+const RECENTLY_VIEWED_KEY_BASE = '@susej_recently_viewed';
 const MAX_RECENTS = 12;
 
 export interface RecentlyViewedEntry {
@@ -19,33 +20,51 @@ const RecentlyViewedContext = createContext<RecentlyViewedContextType | null>(nu
 export function RecentlyViewedProvider({ children }: { children: React.ReactNode }) {
   const [recents, setRecents] = useState<RecentlyViewedEntry[]>([]);
   const loadedRef = useRef(false);
+  const { user } = useAuth();
+  const username = user?.username?.trim() ?? null;
+  const recentsKey = username ? `${RECENTLY_VIEWED_KEY_BASE}:${username}` : RECENTLY_VIEWED_KEY_BASE;
+  const prevKeyRef = useRef<string>(recentsKey);
 
-  // Load from AsyncStorage on mount
+  // Load per-user recents; race-safe with cancellation on key flip.
   useEffect(() => {
-    AsyncStorage.getItem(RECENTLY_VIEWED_KEY)
+    let cancelled = false;
+    const key = recentsKey;
+    loadedRef.current = false;
+    AsyncStorage.getItem(key)
       .then((data) => {
+        if (cancelled) return;
         if (data) {
           try {
             const parsed = JSON.parse(data) as RecentlyViewedEntry[];
             if (Array.isArray(parsed)) {
               setRecents(parsed.slice(0, MAX_RECENTS));
+            } else {
+              setRecents([]);
             }
           } catch {
-            // corrupted data — start fresh
+            if (!cancelled) setRecents([]);
           }
+        } else {
+          setRecents([]);
         }
         loadedRef.current = true;
       })
       .catch(() => {
+        if (!cancelled) setRecents([]);
         loadedRef.current = true;
       });
-  }, []);
+    prevKeyRef.current = key;
+    return () => { cancelled = true; };
+  }, [recentsKey]);
 
-  // Persist whenever recents change (skip the pre-load empty state)
+  // Persist to per-user key; migrate away from legacy global key on first write.
   useEffect(() => {
     if (!loadedRef.current) return;
-    AsyncStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(recents)).catch(() => {});
-  }, [recents]);
+    AsyncStorage.setItem(recentsKey, JSON.stringify(recents)).catch(() => {});
+    if (recentsKey !== RECENTLY_VIEWED_KEY_BASE) {
+      AsyncStorage.removeItem(RECENTLY_VIEWED_KEY_BASE).catch(() => {});
+    }
+  }, [recents, recentsKey]);
 
   const record = useCallback((postId: string) => {
     if (!postId) return;

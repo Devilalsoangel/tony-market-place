@@ -22,7 +22,7 @@ function getImagePicker(): ImagePickerLike | null {
   }
 }
 
-const PROFILE_SETTINGS_KEY = '@susej_profile_settings';
+const PROFILE_SETTINGS_KEY_BASE = '@susej_profile_settings';
 
 const CATEGORIES = [
   'Fashion', 'Electronics', 'Real Estate', 'Automobiles',
@@ -32,10 +32,10 @@ const CATEGORIES = [
 
 export default function EditProfileScreen() {
   const { user, updateUser, logout } = useAuth();
-  const [name, setName] = useState(user?.name ?? 'Julian Susej');
-  const [username, setUsername] = useState(user?.username ?? 'julian_susej');
-  const [bio, setBio] = useState(user?.bio ?? 'Curating the finest minimalist aesthetics. \nSelling rare digital assets and luxury \nphysical goods.');
-  const [category, setCategory] = useState(user?.category ?? 'Home Decor & Furniture');
+  const [name, setName] = useState(user?.name ?? '');
+  const [username, setUsername] = useState(user?.username ?? '');
+  const [bio, setBio] = useState(user?.bio ?? '');
+  const [category, setCategory] = useState(user?.category ?? '');
   const [shopName, setShopName] = useState(user?.businessName ?? '');
   const [businessEmail, setBusinessEmail] = useState('');
   const [businessPhone, setBusinessPhone] = useState('');
@@ -49,22 +49,50 @@ export default function EditProfileScreen() {
   const [showAddressEditor, setShowAddressEditor] = useState(false);
   const [addrDraft, setAddrDraft] = useState(user?.location ?? '');
   const insets = useSafeAreaInsets();
+  const profileKey = (() => {
+    const u = user?.username?.trim();
+    return u ? `${PROFILE_SETTINGS_KEY_BASE}:${u}` : PROFILE_SETTINGS_KEY_BASE;
+  })();
 
   useEffect(() => {
-    AsyncStorage.getItem(PROFILE_SETTINGS_KEY)
-      .then((raw) => {
-        if (!raw) return;
-        try {
-          const saved = JSON.parse(raw);
-          if (saved.privateAccount !== undefined) setPrivateAccount(!!saved.privateAccount);
-          if (saved.showPhone !== undefined) setShowPhone(!!saved.showPhone);
-          if (saved.showEmail !== undefined) setShowEmail(!!saved.showEmail);
-          if (saved.showLocation !== undefined) setShowLocation(!!saved.showLocation);
-          if (saved.readReceipts !== undefined) setReadReceipts(!!saved.readReceipts);
-        } catch {}
+    let cancelled = false;
+    const key = profileKey;
+    AsyncStorage.getItem(key)
+      .then(async (raw) => {
+        if (cancelled) return;
+        if (raw) {
+          try {
+            const saved = JSON.parse(raw);
+            if (saved.privateAccount !== undefined) setPrivateAccount(!!saved.privateAccount);
+            if (saved.showPhone !== undefined) setShowPhone(!!saved.showPhone);
+            if (saved.showEmail !== undefined) setShowEmail(!!saved.showEmail);
+            if (saved.showLocation !== undefined) setShowLocation(!!saved.showLocation);
+            if (saved.readReceipts !== undefined) setReadReceipts(!!saved.readReceipts);
+            return;
+          } catch {}
+        }
+        if (key !== PROFILE_SETTINGS_KEY_BASE) {
+          try {
+            const legacy = await AsyncStorage.getItem(PROFILE_SETTINGS_KEY_BASE);
+            if (!cancelled && legacy) {
+              try {
+                const saved = JSON.parse(legacy);
+                if (saved && typeof saved === 'object') {
+                  if (saved.privateAccount !== undefined) setPrivateAccount(!!saved.privateAccount);
+                  if (saved.showPhone !== undefined) setShowPhone(!!saved.showPhone);
+                  if (saved.showEmail !== undefined) setShowEmail(!!saved.showEmail);
+                  if (saved.showLocation !== undefined) setShowLocation(!!saved.showLocation);
+                  if (saved.readReceipts !== undefined) setReadReceipts(!!saved.readReceipts);
+                  try { await AsyncStorage.setItem(key, legacy); } catch {}
+                }
+              } catch {}
+            }
+          } catch {}
+        }
       })
       .catch(() => {});
-  }, []);
+    return () => { cancelled = true; };
+  }, [profileKey]);
 
   const pickAvatar = async () => {
     try {
@@ -88,17 +116,22 @@ export default function EditProfileScreen() {
   };
 
   const handleSave = async () => {
+    // username is IMMUTABLE server-side (15+ tables key by it) — sending it
+    // 400s the entire patch and used to silently revert name/bio/shop edits.
     const patch: Partial<User> = {
       name: name.trim(),
-      username: username.trim(),
       bio,
       category,
     };
     if (shopName.trim()) patch.businessName = shopName.trim();
     if (address.trim()) patch.location = address.trim();
-    await updateUser(patch);
+    const saved = await updateUser(patch);
+    if (saved !== true) {
+      Alert.alert('Could not save', saved || 'The server rejected these changes. Nothing was updated — please try again.');
+      return;
+    }
     await AsyncStorage.setItem(
-      PROFILE_SETTINGS_KEY,
+      profileKey,
       JSON.stringify({ privateAccount, showPhone, showEmail, showLocation, readReceipts })
     ).catch(() => {});
     router.back();
@@ -195,7 +228,8 @@ export default function EditProfileScreen() {
             </View>
           </View>
 
-          {/* Business Info */}
+          {/* Business Info — sellers only (buyers have no shop to configure) */}
+          {user?.isSeller && (
           <View style={{ gap: 24, paddingTop: 32 }}>
             <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 20, lineHeight: 28 }}>
               Business Info
@@ -263,6 +297,7 @@ export default function EditProfileScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+          )}
 
           {/* Privacy Section */}
           <View style={{ gap: 24, paddingTop: 32 }}>
@@ -307,14 +342,14 @@ export default function EditProfileScreen() {
             </View>
           </View>
 
-          {/* Deactivate */}
+          {/* Deactivate — wording matches the account type */}
           <TouchableOpacity
             onPress={handleDeactivate}
             className="h-14 rounded-figma-16 items-center justify-center mt-4 mb-6"
             style={{ borderWidth: 1, borderColor: '#ffdad6' }}
           >
             <Text className="font-inter-400" style={{ fontSize: 16, lineHeight: 24, color: colors.error }}>
-              Deactivate Shop Account
+              {user?.isSeller ? 'Deactivate Shop Account' : 'Deactivate Account'}
             </Text>
           </TouchableOpacity>
         </View>

@@ -1,78 +1,91 @@
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChevronLeftIcon } from '../utils/icons';
-import { colors, formatCount } from '../utils/theme';
+import { colors } from '../utils/theme';
+import { useAuth } from '../contexts/AuthContext';
+import { serverApi } from '../utils/serverApi';
 
-const JOINED_KEY = '@susej_broadcast_joined';
+const JOINED_KEY_BASE = '@susej_broadcast_joined';
+const JOINED_KEY = JOINED_KEY_BASE;
 
 export interface BroadcastChannel {
   id: string;
   name: string;
-  owner: string;
-  memberCount: number;
   tagline: string;
-  lastPost: string;
-  pinned: string;
 }
 
-export const BROADCAST_CHANNELS: BroadcastChannel[] = [
-  {
-    id: 'bc_saree',
-    name: 'Saree Festival Deals',
-    owner: 'Luxe Thread Studio',
-    memberCount: 12400,
-    tagline: 'New drop every Friday',
-    lastPost: 'New Kanjivaram collection — 30% off',
-    pinned: 'Kanjivaram Festival Sale — flat 30% off all handloom sarees. Ends Sunday!',
-  },
-  {
-    id: 'bc_tech',
-    name: 'Tech Tuesday Drops',
-    owner: 'TechVault',
-    memberCount: 8100,
-    tagline: 'Refurb + new gear weekly',
-    lastPost: 'Apple Watch S9 refurb — ₹24,999',
-    pinned: 'Tech Tuesday: refurbished MacBooks + fresh gear drops every Tuesday at 11 AM.',
-  },
-  {
-    id: 'bc_home',
-    name: 'Home Decor Ideas',
-    owner: 'Urban Nest',
-    memberCount: 5300,
-    tagline: 'Daily styling tips',
-    lastPost: '5 living room hacks for small spaces',
-    pinned: 'Tip of the week: swap plain cushions for textured throws — instant cozy upgrade.',
-  },
-];
+// Server directory with local-only fallback (offline-first). The export stays
+// for the detail screen's synchronous first paint; live data flows via state.
+export const BROADCAST_CHANNELS: BroadcastChannel[] = [];
 
 export default function BroadcastChannelsScreen() {
   const insets = useSafeAreaInsets();
+  const { user, tokenSeq } = useAuth();
   const [joined, setJoined] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const [channels, setChannels] = useState<BroadcastChannel[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        try {
+          const res = await serverApi.getBroadcasts();
+          if (active && res.ok && res.data?.broadcasts) {
+            setChannels(
+              res.data.broadcasts.map((c: any) => ({
+                id: String(c.id),
+                name: String(c.name ?? c.title ?? 'Channel'),
+                tagline: String(c.tagline ?? ''),
+              }))
+            );
+          }
+        } catch {
+          // offline: honest empty state below
+        } finally {
+          if (active) setLoading(false);
+        }
+      })();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
+  const joinedKey = user?.username ? `${JOINED_KEY_BASE}:${user.username}` : JOINED_KEY_BASE;
 
   useEffect(() => {
-    AsyncStorage.getItem(JOINED_KEY)
-      .then((data) => {
+    let cancelled = false;
+    setLoading(true);
+    AsyncStorage.getItem(joinedKey)
+      .then(async (data) => {
+        if (cancelled) return;
         if (data) {
-          try {
-            setJoined(JSON.parse(data) as Record<string, boolean>);
-          } catch {}
+          try { setJoined(JSON.parse(data) as Record<string, boolean>); return; } catch {}
         }
+        if (joinedKey !== JOINED_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(JOINED_KEY_BASE);
+          if (!cancelled && legacy) {
+            try { const p = JSON.parse(legacy) as Record<string, boolean>; setJoined(p); try { await AsyncStorage.setItem(joinedKey, legacy); } catch {} return; } catch {}
+          }
+        }
+        if (!cancelled) setJoined({});
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+      .catch(() => { if (!cancelled) setJoined({}); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [joinedKey, tokenSeq]);
 
   const toggleJoin = useCallback((id: string) => {
     setJoined((prev) => {
       const next = { ...prev, [id]: !prev[id] };
-      AsyncStorage.setItem(JOINED_KEY, JSON.stringify(next)).catch(() => {});
+      AsyncStorage.setItem(joinedKey, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [joinedKey]);
 
   return (
     <View className="flex-1 bg-white">
@@ -106,7 +119,7 @@ export default function BroadcastChannelsScreen() {
         </View>
       ) : (
         <FlatList
-          data={BROADCAST_CHANNELS}
+          data={channels}
           keyExtractor={(item) => item.id}
           contentContainerClassName="px-5 pt-5"
           contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
@@ -146,9 +159,6 @@ export default function BroadcastChannelsScreen() {
                     </View>
                     <View className="flex-1">
                       <Text className="text-figma-14 font-inter-600 text-textPrimary">{item.name}</Text>
-                      <Text className="text-figma-12 font-inter-400 text-textSecondary">
-                        {item.owner} · {formatCount(item.memberCount)} members
-                      </Text>
                     </View>
                     <TouchableOpacity
                       className={`px-4 py-1.5 rounded-figma-full ${isJoined ? 'bg-surfaceContainerLow' : 'bg-primaryContainer'}`}
@@ -161,11 +171,6 @@ export default function BroadcastChannelsScreen() {
                   </View>
 
                   <Text className="text-figma-12 font-inter-500 text-primary mt-3">{item.tagline}</Text>
-                  <View className="bg-surfaceContainerLow rounded-figma-12 px-3 py-2 mt-2">
-                    <Text className="text-figma-12 font-inter-400 text-textSecondary" numberOfLines={2}>
-                      {item.lastPost}
-                    </Text>
-                  </View>
                 </View>
               </TouchableOpacity>
             );

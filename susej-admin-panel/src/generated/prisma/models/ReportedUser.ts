@@ -1110,6 +1110,7 @@ export type ReportedUserCreateManyArgs<ExtArgs extends runtime.Types.Extensions.
    * The data used to create many ReportedUsers.
    */
   data: Prisma.ReportedUserCreateManyInput | Prisma.ReportedUserCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1128,6 +1129,7 @@ export type ReportedUserCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ex
    * The data used to create many ReportedUsers.
    */
   data: Prisma.ReportedUserCreateManyInput | Prisma.ReportedUserCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

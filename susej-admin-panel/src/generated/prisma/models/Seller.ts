@@ -27,6 +27,8 @@ export type AggregateSeller = {
 }
 
 export type SellerAvgAggregateOutputType = {
+  storeLat: number | null
+  storeLng: number | null
   score: number | null
   productsCount: number | null
   totalSales: number | null
@@ -35,6 +37,8 @@ export type SellerAvgAggregateOutputType = {
 }
 
 export type SellerSumAggregateOutputType = {
+  storeLat: number | null
+  storeLng: number | null
   score: number | null
   productsCount: number | null
   totalSales: number | null
@@ -50,7 +54,18 @@ export type SellerMinAggregateOutputType = {
   email: string | null
   phone: string | null
   address: string | null
+  category: string | null
+  storeLat: number | null
+  storeLng: number | null
+  storeAddress: string | null
   taxId: string | null
+  idType: string | null
+  idNumber: string | null
+  nameOnId: string | null
+  dob: string | null
+  pan: string | null
+  bankAccount: string | null
+  selfieUrl: string | null
   kycStatus: string | null
   gstStatus: string | null
   score: number | null
@@ -70,7 +85,18 @@ export type SellerMaxAggregateOutputType = {
   email: string | null
   phone: string | null
   address: string | null
+  category: string | null
+  storeLat: number | null
+  storeLng: number | null
+  storeAddress: string | null
   taxId: string | null
+  idType: string | null
+  idNumber: string | null
+  nameOnId: string | null
+  dob: string | null
+  pan: string | null
+  bankAccount: string | null
+  selfieUrl: string | null
   kycStatus: string | null
   gstStatus: string | null
   score: number | null
@@ -90,7 +116,18 @@ export type SellerCountAggregateOutputType = {
   email: number
   phone: number
   address: number
+  category: number
+  storeLat: number
+  storeLng: number
+  storeAddress: number
   taxId: number
+  idType: number
+  idNumber: number
+  nameOnId: number
+  dob: number
+  pan: number
+  bankAccount: number
+  selfieUrl: number
   kycStatus: number
   gstStatus: number
   score: number
@@ -105,6 +142,8 @@ export type SellerCountAggregateOutputType = {
 
 
 export type SellerAvgAggregateInputType = {
+  storeLat?: true
+  storeLng?: true
   score?: true
   productsCount?: true
   totalSales?: true
@@ -113,6 +152,8 @@ export type SellerAvgAggregateInputType = {
 }
 
 export type SellerSumAggregateInputType = {
+  storeLat?: true
+  storeLng?: true
   score?: true
   productsCount?: true
   totalSales?: true
@@ -128,7 +169,18 @@ export type SellerMinAggregateInputType = {
   email?: true
   phone?: true
   address?: true
+  category?: true
+  storeLat?: true
+  storeLng?: true
+  storeAddress?: true
   taxId?: true
+  idType?: true
+  idNumber?: true
+  nameOnId?: true
+  dob?: true
+  pan?: true
+  bankAccount?: true
+  selfieUrl?: true
   kycStatus?: true
   gstStatus?: true
   score?: true
@@ -148,7 +200,18 @@ export type SellerMaxAggregateInputType = {
   email?: true
   phone?: true
   address?: true
+  category?: true
+  storeLat?: true
+  storeLng?: true
+  storeAddress?: true
   taxId?: true
+  idType?: true
+  idNumber?: true
+  nameOnId?: true
+  dob?: true
+  pan?: true
+  bankAccount?: true
+  selfieUrl?: true
   kycStatus?: true
   gstStatus?: true
   score?: true
@@ -168,7 +231,18 @@ export type SellerCountAggregateInputType = {
   email?: true
   phone?: true
   address?: true
+  category?: true
+  storeLat?: true
+  storeLng?: true
+  storeAddress?: true
   taxId?: true
+  idType?: true
+  idNumber?: true
+  nameOnId?: true
+  dob?: true
+  pan?: true
+  bankAccount?: true
+  selfieUrl?: true
   kycStatus?: true
   gstStatus?: true
   score?: true
@@ -275,7 +349,18 @@ export type SellerGroupByOutputType = {
   email: string
   phone: string
   address: string
+  category: string | null
+  storeLat: number | null
+  storeLng: number | null
+  storeAddress: string | null
   taxId: string
+  idType: string | null
+  idNumber: string | null
+  nameOnId: string | null
+  dob: string | null
+  pan: string | null
+  bankAccount: string | null
+  selfieUrl: string | null
   kycStatus: string
   gstStatus: string
   score: number
@@ -318,7 +403,18 @@ export type SellerWhereInput = {
   email?: Prisma.StringFilter<"Seller"> | string
   phone?: Prisma.StringFilter<"Seller"> | string
   address?: Prisma.StringFilter<"Seller"> | string
+  category?: Prisma.StringNullableFilter<"Seller"> | string | null
+  storeLat?: Prisma.FloatNullableFilter<"Seller"> | number | null
+  storeLng?: Prisma.FloatNullableFilter<"Seller"> | number | null
+  storeAddress?: Prisma.StringNullableFilter<"Seller"> | string | null
   taxId?: Prisma.StringFilter<"Seller"> | string
+  idType?: Prisma.StringNullableFilter<"Seller"> | string | null
+  idNumber?: Prisma.StringNullableFilter<"Seller"> | string | null
+  nameOnId?: Prisma.StringNullableFilter<"Seller"> | string | null
+  dob?: Prisma.StringNullableFilter<"Seller"> | string | null
+  pan?: Prisma.StringNullableFilter<"Seller"> | string | null
+  bankAccount?: Prisma.StringNullableFilter<"Seller"> | string | null
+  selfieUrl?: Prisma.StringNullableFilter<"Seller"> | string | null
   kycStatus?: Prisma.StringFilter<"Seller"> | string
   gstStatus?: Prisma.StringFilter<"Seller"> | string
   score?: Prisma.IntFilter<"Seller"> | number
@@ -340,7 +436,18 @@ export type SellerOrderByWithRelationInput = {
   email?: Prisma.SortOrder
   phone?: Prisma.SortOrder
   address?: Prisma.SortOrder
+  category?: Prisma.SortOrderInput | Prisma.SortOrder
+  storeLat?: Prisma.SortOrderInput | Prisma.SortOrder
+  storeLng?: Prisma.SortOrderInput | Prisma.SortOrder
+  storeAddress?: Prisma.SortOrderInput | Prisma.SortOrder
   taxId?: Prisma.SortOrder
+  idType?: Prisma.SortOrderInput | Prisma.SortOrder
+  idNumber?: Prisma.SortOrderInput | Prisma.SortOrder
+  nameOnId?: Prisma.SortOrderInput | Prisma.SortOrder
+  dob?: Prisma.SortOrderInput | Prisma.SortOrder
+  pan?: Prisma.SortOrderInput | Prisma.SortOrder
+  bankAccount?: Prisma.SortOrderInput | Prisma.SortOrder
+  selfieUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   kycStatus?: Prisma.SortOrder
   gstStatus?: Prisma.SortOrder
   score?: Prisma.SortOrder
@@ -365,7 +472,18 @@ export type SellerWhereUniqueInput = Prisma.AtLeast<{
   email?: Prisma.StringFilter<"Seller"> | string
   phone?: Prisma.StringFilter<"Seller"> | string
   address?: Prisma.StringFilter<"Seller"> | string
+  category?: Prisma.StringNullableFilter<"Seller"> | string | null
+  storeLat?: Prisma.FloatNullableFilter<"Seller"> | number | null
+  storeLng?: Prisma.FloatNullableFilter<"Seller"> | number | null
+  storeAddress?: Prisma.StringNullableFilter<"Seller"> | string | null
   taxId?: Prisma.StringFilter<"Seller"> | string
+  idType?: Prisma.StringNullableFilter<"Seller"> | string | null
+  idNumber?: Prisma.StringNullableFilter<"Seller"> | string | null
+  nameOnId?: Prisma.StringNullableFilter<"Seller"> | string | null
+  dob?: Prisma.StringNullableFilter<"Seller"> | string | null
+  pan?: Prisma.StringNullableFilter<"Seller"> | string | null
+  bankAccount?: Prisma.StringNullableFilter<"Seller"> | string | null
+  selfieUrl?: Prisma.StringNullableFilter<"Seller"> | string | null
   kycStatus?: Prisma.StringFilter<"Seller"> | string
   gstStatus?: Prisma.StringFilter<"Seller"> | string
   score?: Prisma.IntFilter<"Seller"> | number
@@ -387,7 +505,18 @@ export type SellerOrderByWithAggregationInput = {
   email?: Prisma.SortOrder
   phone?: Prisma.SortOrder
   address?: Prisma.SortOrder
+  category?: Prisma.SortOrderInput | Prisma.SortOrder
+  storeLat?: Prisma.SortOrderInput | Prisma.SortOrder
+  storeLng?: Prisma.SortOrderInput | Prisma.SortOrder
+  storeAddress?: Prisma.SortOrderInput | Prisma.SortOrder
   taxId?: Prisma.SortOrder
+  idType?: Prisma.SortOrderInput | Prisma.SortOrder
+  idNumber?: Prisma.SortOrderInput | Prisma.SortOrder
+  nameOnId?: Prisma.SortOrderInput | Prisma.SortOrder
+  dob?: Prisma.SortOrderInput | Prisma.SortOrder
+  pan?: Prisma.SortOrderInput | Prisma.SortOrder
+  bankAccount?: Prisma.SortOrderInput | Prisma.SortOrder
+  selfieUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   kycStatus?: Prisma.SortOrder
   gstStatus?: Prisma.SortOrder
   score?: Prisma.SortOrder
@@ -415,7 +544,18 @@ export type SellerScalarWhereWithAggregatesInput = {
   email?: Prisma.StringWithAggregatesFilter<"Seller"> | string
   phone?: Prisma.StringWithAggregatesFilter<"Seller"> | string
   address?: Prisma.StringWithAggregatesFilter<"Seller"> | string
+  category?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
+  storeLat?: Prisma.FloatNullableWithAggregatesFilter<"Seller"> | number | null
+  storeLng?: Prisma.FloatNullableWithAggregatesFilter<"Seller"> | number | null
+  storeAddress?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
   taxId?: Prisma.StringWithAggregatesFilter<"Seller"> | string
+  idType?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
+  idNumber?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
+  nameOnId?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
+  dob?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
+  pan?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
+  bankAccount?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
+  selfieUrl?: Prisma.StringNullableWithAggregatesFilter<"Seller"> | string | null
   kycStatus?: Prisma.StringWithAggregatesFilter<"Seller"> | string
   gstStatus?: Prisma.StringWithAggregatesFilter<"Seller"> | string
   score?: Prisma.IntWithAggregatesFilter<"Seller"> | number
@@ -435,7 +575,18 @@ export type SellerCreateInput = {
   email: string
   phone: string
   address: string
+  category?: string | null
+  storeLat?: number | null
+  storeLng?: number | null
+  storeAddress?: string | null
   taxId: string
+  idType?: string | null
+  idNumber?: string | null
+  nameOnId?: string | null
+  dob?: string | null
+  pan?: string | null
+  bankAccount?: string | null
+  selfieUrl?: string | null
   kycStatus: string
   gstStatus: string
   score: number
@@ -457,7 +608,18 @@ export type SellerUncheckedCreateInput = {
   email: string
   phone: string
   address: string
+  category?: string | null
+  storeLat?: number | null
+  storeLng?: number | null
+  storeAddress?: string | null
   taxId: string
+  idType?: string | null
+  idNumber?: string | null
+  nameOnId?: string | null
+  dob?: string | null
+  pan?: string | null
+  bankAccount?: string | null
+  selfieUrl?: string | null
   kycStatus: string
   gstStatus: string
   score: number
@@ -479,7 +641,18 @@ export type SellerUpdateInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
   address?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  storeLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeAddress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   taxId?: Prisma.StringFieldUpdateOperationsInput | string
+  idType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nameOnId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dob?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pan?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bankAccount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selfieUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kycStatus?: Prisma.StringFieldUpdateOperationsInput | string
   gstStatus?: Prisma.StringFieldUpdateOperationsInput | string
   score?: Prisma.IntFieldUpdateOperationsInput | number
@@ -501,7 +674,18 @@ export type SellerUncheckedUpdateInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
   address?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  storeLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeAddress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   taxId?: Prisma.StringFieldUpdateOperationsInput | string
+  idType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nameOnId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dob?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pan?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bankAccount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selfieUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kycStatus?: Prisma.StringFieldUpdateOperationsInput | string
   gstStatus?: Prisma.StringFieldUpdateOperationsInput | string
   score?: Prisma.IntFieldUpdateOperationsInput | number
@@ -523,7 +707,18 @@ export type SellerCreateManyInput = {
   email: string
   phone: string
   address: string
+  category?: string | null
+  storeLat?: number | null
+  storeLng?: number | null
+  storeAddress?: string | null
   taxId: string
+  idType?: string | null
+  idNumber?: string | null
+  nameOnId?: string | null
+  dob?: string | null
+  pan?: string | null
+  bankAccount?: string | null
+  selfieUrl?: string | null
   kycStatus: string
   gstStatus: string
   score: number
@@ -543,7 +738,18 @@ export type SellerUpdateManyMutationInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
   address?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  storeLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeAddress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   taxId?: Prisma.StringFieldUpdateOperationsInput | string
+  idType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nameOnId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dob?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pan?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bankAccount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selfieUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kycStatus?: Prisma.StringFieldUpdateOperationsInput | string
   gstStatus?: Prisma.StringFieldUpdateOperationsInput | string
   score?: Prisma.IntFieldUpdateOperationsInput | number
@@ -563,7 +769,18 @@ export type SellerUncheckedUpdateManyInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
   address?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  storeLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeAddress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   taxId?: Prisma.StringFieldUpdateOperationsInput | string
+  idType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nameOnId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dob?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pan?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bankAccount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selfieUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kycStatus?: Prisma.StringFieldUpdateOperationsInput | string
   gstStatus?: Prisma.StringFieldUpdateOperationsInput | string
   score?: Prisma.IntFieldUpdateOperationsInput | number
@@ -583,7 +800,18 @@ export type SellerCountOrderByAggregateInput = {
   email?: Prisma.SortOrder
   phone?: Prisma.SortOrder
   address?: Prisma.SortOrder
+  category?: Prisma.SortOrder
+  storeLat?: Prisma.SortOrder
+  storeLng?: Prisma.SortOrder
+  storeAddress?: Prisma.SortOrder
   taxId?: Prisma.SortOrder
+  idType?: Prisma.SortOrder
+  idNumber?: Prisma.SortOrder
+  nameOnId?: Prisma.SortOrder
+  dob?: Prisma.SortOrder
+  pan?: Prisma.SortOrder
+  bankAccount?: Prisma.SortOrder
+  selfieUrl?: Prisma.SortOrder
   kycStatus?: Prisma.SortOrder
   gstStatus?: Prisma.SortOrder
   score?: Prisma.SortOrder
@@ -596,6 +824,8 @@ export type SellerCountOrderByAggregateInput = {
 }
 
 export type SellerAvgOrderByAggregateInput = {
+  storeLat?: Prisma.SortOrder
+  storeLng?: Prisma.SortOrder
   score?: Prisma.SortOrder
   productsCount?: Prisma.SortOrder
   totalSales?: Prisma.SortOrder
@@ -611,7 +841,18 @@ export type SellerMaxOrderByAggregateInput = {
   email?: Prisma.SortOrder
   phone?: Prisma.SortOrder
   address?: Prisma.SortOrder
+  category?: Prisma.SortOrder
+  storeLat?: Prisma.SortOrder
+  storeLng?: Prisma.SortOrder
+  storeAddress?: Prisma.SortOrder
   taxId?: Prisma.SortOrder
+  idType?: Prisma.SortOrder
+  idNumber?: Prisma.SortOrder
+  nameOnId?: Prisma.SortOrder
+  dob?: Prisma.SortOrder
+  pan?: Prisma.SortOrder
+  bankAccount?: Prisma.SortOrder
+  selfieUrl?: Prisma.SortOrder
   kycStatus?: Prisma.SortOrder
   gstStatus?: Prisma.SortOrder
   score?: Prisma.SortOrder
@@ -631,7 +872,18 @@ export type SellerMinOrderByAggregateInput = {
   email?: Prisma.SortOrder
   phone?: Prisma.SortOrder
   address?: Prisma.SortOrder
+  category?: Prisma.SortOrder
+  storeLat?: Prisma.SortOrder
+  storeLng?: Prisma.SortOrder
+  storeAddress?: Prisma.SortOrder
   taxId?: Prisma.SortOrder
+  idType?: Prisma.SortOrder
+  idNumber?: Prisma.SortOrder
+  nameOnId?: Prisma.SortOrder
+  dob?: Prisma.SortOrder
+  pan?: Prisma.SortOrder
+  bankAccount?: Prisma.SortOrder
+  selfieUrl?: Prisma.SortOrder
   kycStatus?: Prisma.SortOrder
   gstStatus?: Prisma.SortOrder
   score?: Prisma.SortOrder
@@ -644,6 +896,8 @@ export type SellerMinOrderByAggregateInput = {
 }
 
 export type SellerSumOrderByAggregateInput = {
+  storeLat?: Prisma.SortOrder
+  storeLng?: Prisma.SortOrder
   score?: Prisma.SortOrder
   productsCount?: Prisma.SortOrder
   totalSales?: Prisma.SortOrder
@@ -654,6 +908,14 @@ export type SellerSumOrderByAggregateInput = {
 export type SellerScalarRelationFilter = {
   is?: Prisma.SellerWhereInput
   isNot?: Prisma.SellerWhereInput
+}
+
+export type NullableFloatFieldUpdateOperationsInput = {
+  set?: number | null
+  increment?: number
+  decrement?: number
+  multiply?: number
+  divide?: number
 }
 
 export type FloatFieldUpdateOperationsInput = {
@@ -700,7 +962,18 @@ export type SellerCreateWithoutDocumentsInput = {
   email: string
   phone: string
   address: string
+  category?: string | null
+  storeLat?: number | null
+  storeLng?: number | null
+  storeAddress?: string | null
   taxId: string
+  idType?: string | null
+  idNumber?: string | null
+  nameOnId?: string | null
+  dob?: string | null
+  pan?: string | null
+  bankAccount?: string | null
+  selfieUrl?: string | null
   kycStatus: string
   gstStatus: string
   score: number
@@ -721,7 +994,18 @@ export type SellerUncheckedCreateWithoutDocumentsInput = {
   email: string
   phone: string
   address: string
+  category?: string | null
+  storeLat?: number | null
+  storeLng?: number | null
+  storeAddress?: string | null
   taxId: string
+  idType?: string | null
+  idNumber?: string | null
+  nameOnId?: string | null
+  dob?: string | null
+  pan?: string | null
+  bankAccount?: string | null
+  selfieUrl?: string | null
   kycStatus: string
   gstStatus: string
   score: number
@@ -758,7 +1042,18 @@ export type SellerUpdateWithoutDocumentsInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
   address?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  storeLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeAddress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   taxId?: Prisma.StringFieldUpdateOperationsInput | string
+  idType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nameOnId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dob?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pan?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bankAccount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selfieUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kycStatus?: Prisma.StringFieldUpdateOperationsInput | string
   gstStatus?: Prisma.StringFieldUpdateOperationsInput | string
   score?: Prisma.IntFieldUpdateOperationsInput | number
@@ -779,7 +1074,18 @@ export type SellerUncheckedUpdateWithoutDocumentsInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
   address?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  storeLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeAddress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   taxId?: Prisma.StringFieldUpdateOperationsInput | string
+  idType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nameOnId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dob?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pan?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bankAccount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selfieUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kycStatus?: Prisma.StringFieldUpdateOperationsInput | string
   gstStatus?: Prisma.StringFieldUpdateOperationsInput | string
   score?: Prisma.IntFieldUpdateOperationsInput | number
@@ -800,7 +1106,18 @@ export type SellerCreateWithoutAuditLogsInput = {
   email: string
   phone: string
   address: string
+  category?: string | null
+  storeLat?: number | null
+  storeLng?: number | null
+  storeAddress?: string | null
   taxId: string
+  idType?: string | null
+  idNumber?: string | null
+  nameOnId?: string | null
+  dob?: string | null
+  pan?: string | null
+  bankAccount?: string | null
+  selfieUrl?: string | null
   kycStatus: string
   gstStatus: string
   score: number
@@ -821,7 +1138,18 @@ export type SellerUncheckedCreateWithoutAuditLogsInput = {
   email: string
   phone: string
   address: string
+  category?: string | null
+  storeLat?: number | null
+  storeLng?: number | null
+  storeAddress?: string | null
   taxId: string
+  idType?: string | null
+  idNumber?: string | null
+  nameOnId?: string | null
+  dob?: string | null
+  pan?: string | null
+  bankAccount?: string | null
+  selfieUrl?: string | null
   kycStatus: string
   gstStatus: string
   score: number
@@ -858,7 +1186,18 @@ export type SellerUpdateWithoutAuditLogsInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
   address?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  storeLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeAddress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   taxId?: Prisma.StringFieldUpdateOperationsInput | string
+  idType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nameOnId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dob?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pan?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bankAccount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selfieUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kycStatus?: Prisma.StringFieldUpdateOperationsInput | string
   gstStatus?: Prisma.StringFieldUpdateOperationsInput | string
   score?: Prisma.IntFieldUpdateOperationsInput | number
@@ -879,7 +1218,18 @@ export type SellerUncheckedUpdateWithoutAuditLogsInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
   address?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  storeLat?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeLng?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  storeAddress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   taxId?: Prisma.StringFieldUpdateOperationsInput | string
+  idType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  idNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nameOnId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  dob?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pan?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bankAccount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selfieUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kycStatus?: Prisma.StringFieldUpdateOperationsInput | string
   gstStatus?: Prisma.StringFieldUpdateOperationsInput | string
   score?: Prisma.IntFieldUpdateOperationsInput | number
@@ -940,7 +1290,18 @@ export type SellerSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   email?: boolean
   phone?: boolean
   address?: boolean
+  category?: boolean
+  storeLat?: boolean
+  storeLng?: boolean
+  storeAddress?: boolean
   taxId?: boolean
+  idType?: boolean
+  idNumber?: boolean
+  nameOnId?: boolean
+  dob?: boolean
+  pan?: boolean
+  bankAccount?: boolean
+  selfieUrl?: boolean
   kycStatus?: boolean
   gstStatus?: boolean
   score?: boolean
@@ -963,7 +1324,18 @@ export type SellerSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extens
   email?: boolean
   phone?: boolean
   address?: boolean
+  category?: boolean
+  storeLat?: boolean
+  storeLng?: boolean
+  storeAddress?: boolean
   taxId?: boolean
+  idType?: boolean
+  idNumber?: boolean
+  nameOnId?: boolean
+  dob?: boolean
+  pan?: boolean
+  bankAccount?: boolean
+  selfieUrl?: boolean
   kycStatus?: boolean
   gstStatus?: boolean
   score?: boolean
@@ -983,7 +1355,18 @@ export type SellerSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extens
   email?: boolean
   phone?: boolean
   address?: boolean
+  category?: boolean
+  storeLat?: boolean
+  storeLng?: boolean
+  storeAddress?: boolean
   taxId?: boolean
+  idType?: boolean
+  idNumber?: boolean
+  nameOnId?: boolean
+  dob?: boolean
+  pan?: boolean
+  bankAccount?: boolean
+  selfieUrl?: boolean
   kycStatus?: boolean
   gstStatus?: boolean
   score?: boolean
@@ -1003,7 +1386,18 @@ export type SellerSelectScalar = {
   email?: boolean
   phone?: boolean
   address?: boolean
+  category?: boolean
+  storeLat?: boolean
+  storeLng?: boolean
+  storeAddress?: boolean
   taxId?: boolean
+  idType?: boolean
+  idNumber?: boolean
+  nameOnId?: boolean
+  dob?: boolean
+  pan?: boolean
+  bankAccount?: boolean
+  selfieUrl?: boolean
   kycStatus?: boolean
   gstStatus?: boolean
   score?: boolean
@@ -1015,7 +1409,7 @@ export type SellerSelectScalar = {
   submittedAt?: boolean
 }
 
-export type SellerOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "businessName" | "ownerName" | "logo" | "email" | "phone" | "address" | "taxId" | "kycStatus" | "gstStatus" | "score" | "productsCount" | "totalSales" | "rating" | "reviewCount" | "joinedAt" | "submittedAt", ExtArgs["result"]["seller"]>
+export type SellerOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "businessName" | "ownerName" | "logo" | "email" | "phone" | "address" | "category" | "storeLat" | "storeLng" | "storeAddress" | "taxId" | "idType" | "idNumber" | "nameOnId" | "dob" | "pan" | "bankAccount" | "selfieUrl" | "kycStatus" | "gstStatus" | "score" | "productsCount" | "totalSales" | "rating" | "reviewCount" | "joinedAt" | "submittedAt", ExtArgs["result"]["seller"]>
 export type SellerInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   documents?: boolean | Prisma.Seller$documentsArgs<ExtArgs>
   auditLogs?: boolean | Prisma.Seller$auditLogsArgs<ExtArgs>
@@ -1038,7 +1432,18 @@ export type $SellerPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
     email: string
     phone: string
     address: string
+    category: string | null
+    storeLat: number | null
+    storeLng: number | null
+    storeAddress: string | null
     taxId: string
+    idType: string | null
+    idNumber: string | null
+    nameOnId: string | null
+    dob: string | null
+    pan: string | null
+    bankAccount: string | null
+    selfieUrl: string | null
     kycStatus: string
     gstStatus: string
     score: number
@@ -1480,7 +1885,18 @@ export interface SellerFieldRefs {
   readonly email: Prisma.FieldRef<"Seller", 'String'>
   readonly phone: Prisma.FieldRef<"Seller", 'String'>
   readonly address: Prisma.FieldRef<"Seller", 'String'>
+  readonly category: Prisma.FieldRef<"Seller", 'String'>
+  readonly storeLat: Prisma.FieldRef<"Seller", 'Float'>
+  readonly storeLng: Prisma.FieldRef<"Seller", 'Float'>
+  readonly storeAddress: Prisma.FieldRef<"Seller", 'String'>
   readonly taxId: Prisma.FieldRef<"Seller", 'String'>
+  readonly idType: Prisma.FieldRef<"Seller", 'String'>
+  readonly idNumber: Prisma.FieldRef<"Seller", 'String'>
+  readonly nameOnId: Prisma.FieldRef<"Seller", 'String'>
+  readonly dob: Prisma.FieldRef<"Seller", 'String'>
+  readonly pan: Prisma.FieldRef<"Seller", 'String'>
+  readonly bankAccount: Prisma.FieldRef<"Seller", 'String'>
+  readonly selfieUrl: Prisma.FieldRef<"Seller", 'String'>
   readonly kycStatus: Prisma.FieldRef<"Seller", 'String'>
   readonly gstStatus: Prisma.FieldRef<"Seller", 'String'>
   readonly score: Prisma.FieldRef<"Seller", 'Int'>
@@ -1724,6 +2140,7 @@ export type SellerCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Intern
    * The data used to create many Sellers.
    */
   data: Prisma.SellerCreateManyInput | Prisma.SellerCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1742,6 +2159,7 @@ export type SellerCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensio
    * The data used to create many Sellers.
    */
   data: Prisma.SellerCreateManyInput | Prisma.SellerCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

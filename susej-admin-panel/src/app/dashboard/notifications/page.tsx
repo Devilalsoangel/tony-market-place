@@ -16,7 +16,6 @@ import {
   History, FileText, CheckCircle2, XCircle
 } from "lucide-react";
 import type { NotificationChannel, NotificationStatus, AudienceSegment, NotificationTemplate, NotificationHistoryItem } from "@/types";
-import { mockNotificationTemplates, mockNotificationHistory } from "@/services/mock-data";
 import { useDbResource } from "@/hooks/use-db-resource";
 
 const audienceOptions = [
@@ -40,19 +39,21 @@ const statusBadge: Record<NotificationStatus, { variant: "success" | "warning" |
 };
 
 function previewBody(body: string): string {
+  // Neutral placeholder tokens — the preview must not invent a real-looking
+  // customer name, order ID, coupon code, or URL.
   return body
-    .replace(/\{\{name\}\}/g, "John Doe")
-    .replace(/\{\{orderId\}\}/g, "ORD-2024-7841")
-    .replace(/\{\{discount\}\}/g, "25")
-    .replace(/\{\{code\}\}/g, "WELCOME25")
-    .replace(/\{\{link\}\}/g, "https://susej.com/reset-token");
+    .replace(/\{\{name\}\}/g, "[Customer Name]")
+    .replace(/\{\{orderId\}\}/g, "[Order ID]")
+    .replace(/\{\{discount\}\}/g, "[X]%")
+    .replace(/\{\{code\}\}/g, "[COUPON CODE]")
+    .replace(/\{\{link\}\}/g, "[Link]");
 }
 
 export default function NotificationsPage() {
   const { data: dbTemplates } = useDbResource<NotificationTemplate>("notification-templates");
   const { data: dbHistory } = useDbResource<NotificationHistoryItem>("notification-history");
-  const templates = dbTemplates ?? mockNotificationTemplates;
-  const [history, setHistory] = useState<NotificationHistoryItem[]>(dbHistory ?? mockNotificationHistory);
+  const templates = dbTemplates ?? [];
+  const [history, setHistory] = useState<NotificationHistoryItem[]>(dbHistory ?? []);
   useEffect(() => {
     if (dbHistory) setHistory(dbHistory);
   }, [dbHistory]);
@@ -93,7 +94,15 @@ export default function NotificationsPage() {
     setShowPreview(true);
   }
 
+  // Sends are LOG-ONLY until a push/email provider is wired: this writes the
+  // history row so the desk has a record, but no device/email is contacted.
+  // The header copy below says so plainly — marking rows "sent" while nothing
+  // transports would be a fabrication.
   function sendNow(channel: NotificationChannel) {
+    const selectedList =
+      audience === "selected_users"
+        ? selectedUsers.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 200)
+        : [];
     const entry: NotificationHistoryItem = {
       id: `n${Date.now()}`,
       channel,
@@ -106,7 +115,14 @@ export default function NotificationsPage() {
     fetch("/api/data/notification-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...entry, id: undefined, sentAt: entry.sentAt || null }),
+      body: JSON.stringify({
+        ...entry,
+        id: undefined,
+        sentAt: entry.sentAt || null,
+        audience,
+        selectedUsers: selectedList,
+        transport: "log-only",
+      }),
     });
   }
 
@@ -129,6 +145,8 @@ export default function NotificationsPage() {
 
   function scheduleSend(channel: NotificationChannel) {
     if (!scheduleDate) return;
+    // Safe ISO: datetime-local has no zone — interpret as local, persist UTC.
+    // The old `${scheduleDate}:00.000Z` concat shifted hours for +05:30 desks.
     const entry: NotificationHistoryItem = {
       id: `n${Date.now()}`,
       channel,
@@ -139,10 +157,14 @@ export default function NotificationsPage() {
       sentAt: "",
     };
     setHistory((prev) => [entry, ...prev]);
+    const scheduledFor = (() => {
+      const d = new Date(scheduleDate);
+      return Number.isNaN(d.getTime()) ? scheduleDate : d.toISOString();
+    })();
     fetch("/api/data/notification-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel, title: entry.title, audience: entry.audience, status: "scheduled", scheduledFor: `${scheduleDate}:00.000Z`, sentAt: null }),
+      body: JSON.stringify({ channel, title: entry.title, audience, selectedUsers: audience === "selected_users" ? selectedUsers.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 200) : [], status: "scheduled", scheduledFor, sentAt: null, transport: "log-only" }),
     });
     setSchedule(false);
     setScheduleDate("");
@@ -156,7 +178,7 @@ export default function NotificationsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#18181B] ">Notification Builder</h1>
-          <p className="mt-1 text-sm text-gray-500">Create and manage push notifications, emails, and announcement banners</p>
+          <p className="mt-1 text-sm text-gray-500">Sends are logged to history only — no push/email provider is wired yet, so nothing reaches a device.</p>
         </div>
       </div>
 
@@ -249,6 +271,9 @@ export default function NotificationsPage() {
                       </div>
                       <div className="mt-4 space-y-2">
                         <p className="text-xs font-medium text-gray-400">TEMPLATES</p>
+                        {pushTemplates.length === 0 && (
+                          <p className="rounded-xl border border-dashed border-[#E4E4E7] px-3 py-2.5 text-xs text-gray-400">No push templates saved yet.</p>
+                        )}
                         {pushTemplates.map((t) => (
                           <button
                             key={t.id}
@@ -340,7 +365,7 @@ export default function NotificationsPage() {
                         <div className="space-y-4">
                           <div className="border-b border-[#E4E4E7] pb-3">
                             <p className="text-xs text-gray-400">From: {fromName || "SUSEJ Team"} &lt;no-reply@susej.com&gt;</p>
-                            <p className="text-xs text-gray-400">To: {{name: "John Doe"}["name"] || "user@email.com"}</p>
+                            <p className="text-xs text-gray-400">To: [Recipient]</p>
                             <p className="mt-1 text-sm font-medium text-[#18181B] ">{subject || "Email Subject"}</p>
                           </div>
                           <div
@@ -351,6 +376,9 @@ export default function NotificationsPage() {
                       </div>
                       <div className="mt-4 space-y-2">
                         <p className="text-xs font-medium text-gray-400">TEMPLATES</p>
+                        {emailTemplates.length === 0 && (
+                          <p className="rounded-xl border border-dashed border-[#E4E4E7] px-3 py-2.5 text-xs text-gray-400">No email templates saved yet.</p>
+                        )}
                         {emailTemplates.map((t) => (
                           <button
                             key={t.id}
@@ -419,6 +447,9 @@ export default function NotificationsPage() {
                       </div>
                       <div className="mt-4 space-y-2">
                         <p className="text-xs font-medium text-gray-400">TEMPLATES</p>
+                        {templates.filter((t) => t.channel === "banner").length === 0 && (
+                          <p className="rounded-xl border border-dashed border-[#E4E4E7] px-3 py-2.5 text-xs text-gray-400">No banner templates saved yet.</p>
+                        )}
                         {templates.filter((t) => t.channel === "banner").map((t) => (
                           <button
                             key={t.id}
@@ -507,7 +538,7 @@ export default function NotificationsPage() {
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#6C3BFF] text-xs font-bold text-white">S</div>
                   <p className="text-sm font-medium text-[#18181B] ">{fromName || "SUSEJ Team"}</p>
                 </div>
-                <p className="mt-1 text-xs text-gray-400">to John Doe</p>
+                <p className="mt-1 text-xs text-gray-400">to [Recipient]</p>
                 <p className="mt-2 text-base font-semibold text-[#18181B] ">{subject || "Email Subject"}</p>
               </div>
               <div
@@ -515,7 +546,7 @@ export default function NotificationsPage() {
                 dangerouslySetInnerHTML={{ __html: emailBody ? previewBody(emailBody) : "<p>No content</p>" }}
               />
               <div className="border-t border-[#E4E4E7] pt-4 text-center">
-                <p className="text-xs text-gray-400">SUSEJ Marketplace Â· 123 Market Street, San Francisco, CA</p>
+                <p className="text-xs text-gray-400">SUSEJ Marketplace</p>
                 <p className="mt-1 text-xs text-gray-400">
                   <a href="#" className="text-[#6C3BFF]">Unsubscribe</a> from these emails
                 </p>

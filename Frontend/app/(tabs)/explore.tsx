@@ -1,13 +1,15 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, Image, Keyboard, Modal, ScrollView, Switch } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SearchIcon, HamburgerIcon, CloseIcon, BagIcon } from '../../utils/icons';
+import { SearchIcon, CloseIcon, BellIcon, BagIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
 import { usePosts } from '../../contexts/PostContext';
+import { useCart } from '../../contexts/CartContext';
 import { usePromotions } from '../../contexts/PromotionContext';
-import { exploreImages } from '../../utils/screenImages';
+import { hasRealImage, resolveListingImage } from '../../utils/productImages';
+import { serverApi } from '../../utils/serverApi';
 
 function PlayIcon({ size = 18, color = '#5d5fef' }: { size?: number; color?: string }) {
   return (
@@ -41,6 +43,22 @@ function BundleGiftIcon({ size = 18, color = '#5d5fef' }: { size?: number; color
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path d="M20 6h-2.18c.11-.31.18-.65.18-1a2.996 2.996 0 0 0-5.5-1.65l-.5.67-.5-.68C10.96 2.54 10.27 2 9.5 2 7.57 2 6 3.57 6 5.5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9.5 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM20 19H4V8h16v11zm-9-7H6v-2h5v2zm7 0h-5v-2h5v2z" fill={color} />
+    </Svg>
+  );
+}
+
+function CommunityIcon({ size = 18, color = '#5d5fef' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" fill={color} />
+    </Svg>
+  );
+}
+
+function BroadcastIcon({ size = 18, color = '#5d5fef' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" fill={color} />
     </Svg>
   );
 }
@@ -81,13 +99,15 @@ const PRICE_PRESETS: PricePreset[] = [
 
 const CONDITIONS = ['Any', 'New', 'Like New', 'Used'];
 
-// Posts have no condition field — derive it from description keywords (case-insensitive)
+// Posts have no condition field — derive it from description keywords (case-insensitive).
+// Unknown when undescribed: defaulting to 'New' mislabeled used goods in the
+// condition filter. Unknown posts are skipped by any specific condition filter.
 const deriveCondition = (description: string): string => {
-  const d = description.toLowerCase();
+  const d = (description ?? '').toLowerCase();
   if (d.includes('like new') || d.includes('mint')) return 'Like New';
   if (d.includes('new')) return 'New';
   if (d.includes('used') || d.includes('pre-owned') || d.includes('pre owned')) return 'Used';
-  return 'New';
+  return 'Unknown';
 };
 
 const SORT_OPTIONS = [
@@ -114,12 +134,37 @@ export default function ExploreScreen() {
   const [filters, setFilters] = useState<ExploreFilters>(DEFAULT_FILTERS);
   const [filterVisible, setFilterVisible] = useState(false);
   const insets = useSafeAreaInsets();
-  const { posts } = usePosts();
-  const { promotions } = usePromotions();
-  const activePromos = useMemo(() => promotions.filter((p) => p.status === 'active'), [promotions]);
+  const { cart: cartItems } = useCart();
+  const cartCount = cartItems.length;
+  const { posts, hiddenPostIds = [], mutedSellers = [] } = usePosts() as { posts: import('../../contexts/PostContext').Post[]; hiddenPostIds?: string[]; mutedSellers?: string[] };
+  const [serverPromos, setServerPromos] = useState<any[]>([]);
+  useFocusEffect(useCallback(() => {
+    let alive = true;
+    serverApi.getPromotions().then((res) => {
+      if (!alive) return;
+      setServerPromos(res.ok && res.data?.promotions ? res.data.promotions : []);
+    }).catch(()=>{});
+    return () => { alive = false; };
+  }, []));
+  const activePromos = useMemo(() => serverPromos.filter((p) => p.status === 'active'), [serverPromos]);
 
-  // Figma 1:3512 chip set: All, Fashion, Electronics, Food, Beauty, Home
-  const categories = useMemo(() => ['All', 'Fashion', 'Electronics', 'Food', 'Beauty', 'Home'], []);
+  // Admin-owned category catalog (DB). Chips render what admins configured;
+  // 'All' is the only app-local chip. Offline -> All-only (honest).
+  const [adminCategories, setAdminCategories] = useState<Array<{ name: string; slug: string }>>([]);
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      serverApi.getCategories().then((res) => {
+        if (!active) return;
+        const cats = res.ok && res.data?.categories?.length ? res.data.categories : [];
+        setAdminCategories(cats.map((c) => ({ name: c.name, slug: c.slug })));
+      });
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+  const categories = useMemo(() => ['All', ...adminCategories.map((c) => c.name)], [adminCategories]);
 
   const pricePreset = PRICE_PRESETS.find((p) => p.key === filters.price) ?? PRICE_PRESETS[0];
   const hasActiveFilters =
@@ -149,19 +194,28 @@ export default function ExploreScreen() {
   const clearAllFilters = () => setFilters(DEFAULT_FILTERS);
 
   const filteredPosts = useMemo(() => {
-    let out = selectedCategory === 'All' ? posts : posts.filter((p) => p.category === selectedCategory);
+    let out = posts.filter((p) => !hiddenPostIds?.includes(p.id) && !mutedSellers?.includes(p.sellerUsername) && hasRealImage(p));
+    if (selectedCategory !== 'All') out = out.filter((p) => p.category === selectedCategory);
     const { min, max } = pricePreset;
     if (min != null) out = out.filter((p) => p.price >= min);
     if (max != null) out = out.filter((p) => p.price <= max);
     if (filters.condition !== 'any') {
-      out = out.filter((p) => deriveCondition(p.description) === filters.condition);
+      // Structured condition wins when the seller set one (create wizard stores it);
+      // text-parsing stays only as a legacy fallback for old posts.
+      out = out.filter((p) => (p.condition ?? deriveCondition(p.description)) === filters.condition);
     }
     if (filters.verifiedOnly) out = out.filter((p) => p.verified);
-    if (filters.sort === 'newest') out = [...out].sort((a, b) => b.createdAt - a.createdAt);
+    // Popular is real: engagement first, recency breaks ties (was a no-op label).
+    if (filters.sort === 'popular') {
+      out = [...out].sort(
+        (a, b) => ((b.likes ?? 0) + (b.comments ?? 0)) - ((a.likes ?? 0) + (a.comments ?? 0)) || b.createdAt - a.createdAt
+      );
+    }
+    else if (filters.sort === 'newest') out = [...out].sort((a, b) => b.createdAt - a.createdAt);
     else if (filters.sort === 'priceAsc') out = [...out].sort((a, b) => a.price - b.price);
     else if (filters.sort === 'priceDesc') out = [...out].sort((a, b) => b.price - a.price);
     return out;
-  }, [posts, selectedCategory, filters, pricePreset]);
+  }, [posts, selectedCategory, filters, pricePreset, hiddenPostIds, mutedSellers]);
 
   // Paid Boost Post campaigns surface a Sponsored chip on explore cards (IG ad pattern).
   const boostedIds = useMemo(
@@ -173,13 +227,35 @@ export default function ExploreScreen() {
     <View className="flex-1 bg-surface">
       {/* Header — Figma 1:3512: hamburger left, susej left-aligned next to it, cart icon right */}
       <View className="flex-row items-center px-5 bg-surface" style={{ height: 52 + insets.top, paddingTop: insets.top }}>
-        <TouchableOpacity>
-          <HamburgerIcon size={18} color={colors.textSecondary} />
-        </TouchableOpacity>
-        <Text className="ml-3 text-figma-20 font-inter-700 text-primary" style={{ letterSpacing: -0.5 }}>susej</Text>
+        <Text className="text-figma-20 font-inter-700 text-primary" style={{ letterSpacing: -0.5 }}>susej</Text>
         <View className="flex-1" />
-        <TouchableOpacity onPress={() => router.push('/cart')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <BagIcon size={22} color={colors.primary} />
+        <TouchableOpacity onPress={() => router.push('/notifications')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Notifications" accessibilityRole="button">
+          <BellIcon size={22} color={colors.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push('/cart')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Shopping cart" accessibilityRole="button" style={{ marginLeft: 20 }}>
+          <View style={{ position: 'relative' }}>
+            <BagIcon size={22} color={colors.primary} />
+            {cartCount > 0 && (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: -6,
+                  right: -9,
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  paddingHorizontal:  4,
+                  backgroundColor: colors.error,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: '700', lineHeight: 14 }}>
+                  {cartCount > 99 ? '99+' : cartCount}
+                </Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -226,6 +302,9 @@ export default function ExploreScreen() {
                 returnKeyType="search"
               />
             </View>
+            <Text className="font-inter-400 text-textSecondary mb-4" style={{ fontSize: 13, lineHeight: 18, letterSpacing: 0.13 }}>
+              {filteredPosts.length} {filteredPosts.length === 1 ? 'item found' : 'items found'}
+            </Text>
 
             {/* View Nearby Sellers — Figma: full-width purple filled button, white map icon + white text */}
             <TouchableOpacity
@@ -248,6 +327,8 @@ export default function ExploreScreen() {
                   { label: 'Live', icon: <LiveIcon size={16} color={colors.surfaceContainerLowest} />, route: '/live' },
                   { label: 'Auctions', icon: <AuctionTimerIcon size={16} color={colors.surfaceContainerLowest} />, route: '/auctions' },
                   { label: 'Bundles', icon: <BundleGiftIcon size={16} color={colors.surfaceContainerLowest} />, route: '/bundles' },
+                  { label: 'Communities', icon: <CommunityIcon size={16} color={colors.surfaceContainerLowest} />, route: '/communities' },
+                  { label: 'Broadcast', icon: <BroadcastIcon size={16} color={colors.surfaceContainerLowest} />, route: '/broadcasts' },
                 ].map((f) => (
                   <TouchableOpacity
                     key={f.label}
@@ -276,9 +357,7 @@ export default function ExploreScreen() {
                 <TouchableOpacity
                   className={`px-5 py-2 rounded-figma-full ${item === selectedCategory ? 'bg-primaryContainer' : 'bg-surfaceContainerLow'}`}
                   onPress={() => {
-                    setSelectedCategory(item);
-                    if (item === 'Food') router.push('/food-hub');
-                    else if (item !== 'All') router.push(`/category/${item.toLowerCase().replace(/\s+/g, '-')}`);
+                    setSelectedCategory(item === selectedCategory ? 'All' : item);
                   }}
                 >
                   <Text className={`font-inter-500 ${item === selectedCategory ? 'text-white' : 'text-textSecondary'}`} style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24 }}>{item}</Text>
@@ -330,14 +409,14 @@ export default function ExploreScreen() {
             </Text>
           </View>
         }
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <TouchableOpacity
             className="flex-1 bg-surfaceContainerLowest rounded-figma-24 mb-4 overflow-hidden"
             style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }}
             onPress={() => router.push(`/product/${item.id}`)}
           >
             <View className="w-full aspect-square bg-surfaceContainer">
-              <Image source={exploreImages[index % exploreImages.length]} className="absolute inset-0 w-full h-full" resizeMode="cover" />
+              <Image source={resolveListingImage(item, item.id)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
               {boostedIds.has(item.id) && (
                 <View
                   className="absolute top-3 left-3 h-5 px-2 rounded-figma-full items-center justify-center"

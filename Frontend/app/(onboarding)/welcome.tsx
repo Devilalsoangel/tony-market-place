@@ -25,7 +25,7 @@ const slides = [
   {
     // Stitch ref 186:30 — Communities variant
     title: 'Join the Pulse',
-    subtitle: '500+ Active Hubs — join communities,\nbuild connections and trade with people\nwho share your passions.',
+    subtitle: 'Join communities around you —\nconnect, share and trade with people\nwho share your passions.',
   },
 ];
 

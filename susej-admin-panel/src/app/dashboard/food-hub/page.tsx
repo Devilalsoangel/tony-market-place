@@ -9,7 +9,7 @@ import { StatTile } from "@/components/shared/stat-tile";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { formatCurrency } from "@/lib/utils";
 import { UtensilsCrossed, Star } from "lucide-react";
-import type { MockFoodItem } from "@/services/mock-data";
+import type { MockFoodItem } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockFoodItem>();
 
@@ -34,7 +34,7 @@ const columns = [
   }),
   column.accessor("status", {
     header: "Status",
-    cell: (info) => <Badge variant={statusVariant[info.getValue()]} className="capitalize">{String(info.getValue()).replace("_", " ")}</Badge>,
+    cell: (info) => <Badge variant={statusVariant[info.getValue()]} className="capitalize">{String(info.getValue()).replaceAll("_", " ")}</Badge>,
   }),
 ];
 

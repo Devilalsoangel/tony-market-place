@@ -5,8 +5,9 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, BellIcon, SearchIcon, CloseIcon, PlusIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
+import { useAuth } from '../contexts/AuthContext';
 
-const SEARCHES_KEY = '@susej_saved_searches';
+const SEARCHES_KEY_BASE = '@susej_saved_searches';
 
 interface SavedSearch {
   id: string;
@@ -14,11 +15,6 @@ interface SavedSearch {
   savedAt: number;
   priceAlert: boolean;
 }
-
-const SEEDS: SavedSearch[] = [
-  { id: 'seed_1', query: 'vintage watch', savedAt: Date.now() - 86400000 * 2, priceAlert: true },
-  { id: 'seed_2', query: 'iphone 13', savedAt: Date.now() - 86400000, priceAlert: false },
-];
 
 const timeAgo = (ts: number): string => {
   const diff = Date.now() - ts;
@@ -31,6 +27,8 @@ const timeAgo = (ts: number): string => {
 
 export default function SavedSearchesScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const searchesKey = user?.username ? `${SEARCHES_KEY_BASE}:${user.username}` : SEARCHES_KEY_BASE;
   const [loaded, setLoaded] = useState(false);
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -39,29 +37,32 @@ export default function SavedSearchesScreen() {
 
   const persist = useCallback((next: SavedSearch[]) => {
     setSaved(next);
-    AsyncStorage.setItem(SEARCHES_KEY, JSON.stringify(next)).catch(() => {});
-  }, []);
+    AsyncStorage.setItem(searchesKey, JSON.stringify(next)).catch(() => {});
+  }, [searchesKey]);
 
   useEffect(() => {
-    AsyncStorage.getItem(SEARCHES_KEY)
+    let cancelled = false;
+    setLoaded(false);
+    AsyncStorage.getItem(searchesKey)
       .then((data) => {
+        if (cancelled) return;
         if (data) {
           try {
             const parsed = JSON.parse(data) as SavedSearch[];
-            setSaved(Array.isArray(parsed) ? parsed.slice().sort((a, b) => b.savedAt - a.savedAt) : SEEDS);
+            setSaved(Array.isArray(parsed) ? parsed.slice().sort((a, b) => b.savedAt - a.savedAt).filter((s) => !String(s.id).startsWith('seed_')) : []);
           } catch {
-            setSaved(SEEDS);
+            if (!cancelled) setSaved([]);
           }
         } else {
-          setSaved(SEEDS);
+          if (!cancelled) setSaved([]);
         }
-        setLoaded(true);
+        if (!cancelled) setLoaded(true);
       })
       .catch(() => {
-        setSaved(SEEDS);
-        setLoaded(true);
+        if (!cancelled) { setSaved([]); setLoaded(true); }
       });
-  }, []);
+    return () => { cancelled = true; };
+  }, [searchesKey]);
 
   const addSearch = () => {
     const q = draft.trim();

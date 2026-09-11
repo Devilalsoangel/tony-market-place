@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ScrollView, Dimensions, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { communityImages } from '../utils/screenImages';
+import { resolveAvatar } from '../utils/productImages';
 import { router } from 'expo-router';
-import { BackIcon, PlusIcon, ArrowRightIcon } from '../utils/icons';
+import { BackIcon, ArrowRightIcon } from '../utils/icons';
 import { CommunityPostCard } from '../components/cards/CommunityPostCard';
-import { colors, formatCount } from '../utils/theme';
+import { colors, formatCount, CATEGORIES } from '../utils/theme';
 import { usePosts } from '../contexts/PostContext';
 import { useCommunities } from '../contexts/CommunityContext';
 
@@ -60,21 +60,6 @@ export default function CommunitiesScreen() {
                 </Text>
               </View>
               <View className="flex-row items-center" style={{ gap: 16 }}>
-                <TouchableOpacity onPress={() => router.push('/create-community')}>
-                  <PlusIcon size={18} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/notifications')}>
-                  <View className="w-5 h-5 rounded-full bg-surfaceContainer items-center justify-center">
-                    <View className="w-3 h-3 rounded-full bg-secondary" />
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/settings')}>
-                  <View className="flex-col items-center justify-center" style={{ gap: 3 }}>
-                    <View className="w-[18px] h-0.5 rounded-full bg-textPrimary" />
-                    <View className="w-[18px] h-0.5 rounded-full bg-textPrimary" />
-                    <View className="w-[18px] h-0.5 rounded-full bg-textPrimary" />
-                  </View>
-                </TouchableOpacity>
               </View>
             </View>
 
@@ -108,7 +93,7 @@ export default function CommunitiesScreen() {
                       onPress={() => router.push(`/community/${c.id}`)}
                     >
                       <View className="w-10 h-10 rounded-full bg-surfaceContainerLow items-center justify-center overflow-hidden">
-                        <Image source={communityImages.avatars[i % communityImages.avatars.length]} className="w-10 h-10 rounded-full" />
+                        <Image source={resolveAvatar(c.id)} className="w-10 h-10 rounded-full" />
                       </View>
                       <View className="flex-1 ml-3">
                         <Text className="text-figma-14 font-inter-600 text-textPrimary" numberOfLines={1}>
@@ -124,7 +109,7 @@ export default function CommunitiesScreen() {
                 </View>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-4">
-                  {joinedCommunities.map((c, i) => (
+                  {joinedCommunities.map((c) => (
                     <TouchableOpacity
                       key={c.id}
                       className="items-center"
@@ -136,7 +121,7 @@ export default function CommunitiesScreen() {
                         style={{ borderWidth: 2, borderColor: colors.primaryContainer }}
                       >
                         <View className="w-[88px] h-[88px] rounded-full bg-surfaceContainerLow items-center justify-center overflow-hidden">
-                          <Image source={communityImages.covers[i % communityImages.covers.length]} className="w-full h-full" />
+                          <Image source={resolveAvatar(c.id)} className="w-full h-full" />
                         </View>
                       </View>
                       <Text className="text-figma-11 font-inter-400 text-textSecondary text-center mt-2" numberOfLines={2}>
@@ -177,7 +162,7 @@ export default function CommunitiesScreen() {
               ) : null}
 
               {/* Discover Cards — Figma: 526×252, 16cr, white bg, #efecff border, shadow */}
-              {discoverCommunities.map((dc, i) => (
+              {discoverCommunities.map((dc) => (
                 <TouchableOpacity
                   key={dc.id}
                   className="bg-white rounded-figma-16 mb-4 overflow-hidden"
@@ -195,13 +180,13 @@ export default function CommunitiesScreen() {
                 >
                   {/* Image area — 128h */}
                   <View className="w-full h-32 bg-surfaceContainer overflow-hidden">
-                    <Image source={communityImages.banners[i % communityImages.banners.length]} className="w-full h-full" resizeMode="cover" />
+                    <Image source={resolveAvatar(dc.id)} className="w-full h-full" resizeMode="cover" />
                   </View>
                   {/* Card info */}
                   <View className="px-4 pt-3 pb-4">
                     <View className="flex-row items-center gap-3">
                       <View className="w-10 h-10 rounded-full bg-surfaceContainerLow items-center justify-center overflow-hidden">
-                        <Image source={communityImages.avatars[i % communityImages.avatars.length]} className="w-8 h-8 rounded-full" />
+                        <Image source={resolveAvatar(dc.id)} className="w-8 h-8 rounded-full" />
                       </View>
                       <View className="flex-1">
                         <Text className="text-figma-14 font-inter-600 text-textPrimary">{dc.name}</Text>
@@ -226,48 +211,22 @@ export default function CommunitiesScreen() {
               ))}
             </View>
 
-            {/* Broadcast Channels — compact card → /broadcasts */}
+            {/* Broadcast Channels — link to broadcast list */}
             <View className="mt-8 px-5">
-              <View className="flex-row items-center justify-between mb-3">
-                <Text className="text-figma-20 font-inter-700 text-textPrimary">Broadcast Channels</Text>
-                <TouchableOpacity className="flex-row items-center" style={{ gap: 4 }} onPress={() => router.push('/broadcasts')}>
-                  <Text className="text-figma-16 font-inter-500 text-primary">See all</Text>
-                  <ArrowRightIcon size={12} color={colors.primary} />
-                </TouchableOpacity>
-              </View>
               <TouchableOpacity
-                className="bg-white rounded-figma-16 px-4 py-4"
+                className="bg-white rounded-figma-16 px-4 py-4 items-center"
                 style={{
                   borderWidth: 1,
                   borderColor: colors.surfaceContainer,
-                  shadowColor: colors.textPrimary,
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.04,
-                  shadowRadius: 20,
-                  elevation: 3,
                 }}
                 onPress={() => router.push('/broadcasts')}
               >
-                <View className="flex-row items-center" style={{ gap: 12 }}>
-                  {['S', 'T', 'H'].map((initial, i) => (
-                    <View
-                      key={`${initial}-${i}`}
-                      className="w-10 h-10 rounded-full bg-primaryContainer items-center justify-center"
-                      style={{ marginLeft: i === 0 ? 0 : -14, borderWidth: 2, borderColor: colors.surfaceContainerLowest }}
-                    >
-                      <Text className="text-figma-13 font-inter-700 text-white">{initial}</Text>
-                    </View>
-                  ))}
-                  <View className="flex-1 ml-1">
-                    <Text className="text-figma-13 font-inter-600 text-textPrimary" numberOfLines={1}>
-                      Saree Festival Deals, Tech Tuesday Drops & more
-                    </Text>
-                    <Text className="text-figma-11 font-inter-400 text-textSecondary mt-0.5">
-                      Seller & community announcements
-                    </Text>
-                  </View>
-                  <ArrowRightIcon size={14} color={colors.textSecondary} />
-                </View>
+                <Text className="text-figma-14 font-inter-600 text-textSecondary text-center">
+                  Explore Broadcast Channels
+                </Text>
+                <Text className="text-figma-12 font-inter-400 text-textTertiary text-center mt-1">
+                  Seller announcements and community updates
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -290,51 +249,6 @@ export default function CommunitiesScreen() {
           </View>
         )}
       />
-
-      {/* FAB — 56×56, #5d5fef (Figama live data) */}
-      <TouchableOpacity
-        className="absolute bottom-24 right-5 w-14 h-14 bg-primaryContainer rounded-full items-center justify-center"
-        style={{
-          shadowColor: colors.primaryContainer,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 12,
-          elevation: 6,
-        }}
-        onPress={() => router.push('/(tabs)/create')}
-      >
-        <PlusIcon size={22} color="white" />
-      </TouchableOpacity>
-
-      {/* Bottom Nav — 390×43 (Figma live data) */}
-      <View className="absolute bottom-0 left-0 right-0 h-[43px] bg-surface border-t"
-        style={{ height: 43 + insets.bottom, paddingBottom: insets.bottom, borderTopColor: colors.secondaryContainer, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 6 }}
-      >
-        <View className="flex-1 flex-row items-center justify-center px-5" style={{ gap: 36 }}>
-          {[
-            { key: 'Feed', icon: '♡' },
-            { key: 'Explore', icon: '⌕', active: true },
-            { key: 'Create', icon: '+' },
-            { key: 'Chat', icon: '✉' },
-            { key: 'Profile', icon: '⊙' },
-          ].map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              className="items-center justify-center"
-              style={{ width: 42 }}
-              onPress={() => {
-                if (tab.key === 'Feed') router.replace('/(tabs)/feed');
-                if (tab.key === 'Explore') router.replace('/(tabs)/explore');
-                if (tab.key === 'Create') router.replace('/(tabs)/create');
-                if (tab.key === 'Chat') router.replace('/(tabs)/chat');
-                if (tab.key === 'Profile') router.replace('/(tabs)/profile');
-              }}
-            >
-              <Text className={`text-figma-16 ${tab.active ? 'text-primary' : 'text-secondary'}`}>{tab.icon}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
     </View>
   );
 }

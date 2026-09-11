@@ -15,7 +15,7 @@ function HomeManagement() {
   const router = useRouter();
   const params = useSearchParams();
   const requested = params.get("section") as SectionKind | null;
-  const valid = requested && requested in SECTION_CONFIG ? requested : "hero-banners";
+  const valid = requested && requested in SECTION_CONFIG ? requested : (Object.keys(SECTION_CONFIG)[0] as SectionKind);
   const [editor, setEditor] = useState<{ kind: SectionKind; editingId?: string } | null>(null);
 
   return (

@@ -11,7 +11,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Gavel, Ban, Clock3, Trash2, CheckCircle2 } from "lucide-react";
-import type { MockAuction } from "@/services/mock-data";
+import type { MockAuction } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockAuction>();
 
@@ -102,6 +102,7 @@ export default function AuctionsPage() {
     fetch("/api/data/auctions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id, data }),
     }).finally(refresh);
   }
@@ -120,6 +121,7 @@ export default function AuctionsPage() {
     fetch("/api/data/auctions", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: deleteTarget.id }),
     }).finally(() => {
       setDeleteTarget(null);
@@ -174,8 +176,8 @@ export default function AuctionsPage() {
 
       <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Remove auction listing?">
         <p className="text-sm text-[#71717A]">
-          "{deleteTarget?.title}" will be removed from the marketplace. The winning bid will not be
-          processed and bidders will be notified.
+          "{deleteTarget?.title}" will be removed from the marketplace. Bids on it are void —
+          contact the seller and bidders directly, as no automatic notifications are sent.
         </p>
         <div className="mt-6 flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
@@ -189,7 +191,8 @@ export default function AuctionsPage() {
 
       <div className="flex items-center gap-2 text-[13px] text-[#71717A]">
         <Gavel className="h-4 w-4" />
-        Close early awards the current highest bidder instantly; Extend 24h pushes the deadline for
+        Close early ends bidding with the current highest bid recorded as the winner — order and
+        payment are arranged between seller and buyer. Extend 24h pushes the deadline for
         active auctions only.
       </div>
     </div>

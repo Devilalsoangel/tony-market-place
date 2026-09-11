@@ -3,10 +3,8 @@ import { View, Text, ScrollView, TextInput, TouchableOpacity, ActivityIndicator 
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CloseIcon } from '../utils/icons';
-import { colors } from '../utils/theme';
+import { colors, CATEGORIES } from '../utils/theme';
 import { useCommunities } from '../contexts/CommunityContext';
-
-const COMMUNITY_CATEGORIES = ['Technology', 'Fashion', 'Art', 'Wellness', 'Sports', 'Food'];
 
 export default function CreateCommunityScreen() {
   const insets = useSafeAreaInsets();
@@ -74,16 +72,16 @@ export default function CreateCommunityScreen() {
           {/* Category */}
           <Text className="text-figma-14 font-inter-600 text-textSecondary mt-5 mb-2">Category</Text>
           <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-            {COMMUNITY_CATEGORIES.map((cat) => {
-              const active = category === cat;
+            {CATEGORIES.map((cat) => {
+              const active = category === cat.label;
               return (
                 <TouchableOpacity
-                  key={cat}
+                  key={cat.id}
                   className={`px-4 py-2 rounded-full ${active ? 'bg-primaryContainer' : 'bg-surfaceContainer'}`}
-                  onPress={() => setCategory(active ? '' : cat)}
+                  onPress={() => setCategory(active ? '' : cat.label)}
                 >
                   <Text className={`text-figma-12 font-inter-500 ${active ? 'text-white' : 'text-textSecondary'}`}>
-                    {cat}
+                    {cat.label}
                   </Text>
                 </TouchableOpacity>
               );

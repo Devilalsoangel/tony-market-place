@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
 import { BackIcon, CheckIcon } from '../../utils/icons';
 import { colors } from '../../utils/theme';
+import { usePosts } from '../../contexts/PostContext';
 
 const RESOLVED_KEY = '@susej_mod_resolved';
 
@@ -17,41 +18,6 @@ interface ReportItem {
   reporter: string;
   time: string;
 }
-
-const SEED_REPORTS: ReportItem[] = [
-  {
-    id: 'rep_1',
-    reason: 'Spam listing',
-    postTitle: 'iPhone 15 Pro Max 256GB — 30% off',
-    seller: 'TechVault',
-    reporter: 'Anonymous',
-    time: '1h ago',
-  },
-  {
-    id: 'rep_2',
-    reason: 'Misleading price',
-    postTitle: '"24K pure gold" necklace for ₹999',
-    seller: 'GoldenVault',
-    reporter: 'Anonymous',
-    time: '3h ago',
-  },
-  {
-    id: 'rep_3',
-    reason: 'Inappropriate image',
-    postTitle: 'Home workout gear bundle',
-    seller: 'FlexFit India',
-    reporter: 'Anonymous',
-    time: '6h ago',
-  },
-  {
-    id: 'rep_4',
-    reason: 'Fake seller',
-    postTitle: 'Vintage Levi\u2019s denim jacket',
-    seller: 'vintage_king',
-    reporter: 'Anonymous',
-    time: '1d ago',
-  },
-];
 
 function FlagIcon({ size = 16, color = colors.error }: { size?: number; color?: string }) {
   return (
@@ -97,8 +63,26 @@ export default function AdminReportsScreen() {
     });
   };
 
-  const open = SEED_REPORTS.filter((r) => !resolved.includes(r.id));
-  const resolvedList = SEED_REPORTS.filter((r) => resolved.includes(r.id));
+  // Real reports only — what users actually filed via reportPost (PostContext).
+  const { reports, posts } = usePosts();
+  const reportItems: ReportItem[] = useMemo(
+    () =>
+      reports.map((r) => {
+        const post = posts.find((p) => p.id === r.postId);
+        return {
+          id: r.id,
+          reason: r.reason,
+          postTitle: post?.description?.split('\n')[0]?.slice(0, 60) ?? 'Removed listing',
+          seller: post?.sellerName ?? 'Unknown seller',
+          reporter: 'Anonymous',
+          time: new Date(r.time).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+        };
+      }),
+    [reports, posts]
+  );
+
+  const open = reportItems.filter((r) => !resolved.includes(r.id));
+  const resolvedList = reportItems.filter((r) => resolved.includes(r.id));
 
   return (
     <View className="flex-1 bg-surface">

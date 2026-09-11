@@ -1,6 +1,4 @@
-import { createClient } from "@libsql/client";
-import { PrismaLibSql } from "@prisma/adapter-libsql";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
 
@@ -8,13 +6,14 @@ let clientPromise: Promise<PrismaClient | null> | null = null;
 
 function createAdapter(): unknown {
   const url = process.env.DATABASE_URL;
-  if (url && url.startsWith("libsql://")) {
-    return new PrismaLibSql({
-      url,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    } as never);
+  if (!url || !url.startsWith("postgres")) {
+    // No silent SQLite fallback - a missing/bad DATABASE_URL must be loud,
+    // not quietly spin up an empty demo database.
+    throw new Error(
+      "[db] DATABASE_URL is missing or not a postgres:// connection string. Configure PostgreSQL (see .env) before starting the server."
+    );
   }
-  return new PrismaBetterSqlite3({ url: url ?? "file:./dev.db" });
+  return new PrismaPg({ connectionString: url });
 }
 
 // Live DB mode (migrate deploy + seed applied Aug 14). Probe re-runs on module recompile.

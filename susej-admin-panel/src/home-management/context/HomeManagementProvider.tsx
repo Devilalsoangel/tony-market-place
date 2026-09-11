@@ -1,35 +1,24 @@
 "use client";
 import { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import {
-  HeroBanner,
-  FeaturedCategory,
   TopSeller,
   HotDeal,
   FeaturedPost,
+  StorefrontBanner,
   HomeSection,
   HomeLayout
 } from '@/types/home-management';
-import { mockHomeData } from '@/home-management/lib/mockData';
 import { toast } from "@/components/ui/toast";
 
 export interface HomeManagementState {
-  heroBanners: HeroBanner[];
-  featuredCategories: FeaturedCategory[];
   topSellers: TopSeller[];
   hotDeals: HotDeal[];
   featuredPosts: FeaturedPost[];
+  storefrontBanners: StorefrontBanner[];
   layout: HomeSection[];
 }
 
 export type HomeManagementAction =
-  | { type: 'SET_HERO_BANNERS'; payload: HeroBanner[] }
-  | { type: 'ADD_HERO_BANNER'; payload: HeroBanner }
-  | { type: 'UPDATE_HERO_BANNER'; payload: { id: string; changes: Partial<HeroBanner> } }
-  | { type: 'DELETE_HERO_BANNER'; payload: string }
-  | { type: 'SET_FEATURED_CATEGORIES'; payload: FeaturedCategory[] }
-  | { type: 'ADD_FEATURED_CATEGORY'; payload: FeaturedCategory }
-  | { type: 'UPDATE_FEATURED_CATEGORY'; payload: { id: string; changes: Partial<FeaturedCategory> } }
-  | { type: 'DELETE_FEATURED_CATEGORY'; payload: string }
   | { type: 'SET_TOP_SELLERS'; payload: TopSeller[] }
   | { type: 'ADD_TOP_SELLER'; payload: TopSeller }
   | { type: 'UPDATE_TOP_SELLER'; payload: { id: string; changes: Partial<TopSeller> } }
@@ -42,57 +31,25 @@ export type HomeManagementAction =
   | { type: 'ADD_FEATURED_POST'; payload: FeaturedPost }
   | { type: 'UPDATE_FEATURED_POST'; payload: { id: string; changes: Partial<FeaturedPost> } }
   | { type: 'DELETE_FEATURED_POST'; payload: string }
+  | { type: 'SET_STOREFRONT_BANNERS'; payload: StorefrontBanner[] }
+  | { type: 'UPDATE_STOREFRONT_BANNER'; payload: { id: string; changes: Partial<StorefrontBanner> } }
+  | { type: 'DELETE_STOREFRONT_BANNER'; payload: string }
   | { type: 'SET_LAYOUT'; payload: HomeSection[] }
   | { type: 'UPDATE_LAYOUT_ITEM'; payload: { id: string; changes: Partial<HomeSection> } }
   | { type: 'REORDER_LAYOUT'; payload: HomeSection[] };
 
+// Start EMPTY — real rows hydrate from /api/data on mount. No seeded demo
+// content flashes before the fetch lands.
 const initialState: HomeManagementState = {
-  heroBanners: mockHomeData.heroBanners,
-  featuredCategories: mockHomeData.featuredCategories,
-  topSellers: mockHomeData.topSellers,
-  hotDeals: mockHomeData.hotDeals,
-  featuredPosts: mockHomeData.featuredPosts,
-  layout: mockHomeData.layout,
+  topSellers: [],
+  hotDeals: [],
+  featuredPosts: [],
+  storefrontBanners: [],
+  layout: [],
 };
 
 function homeManagementReducer(state: HomeManagementState, action: HomeManagementAction): HomeManagementState {
   switch (action.type) {
-    case 'SET_HERO_BANNERS':
-      return { ...state, heroBanners: action.payload };
-    case 'ADD_HERO_BANNER':
-      return { ...state, heroBanners: [...state.heroBanners, action.payload] };
-    case 'UPDATE_HERO_BANNER':
-      return {
-        ...state,
-        heroBanners: state.heroBanners.map((banner) =>
-          banner.id === action.payload.id ? { ...banner, ...action.payload.changes } : banner
-        ),
-      };
-    case 'DELETE_HERO_BANNER':
-      return {
-        ...state,
-        heroBanners: state.heroBanners.filter((banner) => banner.id !== action.payload),
-      };
-    case 'SET_FEATURED_CATEGORIES':
-      return { ...state, featuredCategories: action.payload };
-    case 'ADD_FEATURED_CATEGORY':
-      return { ...state, featuredCategories: [...state.featuredCategories, action.payload] };
-    case 'UPDATE_FEATURED_CATEGORY':
-      return {
-        ...state,
-        featuredCategories: state.featuredCategories.map((category) =>
-          category.id === action.payload.id
-            ? { ...category, ...action.payload.changes }
-            : category
-        ),
-      };
-    case 'DELETE_FEATURED_CATEGORY':
-      return {
-        ...state,
-        featuredCategories: state.featuredCategories.filter(
-          (category) => category.id !== action.payload
-        ),
-      };
     case 'SET_TOP_SELLERS':
       return { ...state, topSellers: action.payload };
     case 'ADD_TOP_SELLER':
@@ -144,6 +101,22 @@ function homeManagementReducer(state: HomeManagementState, action: HomeManagemen
       return {
         ...state,
         featuredPosts: state.featuredPosts.filter((post) => post.id !== action.payload),
+      };
+    case 'SET_STOREFRONT_BANNERS':
+      return { ...state, storefrontBanners: action.payload };
+    case 'UPDATE_STOREFRONT_BANNER':
+      return {
+        ...state,
+        storefrontBanners: state.storefrontBanners.map((banner) =>
+          banner.id === action.payload.id
+            ? { ...banner, ...action.payload.changes }
+            : banner
+        ),
+      };
+    case 'DELETE_STOREFRONT_BANNER':
+      return {
+        ...state,
+        storefrontBanners: state.storefrontBanners.filter((banner) => banner.id !== action.payload),
       };
     case 'SET_LAYOUT':
       return { ...state, layout: action.payload };
@@ -199,62 +172,6 @@ function createHomeManagementActions(dispatch: React.Dispatch<HomeManagementActi
   };
 
   return {
-    setHeroBanners: async (banners: HeroBanner[]) => {
-      dispatch({ type: "SET_HERO_BANNERS", payload: banners });
-    },
-    addHeroBanner: async (banner: HeroBanner) => {
-      try {
-        const { row } = await api("hero-banners", "POST", banner);
-        dispatch({ type: "ADD_HERO_BANNER", payload: (row ?? banner) as HeroBanner });
-      } catch (e) {
-        fail("addHeroBanner", e);
-      }
-    },
-    updateHeroBanner: async (id: string, changes: Partial<HeroBanner>) => {
-      try {
-        const { row } = await api("hero-banners", "PATCH", { id, data: changes });
-        dispatch({ type: "UPDATE_HERO_BANNER", payload: { id, changes: (row ?? changes) as Partial<HeroBanner> } });
-      } catch (e) {
-        fail("updateHeroBanner", e);
-      }
-    },
-    deleteHeroBanner: async (id: string) => {
-      try {
-        await api("hero-banners", "DELETE", { id });
-        dispatch({ type: "DELETE_HERO_BANNER", payload: id });
-      } catch (e) {
-        fail("deleteHeroBanner", e);
-      }
-    },
-
-    setFeaturedCategories: async (categories: FeaturedCategory[]) => {
-      dispatch({ type: "SET_FEATURED_CATEGORIES", payload: categories });
-    },
-    addFeaturedCategory: async (category: FeaturedCategory) => {
-      try {
-        const { row } = await api("featured-categories", "POST", category);
-        dispatch({ type: "ADD_FEATURED_CATEGORY", payload: (row ?? category) as FeaturedCategory });
-      } catch (e) {
-        fail("addFeaturedCategory", e);
-      }
-    },
-    updateFeaturedCategory: async (id: string, changes: Partial<FeaturedCategory>) => {
-      try {
-        const { row } = await api("featured-categories", "PATCH", { id, data: changes });
-        dispatch({ type: "UPDATE_FEATURED_CATEGORY", payload: { id, changes: (row ?? changes) as Partial<FeaturedCategory> } });
-      } catch (e) {
-        fail("updateFeaturedCategory", e);
-      }
-    },
-    deleteFeaturedCategory: async (id: string) => {
-      try {
-        await api("featured-categories", "DELETE", { id });
-        dispatch({ type: "DELETE_FEATURED_CATEGORY", payload: id });
-      } catch (e) {
-        fail("deleteFeaturedCategory", e);
-      }
-    },
-
     setTopSellers: async (sellers: TopSeller[]) => {
       dispatch({ type: "SET_TOP_SELLERS", payload: sellers });
     },
@@ -339,6 +256,23 @@ function createHomeManagementActions(dispatch: React.Dispatch<HomeManagementActi
       }
     },
 
+    updateStorefrontBanner: async (id: string, changes: Partial<StorefrontBanner>) => {
+      try {
+        const { row } = await api("storefront-banners", "PATCH", { id, data: changes });
+        dispatch({ type: "UPDATE_STOREFRONT_BANNER", payload: { id, changes: (row ?? changes) as Partial<StorefrontBanner> } });
+      } catch (e) {
+        fail("updateStorefrontBanner", e);
+      }
+    },
+    deleteStorefrontBanner: async (id: string) => {
+      try {
+        await api("storefront-banners", "DELETE", { id });
+        dispatch({ type: "DELETE_STOREFRONT_BANNER", payload: id });
+      } catch (e) {
+        fail("deleteStorefrontBanner", e);
+      }
+    },
+
     setLayout: async (layout: HomeSection[]) => {
       dispatch({ type: "SET_LAYOUT", payload: layout });
     },
@@ -384,20 +318,18 @@ export const HomeManagementProvider: React.FC<{ children: React.ReactNode }> = (
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [heroBanners, featuredCategories, topSellers, hotDeals, featuredPosts, layout] = await Promise.all([
-        loadRows<HeroBanner>("hero-banners"),
-        loadRows<FeaturedCategory>("featured-categories"),
+      const [topSellers, hotDeals, featuredPosts, storefrontBanners, layout] = await Promise.all([
         loadRows<TopSeller>("top-sellers"),
         loadRows<HotDeal>("hot-deals"),
         loadRows<FeaturedPost>("featured-posts"),
+        loadRows<StorefrontBanner>("storefront-banners"),
         loadRows<HomeSection>("home-sections"),
       ]);
       if (cancelled) return;
-      if (heroBanners) dispatch({ type: "SET_HERO_BANNERS", payload: heroBanners });
-      if (featuredCategories) dispatch({ type: "SET_FEATURED_CATEGORIES", payload: featuredCategories });
       if (topSellers) dispatch({ type: "SET_TOP_SELLERS", payload: topSellers });
       if (hotDeals) dispatch({ type: "SET_HOT_DEALS", payload: hotDeals });
       if (featuredPosts) dispatch({ type: "SET_FEATURED_POSTS", payload: featuredPosts });
+      if (storefrontBanners) dispatch({ type: "SET_STOREFRONT_BANNERS", payload: storefrontBanners });
       if (layout) dispatch({ type: "SET_LAYOUT", payload: layout });
       setHydrated(true);
     })();

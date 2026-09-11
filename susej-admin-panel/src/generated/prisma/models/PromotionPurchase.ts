@@ -857,14 +857,6 @@ export type PromotionPurchaseSumOrderByAggregateInput = {
   position?: Prisma.SortOrder
 }
 
-export type NullableIntFieldUpdateOperationsInput = {
-  set?: number | null
-  increment?: number
-  decrement?: number
-  multiply?: number
-  divide?: number
-}
-
 
 
 export type PromotionPurchaseSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1680,6 +1672,7 @@ export type PromotionPurchaseCreateManyArgs<ExtArgs extends runtime.Types.Extens
    * The data used to create many PromotionPurchases.
    */
   data: Prisma.PromotionPurchaseCreateManyInput | Prisma.PromotionPurchaseCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1698,6 +1691,7 @@ export type PromotionPurchaseCreateManyAndReturnArgs<ExtArgs extends runtime.Typ
    * The data used to create many PromotionPurchases.
    */
   data: Prisma.PromotionPurchaseCreateManyInput | Prisma.PromotionPurchaseCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

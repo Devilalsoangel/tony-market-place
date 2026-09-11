@@ -9,7 +9,7 @@ import { StatTile } from "@/components/shared/stat-tile";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { MapPin } from "lucide-react";
-import type { MockAddressBookEntry } from "@/services/mock-data";
+import type { MockAddressBookEntry } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockAddressBookEntry>();
 

@@ -74,22 +74,8 @@ export default function RefundDetailScreen() {
     setResponse('');
   };
 
-  const sellerApproves = () => {
-    if (!order) return;
-    respondRefund(order.id, 'seller', 'Seller approved your refund request.', 'approved');
-  };
-
-  const platformReview = () => {
-    if (!order) return;
-    const amount = order.chargedTotal ?? order.total;
-    creditWallet(order.id, order.orderNumber, amount);
-    respondRefund(
-      order.id,
-      'platform',
-      `Refund approved and ${formatPrice(amount)} credited to your wallet.`,
-      'refunded'
-    );
-  };
+  // Refund verdicts come ONLY from the seller side (seller-orders) and the
+  // admin panel — the buyer cannot self-approve or self-credit here.
 
   return (
     <KeyboardAvoidingView className="flex-1" style={{ backgroundColor: colors.surface }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -216,35 +202,6 @@ export default function RefundDetailScreen() {
                 <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 14, lineHeight: 20 }}>
                   The seller did not accept this request. You can still message the seller to resolve it.
                 </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Mock actions while requested */}
-          {refund.status === 'requested' && (
-            <View className="mb-6">
-              <Text className="font-inter-500 text-textSecondary mb-2" style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24 }}>
-                SELLER & PLATFORM REVIEW (DEMO)
-              </Text>
-              <View className="flex-row" style={{ gap: 10 }}>
-                <TouchableOpacity
-                  className="flex-1 items-center justify-center py-3"
-                  style={{ borderRadius: 12, backgroundColor: colors.surfaceContainerLow }}
-                  onPress={sellerApproves}
-                >
-                  <Text className="font-inter-600 text-tertiary" style={{ fontSize: 13, lineHeight: 16 }}>
-                    Seller approves refund
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="flex-1 items-center justify-center py-3"
-                  style={{ borderRadius: 12, backgroundColor: colors.primaryContainer }}
-                  onPress={platformReview}
-                >
-                  <Text className="font-inter-600 text-white" style={{ fontSize: 13, lineHeight: 16 }}>
-                    Platform review
-                  </Text>
-                </TouchableOpacity>
               </View>
             </View>
           )}

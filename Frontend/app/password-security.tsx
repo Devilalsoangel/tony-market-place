@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from '../utils/icons';
@@ -52,15 +53,49 @@ function PasswordInput({
   );
 }
 
+const TWO_FA_PREF_KEY_BASE = '@susej_2fa_pref';
+
+function getTwoFAKey(username?: string | null): string {
+  return username ? `${TWO_FA_PREF_KEY_BASE}:${username}` : TWO_FA_PREF_KEY_BASE;
+}
+
 export default function PasswordSecurityScreen() {
   const insets = useSafeAreaInsets();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const twoFAKey = getTwoFAKey(user?.username);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
-  const [updated, setUpdated] = useState(false);
   const [twoFA, setTwoFA] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(twoFAKey)
+      .then(async (raw) => {
+        if (cancelled) return;
+        if (raw === '1') { setTwoFA(true); return; }
+        if (raw === null && twoFAKey !== TWO_FA_PREF_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(TWO_FA_PREF_KEY_BASE);
+          if (cancelled) return;
+          if (legacy === '1') {
+            setTwoFA(true);
+            try { await AsyncStorage.setItem(twoFAKey, legacy); } catch {}
+          } else {
+            setTwoFA(false);
+          }
+        } else {
+          setTwoFA(raw === '1');
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [twoFAKey]);
+
+  const toggleTwoFA = (value: boolean) => {
+    setTwoFA(value);
+    AsyncStorage.setItem(getTwoFAKey(user?.username), value ? '1' : '0').catch(() => {});
+  };
 
   const savePassword = () => {
     if (!current.trim()) {
@@ -76,26 +111,23 @@ export default function PasswordSecurityScreen() {
       return;
     }
     setError('');
-    setUpdated(true);
-    Alert.alert('Password updated ✓', 'Your password has been changed successfully.');
-    setCurrent('');
-    setNext('');
-    setConfirm('');
+    // No auth backend yet — be honest instead of faking a success.
+    Alert.alert('Password changes coming soon', 'Password updates are not available in this build yet.');
   };
 
   const signOutOthers = () => {
     Alert.alert(
       'Sign out other sessions?',
-      'All other active sessions will be signed out. You will stay signed in on this device.',
+      'Session management is coming soon — this build signs you out everywhere when you log out.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign out', style: 'destructive', onPress: () => Alert.alert('Done', 'Other sessions signed out.') },
+        { text: 'Got it', onPress: () => {} },
       ],
     );
   };
 
   const downloadData = () => {
-    Alert.alert('Data export started', 'We are preparing your data. A download link will be emailed to you within 24 hours.');
+    Alert.alert('Data export coming soon', 'Export will be available in a future update.');
   };
 
   const deleteAccount = () => {
@@ -159,14 +191,9 @@ export default function PasswordSecurityScreen() {
             onPress={savePassword}
           >
             <Text className="font-inter-500" style={{ fontSize: 15, lineHeight: 20, color: colors.onPrimary }}>
-              {updated ? 'Save another' : 'Save Password'}
+              Save Password
             </Text>
           </TouchableOpacity>
-          {updated && (
-            <Text className="font-inter-500 text-center mt-3" style={{ fontSize: 12, lineHeight: 18, color: colors.success }}>
-              Password updated ✓
-            </Text>
-          )}
         </View>
 
         {/* Two-Factor Authentication */}
@@ -198,11 +225,14 @@ export default function PasswordSecurityScreen() {
             </View>
             <Switch
               value={twoFA}
-              onValueChange={setTwoFA}
+              onValueChange={toggleTwoFA}
               trackColor={{ false: colors.secondaryContainer, true: colors.primaryContainer }}
               thumbColor={colors.surfaceContainerLowest}
             />
           </View>
+          <Text className="font-inter-400 text-textSecondary mt-2" style={{ fontSize: 11, lineHeight: 16 }}>
+            Preference saved on this device. SMS verification is not active in this build yet.
+          </Text>
         </View>
 
         {/* Login Security */}
@@ -227,7 +257,7 @@ export default function PasswordSecurityScreen() {
                 Last login
               </Text>
               <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 18 }}>
-                2h ago · Pune
+                Not tracked yet
               </Text>
             </View>
           </View>
@@ -236,10 +266,10 @@ export default function PasswordSecurityScreen() {
             <RowIcon path="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.5 14.5c-.74-.77-1.8-1.27-3-1.27-2.21 0-4 1.79-4 4h-2c0-2.76 2.24-5 5-5 .92 0 1.79.26 2.56.7l-1.4 1.4-1.16-1.16c.44.55.7 1.22.7 1.96 0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5zm1-3.5c.21 0 .41.02.61.05C17.03 8.98 14.77 7 12 7c-1.38 0-2.5 1.12-2.5 2.5S10.62 12 12 12c.27 0 .53-.05.78-.12L10.7 13.95c.4.03.82.05 1.24.05 3.16 0 5.86-1.68 7.47-4.12.16.31.26.67.26 1.06 0 1.38-1.12 2.5-2.5 2.5z" />
             <View className="ml-4 flex-1">
               <Text className="font-inter-500 text-textPrimary" style={{ fontSize: 16, lineHeight: 24 }}>
-                Active sessions
+                Sessions
               </Text>
               <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 18 }}>
-                2 devices
+                Sign out below clears this device
               </Text>
             </View>
             <TouchableOpacity

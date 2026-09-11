@@ -40,6 +40,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const { data: orders, refresh } = useDbResource<Order>("orders");
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
 
   const fetched = useMemo(() => orders?.find((o) => o.id === id) ?? null, [orders, id]);
@@ -55,6 +56,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   }, [id]);
 
   if (!order) {
+    if (!orders) {
+      return (
+        <div className="space-y-6">
+          <Breadcrumb items={[{ label: "Orders", href: "/dashboard/orders" }, { label: "Order" }]} />
+          <div className="py-16 text-center text-sm text-[#A1A1AA]">Loading order…</div>
+        </div>
+      );
+    }
     return (
       <div className="space-y-6">
         <Breadcrumb items={[{ label: "Orders", href: "/dashboard/orders" }, { label: "Order" }]} />
@@ -74,15 +83,36 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     );
   }
 
+  const normalizedPayment = String(order.paymentMethod ?? "").trim().toLowerCase();
+  const isCod = normalizedPayment === "cod" || normalizedPayment === "cash on delivery" || normalizedPayment.includes("cash on delivery");
+
   function patchOrder(patch: Partial<Order>) {
     const current = order;
     if (!current) return;
+    setSaveError(null);
     setOrder({ ...current, ...patch });
+    // Surface server refusals (settlement failures, invalid transitions):
+    // the row snaps back via refresh, but silently lying "saved" is how
+    // money-label bugs were born. No money moves on failure.
     void fetch("/api/data/orders", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: current.id, data: patch }),
-    });
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          setSaveError(
+            String((body as { error?: unknown } | null)?.error || `Order update refused (HTTP ${res.status}). No money moved.`)
+          );
+        }
+        refresh();
+      })
+      .catch(() => {
+        setSaveError("Could not reach the server. No money moved.");
+        refresh();
+      });
   }
 
   const currentIdx = FLOW.findIndex((f) => f.status === order.status);
@@ -97,15 +127,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Orders", href: "/dashboard/orders" }, { label: order.id }]} />
-
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="font-mono text-2xl font-bold text-[#18181B] ">{order.id}</h1>
             <StatusBadge status={order.status} />
-            <StatusBadge status={order.deliveryStatus} />
+            {order.deliveryStatus && order.deliveryStatus !== order.status && (
+              <StatusBadge status={order.deliveryStatus} />
+            )}
           </div>
           <p className="mt-1 text-sm text-gray-500">
             Placed {formatDate(order.createdAt, "long")} &middot; {order.items} item{order.items > 1 ? "s" : ""}
@@ -118,6 +148,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       </div>
 
       <div className="grid grid-cols-5 gap-6">
+        {saveError && (
+          <div className="col-span-5 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-2.5 text-[13px] text-[#B91C1C]">
+            {saveError}
+          </div>
+        )}
         {/* Left: items + timeline */}
         <div className="col-span-3 space-y-6">
           <Card>
@@ -145,34 +180,52 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
           <Card>
             <CardHeader>
-              <CardTitle>Delivery Timeline</CardTitle>
+              <CardTitle>Order Timeline</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-0">
-                {order.deliveryLog.map((entry, i) => (
-                  <div key={entry.id} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#6C3BFF]/10">
-                        <CheckCircle2 className="h-4 w-4 text-[#6C3BFF]" />
-                      </div>
-                      {i < order.deliveryLog.length - 1 && <div className="mt-1 w-px flex-1 bg-[#E4E4E7]" />}
-                    </div>
-                    <div className="flex-1 pb-6">
-                      <p className="text-sm font-medium text-[#18181B] ">{entry.event}</p>
-                      <p className="mt-0.5 text-sm text-gray-500">{entry.detail}</p>
-                      <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-                        <MapPin className="h-3 w-3" />
-                        <span>{entry.location}</span>
-                        <span>&middot;</span>
-                        <span>{formatDate(entry.timestamp, "long")}</span>
-                      </div>
-                    </div>
+              {order.status === "cancelled" ? (
+                <div className="flex gap-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FEE2E2]">
+                    <XCircle className="h-4 w-4 text-[#EF4444]" />
                   </div>
-                ))}
-                {order.deliveryLog.length === 0 && (
-                  <p className="py-4 text-center text-sm text-gray-500">No delivery events yet.</p>
-                )}
-              </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-[#18181B]">Cancelled</p>
+                    <p className="mt-0.5 text-xs text-[#EF4444]">This order was cancelled.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-0">
+                  {FLOW.map((step, i) => {
+                    const isDone = currentIdx >= i;
+                    const isCurrent = currentIdx === i;
+                    const Icon = step.icon;
+                    return (
+                      <div key={step.status} className="flex gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                            isDone ? "bg-[#6C3BFF]/10" : "bg-gray-100"
+                          }`}>
+                            <Icon className={`h-4 w-4 ${isDone ? "text-[#6C3BFF]" : "text-gray-400"}`} />
+                          </div>
+                          {i < FLOW.length - 1 && <div className={`mt-1 w-px flex-1 ${isDone ? "bg-[#6C3BFF]/30" : "bg-gray-200"}`} />}
+                        </div>
+                        <div className="flex-1 pb-6">
+                          <p className={`text-sm font-medium ${isDone ? "text-[#18181B] " : "text-gray-400"}`}>
+                            {step.label}
+                            {isCurrent && <span className="ml-2 text-xs text-[#6C3BFF]">(current)</span>}
+                          </p>
+                          {isDone && !isCurrent && (
+                            <p className="mt-0.5 text-xs text-green-600">Completed</p>
+                          )}
+                          {!isDone && (
+                            <p className="mt-0.5 text-xs text-gray-400">Pending</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -327,7 +380,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
                 <div className="rounded-xl bg-[#FAFAFA] px-4 py-3 text-sm">
                   <p className="text-gray-500">
-                    Estimated delivery: <span className="font-medium text-[#18181B] ">{formatDate(order.estimatedDelivery, "long")}</span>
+                    Estimated delivery:{' '}
+                    <span className="font-medium text-[#18181B] ">
+                      {order.estimatedDelivery && !Number.isNaN(new Date(order.estimatedDelivery).getTime())
+                        ? formatDate(order.estimatedDelivery, "long")
+                        : "Not scheduled yet"}
+                    </span>
                   </p>
                   {order.actualDelivery && (
                     <p className="mt-1 text-gray-500">
@@ -346,14 +404,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <AlertTriangle className="mx-auto h-10 w-10 text-[#EF4444]" />
           <h3 className="mt-3 text-lg font-semibold text-[#18181B] ">Cancel Order {order.id}</h3>
           <p className="mt-2 text-sm text-gray-500">
-            The buyer will be refunded via {methodLabels[order.paymentMethod]}. This cannot be undone.
+            {isCod
+              ? "Paid on delivery - no payment was collected, so there is nothing to refund. This cannot be undone."
+              : `The buyer will be refunded via ${methodLabels[order.paymentMethod] ?? order.paymentMethod}. This cannot be undone.`}
           </p>
           <div className="mt-6 flex justify-center gap-3">
             <Button variant="secondary" onClick={() => setCancelOpen(false)}>Keep Order</Button>
             <Button
               variant="danger"
               onClick={() => {
-                patchOrder({ status: "cancelled", deliveryStatus: "cancelled", paymentStatus: "refunded" });
+                // Mirror /api/app/orders/[id]: only mark refunded when money actually moved.
+                patchOrder({
+                  status: "cancelled",
+                  deliveryStatus: "cancelled",
+                  ...(isCod ? {} : { paymentStatus: "refunded" }),
+                });
                 setCancelOpen(false);
               }}
             >

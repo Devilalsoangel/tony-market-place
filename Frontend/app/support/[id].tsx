@@ -7,8 +7,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, SendIcon } from '../../utils/icons';
 import { colors, shadows } from '../../utils/theme';
 import type { SupportTicket } from '../support';
+import { useAuth } from '../../contexts/AuthContext';
 
-const TICKETS_KEY = '@susej_tickets';
+const TICKETS_KEY_BASE = '@susej_tickets';
+const TICKETS_KEY = TICKETS_KEY_BASE;
 
 function SupportAvatar({ size = 30 }: { size?: number }) {
   return (
@@ -29,41 +31,42 @@ const PRIORITY_COLOR: Record<SupportTicket['priority'], string> = {
 export default function TicketDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
+  const { user, tokenSeq } = useAuth();
   const [ticket, setTicket] = useState<SupportTicket | null>(null);
   const [reply, setReply] = useState('');
+  const ticketsKey = user?.username ? `${TICKETS_KEY_BASE}:${user.username}` : TICKETS_KEY_BASE;
 
   useEffect(() => {
-    AsyncStorage.getItem(TICKETS_KEY)
-      .then((data) => {
-        if (!data) return;
-        try {
-          const parsed = JSON.parse(data);
-          if (Array.isArray(parsed)) {
-            setTicket(parsed.find((t: SupportTicket) => t.id === id) ?? null);
-          }
-        } catch {
-          // corrupted — no ticket
+    let cancelled = false;
+    (async () => {
+      try {
+        let raw = await AsyncStorage.getItem(ticketsKey);
+        if (raw === null && ticketsKey !== TICKETS_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(TICKETS_KEY_BASE);
+          if (legacy !== null) { try { await AsyncStorage.setItem(ticketsKey, legacy); } catch {} raw = legacy; }
         }
-      })
-      .catch(() => {});
-  }, [id]);
+        if (cancelled || !raw) { if (!cancelled) setTicket(null); return; }
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && !cancelled) setTicket(parsed.find((t: SupportTicket) => t.id === id) ?? null);
+      } catch { if (!cancelled) setTicket(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [id, ticketsKey, tokenSeq]);
 
   const persist = (next: SupportTicket) => {
-    AsyncStorage.getItem(TICKETS_KEY)
-      .then((data) => {
-        let all: SupportTicket[] = [];
-        if (data) {
-          try {
-            const parsed = JSON.parse(data);
-            if (Array.isArray(parsed)) all = parsed;
-          } catch {
-            all = [];
-          }
+    const key = ticketsKey;
+    AsyncStorage.getItem(key)
+      .then(async (data) => {
+        let cur: string | null = data;
+        if (cur === null && key !== TICKETS_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(TICKETS_KEY_BASE);
+          if (legacy) cur = legacy;
         }
+        let all: SupportTicket[] = [];
+        if (cur) { try { const p = JSON.parse(cur); if (Array.isArray(p)) all = p; } catch { all = []; } }
         const idx = all.findIndex((t) => t.id === next.id);
-        if (idx >= 0) all[idx] = next;
-        else all = [next, ...all];
-        AsyncStorage.setItem(TICKETS_KEY, JSON.stringify(all)).catch(() => {});
+        if (idx >= 0) all[idx] = next; else all = [next, ...all];
+        AsyncStorage.setItem(key, JSON.stringify(all)).catch(() => {});
       })
       .catch(() => {});
   };
@@ -178,7 +181,7 @@ export default function TicketDetailScreen() {
           {open && (
             <View className="items-center py-3">
               <Text className="font-inter-400" style={{ fontSize: 11, color: colors.textTertiary }}>
-                We usually reply within 24 hours.
+                Replies land in your ticket inbox.
               </Text>
             </View>
           )}

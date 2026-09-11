@@ -1,30 +1,3 @@
-export type HeroBanner = {
-  id: string;
-  title: string;
-  subtitle: string;
-  imageUrl: string;
-  buttonText: string;
-  buttonAction: 'product' | 'category' | 'seller' | 'external';
-  destinationId?: string;
-  destinationUrl?: string;
-  startDate: string;
-  endDate: string;
-  status: 'active' | 'inactive' | 'scheduled';
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type FeaturedCategory = {
-  id: string;
-  categoryId: string;
-  categoryName: string;
-  imageUrl: string;
-  position: number;
-  status: 'active' | 'inactive';
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type TopSeller = {
   id: string;
   sellerId: string;
@@ -76,13 +49,29 @@ export type FeaturedPostRecord = {
   title: string;
   excerpt: string;
   imageUrl: string;
-  authorName: string;
-  publishedAt: string;
+  authorName?: string;
+  publishedAt?: string;
+};
+
+export type StorefrontBanner = {
+  id: string;
+  sellerUsername: string;
+  sellerName: string;
+  title: string;
+  subtitle?: string;
+  ctaLabel?: string;
+  imageUrl?: string;
+  imageIndex?: number;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type HomeSection = {
   id: string;
-  name: 'hero-banners' | 'featured-categories' | 'top-sellers' | 'hot-deals' | 'featured-posts';
+  // 'featured-posts' (post marketing) was REMOVED — banners are the only hero
+  // source and they come from the seller dashboard (Marketing Banners).
+  name: 'top-sellers' | 'hot-deals' | 'storefront-banners';
   title: string;
   isEnabled: boolean;
   position: number;

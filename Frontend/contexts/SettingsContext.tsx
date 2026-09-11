@@ -1,7 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
 
-const SETTINGS_KEY = '@susej_settings';
+const SETTINGS_KEY_BASE = '@susej_settings';
+
+function getSettingsKey(username?: string | null): string {
+  return username ? `${SETTINGS_KEY_BASE}:${username}` : SETTINGS_KEY_BASE;
+}
 
 interface Settings {
   privateAccount: boolean;
@@ -23,20 +28,41 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | null>(null);
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
+  const { user, isLoading: authLoading } = useAuth();
+  const settingsKey = getSettingsKey(user?.username);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
   useEffect(() => {
-    AsyncStorage.getItem(SETTINGS_KEY).then((data) => {
-      if (data) {
-        try { setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(data) }); }
-        catch { /* reset */ }
-      }
-    }).catch(() => {});
-  }, []);
+    let cancelled = false;
+    if (authLoading) return;
+    const key = settingsKey;
+    AsyncStorage.getItem(key)
+      .then(async (data) => {
+        if (cancelled) return;
+        if (data) {
+          try { setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(data) }); return; }
+          catch { /* reset */ }
+        }
+        if (key !== SETTINGS_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(SETTINGS_KEY_BASE);
+          if (cancelled) return;
+          if (legacy) {
+            try {
+              setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(legacy) });
+              try { await AsyncStorage.setItem(key, legacy); } catch {}
+              return;
+            } catch {}
+          }
+        }
+        setSettings(DEFAULT_SETTINGS);
+      })
+      .catch(() => { if (!cancelled) setSettings(DEFAULT_SETTINGS); });
+    return () => { cancelled = true; };
+  }, [settingsKey, authLoading]);
 
   const persist = useCallback((updated: Settings) => {
-    AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(updated)).catch(() => {});
-  }, []);
+    AsyncStorage.setItem(getSettingsKey(user?.username), JSON.stringify(updated)).catch(() => {});
+  }, [user?.username]);
 
   const updateSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings((prev) => {

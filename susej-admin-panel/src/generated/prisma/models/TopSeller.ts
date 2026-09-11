@@ -1246,6 +1246,7 @@ export type TopSellerCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Int
    * The data used to create many TopSellers.
    */
   data: Prisma.TopSellerCreateManyInput | Prisma.TopSellerCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1264,6 +1265,7 @@ export type TopSellerCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exten
    * The data used to create many TopSellers.
    */
   data: Prisma.TopSellerCreateManyInput | Prisma.TopSellerCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

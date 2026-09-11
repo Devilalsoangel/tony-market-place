@@ -1,15 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
-import { productDetailImages } from '../utils/screenImages';
+import { serverApi } from '../utils/serverApi';
 
-const POSTS_KEY = '@susej_feed_posts';
-const HIDDEN_KEY = '@susej_hidden_posts';
-const MUTED_KEY = '@susej_muted_sellers';
-const REPORTS_KEY = '@susej_reports';
-const LIKED_KEY = '@susej_liked_posts';
-const TOMBSTONE_KEY = '@susej_deleted_post_ids';
+const POSTS_KEY_BASE = '@susej_feed_posts';
+const HIDDEN_KEY_BASE = '@susej_hidden_posts';
+const MUTED_KEY_BASE = '@susej_muted_sellers';
+const REPORTS_KEY_BASE = '@susej_reports';
+const LIKED_KEY_BASE = '@susej_liked_posts';
+const TOMBSTONE_KEY_BASE = '@susej_deleted_post_ids';
 
 export interface PostReport {
   id: string;
@@ -21,6 +20,8 @@ export interface PostReport {
 export interface PostVariantValue {
   label: string;
   priceDelta?: number;
+  /** Per-value stock (Shopify-style inventory). Undefined = untracked. */
+  stock?: number;
 }
 
 export interface PostVariant {
@@ -47,11 +48,19 @@ export interface Post {
   createdAt: number;
   /** Seller-inventory state — true once the seller marks the listing sold. */
   isSold?: boolean;
+  /** Visibility: 'published' (default) or 'hidden' (seller-deactivated or
+   *  moderated). The server feed only serves published; hidden lives on here
+   *  for the seller's own management screens. */
+  status?: string;
   /** Seller-flagged storefront deal (Top Deal rail). */
   featured?: boolean;
   condition?: string;
   brand?: string;
   delivery?: boolean;
+  /** Fulfillment mode picked at listing creation (pickup/shipping/local). */
+  deliveryMode?: string;
+  /** Seller-declared shipping fee (applies when deliveryMode is shipping). */
+  shippingFee?: number;
   duration?: string;
   availability?: string;
   jobType?: string;
@@ -71,244 +80,18 @@ export interface Post {
   mrp?: number;
   /** Remaining stock for scarcity badges — optional, goods only. */
   stockLeft?: number;
+  /**
+   * Optional per-listing SELLING location picked on the live map (separate
+   * from the seller's store address) — powers delivery-area context.
+   */
+  listingLat?: number;
+  listingLng?: number;
+  listingLocation?: string;
+  /** Server truth: whether the CURRENT user liked this post (synced). */
+  likedByMe?: boolean;
 }
 
-const SEED_POSTS: Post[] = [
-  {
-    id: 'post_001',
-    sellerName: 'NeoDrip Fashion',
-    sellerUsername: 'luxe',
-    sellerLocation: 'Mumbai, India',
-    verified: true,
-    price: 4999,
-    mrp: 6999,
-    stockLeft: 3,
-    description: 'Vintage silk saree with hand-embroidered border. Perfect for weddings and festive occasions. #vintage #silk #handmade',
-    category: 'Fashion',
-    hashtags: ['#vintage', '#silk', '#handmade'],
-    likes: 42,
-    comments: 8,
-    commentList: [
-      { author: 'Ananya Sharma', text: 'Gorgeous piece! Is the border hand-done?', time: Date.now() - 86400000 * 2 },
-      { author: 'Raj Patel', text: 'Beautiful! Can you hold it till Friday?', time: Date.now() - 3600000 * 20 },
-      { author: 'Meera K.', text: 'The colour is so rich in person too.', time: Date.now() - 3600000 * 5 },
-    ],
-    images: [
-      'https://picsum.photos/seed/susejsaree1/800/1000',
-      'https://picsum.photos/seed/susejsaree2/800/1000',
-      'https://picsum.photos/seed/susejsaree3/800/1000',
-    ],
-    variants: [
-      {
-        name: 'Size',
-        values: [
-          { label: 'S' },
-          { label: 'M', priceDelta: 300 },
-          { label: 'L', priceDelta: 600 },
-          { label: 'XL', priceDelta: 900 },
-        ],
-      },
-      {
-        name: 'Colour',
-        values: [
-          { label: 'Maroon' },
-          { label: 'Royal Blue', priceDelta: 150 },
-          { label: 'Emerald', priceDelta: 150 },
-        ],
-      },
-    ],
-    createdAt: Date.now() - 86400000 * 3,
-  },
-  {
-    id: 'post_002',
-    sellerName: 'TechVault',
-    sellerUsername: 'techvault',
-    sellerLocation: 'Bangalore, India',
-    verified: false,
-    price: 45999,
-    mrp: 52999,
-    stockLeft: 1,
-    description: 'MacBook Pro M3 - 16GB RAM, 512GB SSD. Like new condition, bill included. #electronics #macbook',
-    category: 'Electronics',
-    hashtags: ['#electronics', '#macbook'],
-    likes: 128,
-    comments: 23,
-    commentList: [
-      { author: 'Sara T.', text: 'Battery health percentage?', time: Date.now() - 86400000 },
-      { author: 'Vikram N.', text: 'Any scratches on the lid?', time: Date.now() - 3600000 * 8 },
-    ],
-    createdAt: Date.now() - 86400000 * 2,
-  },
-  {
-    id: 'post_003',
-    sellerName: 'Urban Jungle',
-    sellerUsername: 'urbanjungle',
-    sellerLocation: 'Delhi, India',
-    verified: true,
-    price: 1299,
-    mrp: 1599,
-    description: 'Handmade ceramic plant pot set of 3. Each piece is uniquely glazed. #homedecor #ceramic #plants',
-    category: 'Home',
-    hashtags: ['#homedecor', '#ceramic', '#plants'],
-    image: 'https://picsum.photos/seed/urbanjungle/800/1000',
-    likes: 67,
-    comments: 12,
-    commentList: [
-      { author: 'Priya Singh', text: 'Love the glaze! Do you ship to Chennai?', time: Date.now() - 3600000 * 6 },
-      { author: 'Aisha R.', text: 'Got mine last week — so well packed.', time: Date.now() - 3600000 * 3 },
-    ],
-    createdAt: Date.now() - 86400000,
-  },
-  {
-    id: 'post_004',
-    sellerName: 'Brush & Style Studio',
-    sellerUsername: 'brushstyle',
-    sellerLocation: 'Mumbai, India',
-    verified: true,
-    price: 7999,
-    description: 'Professional interior painting & home styling. Free consultation, premium finishes. #homeservices #interior #styling',
-    category: 'Home Services',
-    type: 'service',
-    hashtags: ['#homeservices', '#interior', '#styling'],
-    likes: 31,
-    comments: 6,
-    commentList: [
-      { author: 'Karan M.', text: 'Do you also do exterior painting?', time: Date.now() - 86400000 * 3 },
-      { author: 'Neha D.', text: 'Booked a consultation, very responsive!', time: Date.now() - 86400000 },
-    ],
-    createdAt: Date.now() - 86400000 * 4,
-    image: 'https://picsum.photos/seed/homeservice/800/1000',
-  },
-  {
-    id: 'post_005',
-    sellerName: 'FreshBasket',
-    sellerUsername: 'freshbasket',
-    sellerLocation: 'Pune, India',
-    verified: true,
-    price: 499,
-    description: 'Organic farm-fresh vegetable box — 5kg seasonal produce delivered today. #organic #groceries #freshtoday',
-    category: 'Food',
-    type: 'food_item',
-    hashtags: ['#organic', '#groceries', '#freshtoday'],
-    likes: 89,
-    comments: 14,
-    commentList: [
-      { author: 'Rohit J.', text: 'The box is a steal at this price.', time: Date.now() - 3600000 * 10 },
-      { author: 'Sneha P.', text: 'Got it in 40 mins today. So fresh!', time: Date.now() - 3600000 * 4 },
-      { author: 'Aman V.', text: 'Does the seasonal mix change weekly?', time: Date.now() - 1800000 },
-    ],
-    createdAt: Date.now() - 86400000,
-    image: 'https://picsum.photos/seed/organicveg/800/1000',
-  },
-  {
-    id: 'post_006',
-    sellerName: 'TechNova Labs',
-    sellerUsername: 'technova',
-    sellerLocation: 'Bengaluru, India',
-    verified: true,
-    price: 10,
-    description: 'React Native Developer\n#jobs #technology\nTechNova Labs, Bengaluru — 1–3 yrs, ₹8–12 LPA.',
-    category: 'Jobs',
-    type: 'product',
-    hashtags: ['#jobs', '#technology'],
-    jobType: 'Full-time',
-    experience: '1–3 yrs',
-    company: 'TechNova Labs',
-    salaryRange: '8–12',
-    likes: 15,
-    comments: 3,
-    commentList: [
-      { author: 'Riya K.', text: 'Remote or on-site?', time: Date.now() - 3600000 * 2 },
-    ],
-    image: 'https://picsum.photos/seed/devjob/800/1000',
-    createdAt: Date.now() - 3600000 * 2,
-  },
-  {
-    id: 'post_007',
-    sellerName: 'HomeSquare Realty',
-    sellerUsername: 'homesquare',
-    sellerLocation: 'Bengaluru, India',
-    verified: true,
-    price: 18000,
-    description: '2BHK Apartment for Rent\n#realestate #rental\nNear Indiranagar Metro — ₹18,000/mo, semi-furnished.',
-    category: 'Real Estate',
-    hashtags: ['#realestate', '#rental'],
-    listingFor: 'rent',
-    negotiable: true,
-    likes: 54,
-    comments: 9,
-    commentList: [
-      { author: 'Aditya R.', text: 'Is the rent inclusive of maintenance?', time: Date.now() - 3600000 * 5 },
-      { author: 'Farah S.', text: 'Pet friendly?', time: Date.now() - 3600000 },
-    ],
-    image: 'https://picsum.photos/seed/2bhkflat/800/1000',
-    createdAt: Date.now() - 3600000 * 4,
-  },
-  {
-    id: 'post_008',
-    sellerName: 'WeaveRight Textiles',
-    sellerUsername: 'weaveright',
-    sellerLocation: 'Surat, India',
-    verified: true,
-    price: 850,
-    description: 'Cotton Fabric (Wholesale)\n#b2b #textiles\nBulk pricing — MOQ 100 kg, dispatch in 7 days.',
-    category: 'B2B',
-    hashtags: ['#b2b', '#textiles'],
-    moq: '100 kg',
-    leadTime: '7 days',
-    likes: 22,
-    comments: 4,
-    commentList: [
-      { author: 'Prakash M.', text: 'Do you ship pan-India?', time: Date.now() - 3600000 * 8 },
-    ],
-    image: 'https://picsum.photos/seed/cottonfabric/800/1000',
-    createdAt: Date.now() - 3600000 * 7,
-  },
-  {
-    id: 'post_009',
-    sellerName: 'SmileCraft Dental Clinic',
-    sellerUsername: 'smilecraft',
-    sellerLocation: 'Pune, India',
-    verified: true,
-    price: 500,
-    description: 'Dental Consultation\n#medical #health\nGeneral & cosmetic dental check-up — ₹500.',
-    category: 'Medical',
-    type: 'service',
-    hashtags: ['#medical', '#health'],
-    duration: '30 min',
-    availability: 'Weekdays',
-    likes: 31,
-    comments: 6,
-    commentList: [
-      { author: 'Tanvi P.', text: 'Do you do root canals too?', time: Date.now() - 3600000 * 3 },
-      { author: 'Harsh V.', text: 'Booked for Thursday, thanks!', time: Date.now() - 1800000 },
-    ],
-    image: 'https://picsum.photos/seed/dentalclinic/800/1000',
-    createdAt: Date.now() - 3600000 * 6,
-  },
-  {
-    id: 'post_010',
-    sellerName: 'FluentFirst Academy',
-    sellerUsername: 'fluentfirst',
-    sellerLocation: 'Delhi, India',
-    verified: false,
-    price: 2500,
-    description: 'Spoken English Course\n#education #learning\n8-week weekend batch — ₹2,500.',
-    category: 'Education',
-    type: 'service',
-    hashtags: ['#education', '#learning'],
-    duration: '8 weeks',
-    availability: 'Weekends',
-    likes: 47,
-    comments: 11,
-    commentList: [
-      { author: 'Ishaan G.', text: 'Certificate provided at the end?', time: Date.now() - 3600000 * 12 },
-      { author: 'Nisha T.', text: 'Morning or evening batches?', time: Date.now() - 3600000 * 2 },
-    ],
-    image: 'https://picsum.photos/seed/englishclass/800/1000',
-    createdAt: Date.now() - 3600000 * 5,
-  },
-];
+
 
 interface PostContextType {
   posts: Post[];
@@ -325,14 +108,28 @@ interface PostContextType {
   hidePost: (id: string) => void;
   mutedSellers: string[];
   toggleMuteSeller: (username: string) => void;
-  reportPost: (postId: string, reason: string) => void;
+  /**
+   * Files a moderation report that lands in the admin queue (ReportedProduct).
+   * Resolves true only when the server stored it — callers must show success
+   * or failure honestly, never a blind "submitted".
+   */
+  reportPost: (postId: string, reason: string) => Promise<boolean>;
+  /** Real user-filed reports (admin/reports queue reads these). */
+  reports: PostReport[];
+  /** Re-fetch + reconcile server posts (pull-to-refresh). Cache wins on failure. */
+  refresh: () => Promise<void>;
 }
 
 const PostContext = createContext<PostContextType | null>(null);
 
+/** Server posts use Prisma cuid ids (no prefix); local demo posts are `post_...`. */
+function isServerPostId(id: string): boolean {
+  return !id.startsWith('post_') && !/^\d+$/.test(id);
+}
+
 export function PostProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  const [posts, setPosts] = useState<Post[]>(SEED_POSTS);
+  const { user, tokenSeq } = useAuth();
+  const [posts, setPosts] = useState<Post[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const likedRef = useRef<Record<string, boolean>>({});
@@ -342,185 +139,139 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
   const [reports, setReports] = useState<PostReport[]>([]);
   const [modLoaded, setModLoaded] = useState(false);
 
-  // Load from AsyncStorage on mount, merging with seed posts
+  const getPostsKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${POSTS_KEY_BASE}:${u}` : POSTS_KEY_BASE;
+  }, [user?.username]);
+
+  // Load cached posts per-user (offline mirror). Falls back to legacy global key on first run per account.
   useEffect(() => {
-    Promise.all([AsyncStorage.getItem(POSTS_KEY), AsyncStorage.getItem(TOMBSTONE_KEY)])
-      .then(([data, tombData]) => {
-        const tombstoneIds: string[] = [];
-        if (tombData) {
-          try {
-            const parsed = JSON.parse(tombData) as string[];
-            if (Array.isArray(parsed)) tombstoneIds.push(...parsed);
-          } catch {}
+    let cancelled = false;
+    const key = getPostsKey();
+    const load = async () => {
+      let data: string | null = null;
+      try { data = await AsyncStorage.getItem(key); } catch {}
+      if (!data && key !== POSTS_KEY_BASE) {
+        try { data = await AsyncStorage.getItem(POSTS_KEY_BASE); } catch {}
+        if (data) { try { await AsyncStorage.setItem(key, data); } catch {} }
+      }
+      if (cancelled) return;
+      if (data) {
+        try {
+          const parsed = JSON.parse(data) as Post[];
+          const LEGACY_SEED_ID = /^post_\d{1,6}$|^demo/;
+          const saved = parsed.filter(
+            (p) =>
+              p &&
+              typeof p.image !== 'number' &&
+              !(Array.isArray(p.images) && p.images.some((i) => typeof i === 'number')) &&
+              !LEGACY_SEED_ID.test(p.id)
+          );
+          const sorted = saved.sort((a, b) => b.createdAt - a.createdAt);
+          setPosts(sorted);
+        } catch {
+          // corrupted cache — start empty; server sync will repopulate
         }
-        setTombstones(tombstoneIds);
-        if (data) {
-          try {
-            const parsed = JSON.parse(data) as Post[];
-            // Sanitize: drop posts whose image/issue is a raw require() NUMBER —
-            // RN new-arch crashes on numeric source from persisted state
-            // ("Value for uri cannot be cast from Double to String").
-            const saved = parsed.filter(
-              (p) => p && typeof p.image !== 'number' && !(Array.isArray(p.images) && p.images.some((i) => typeof i === 'number'))
-            );
-            // Merge saved posts with seeds — saved take priority by id.
-            // Deleted (tombstoned) ids are never re-inserted, so removed seed posts stay removed.
-            const merged = new Map<string, Post>();
-            for (const p of SEED_POSTS) {
-              if (!tombstoneIds.includes(p.id)) merged.set(p.id, p);
-            }
-            for (const p of saved) {
-              if (!tombstoneIds.includes(p.id)) merged.set(p.id, p);
-            }
-            // Backfill commentList for seed posts saved before comments existed
-            for (const seed of SEED_POSTS) {
-              const existing = merged.get(seed.id);
-              if (existing && !existing.commentList && seed.commentList) {
-                merged.set(seed.id, { ...existing, commentList: seed.commentList });
-              }
-              // Backfill images/variants for seeds saved before those fields existed
-              if (existing && !existing.images && seed.images) {
-                merged.set(seed.id, { ...existing, images: seed.images });
-              }
-              if (existing && !existing.variants && seed.variants) {
-                merged.set(seed.id, { ...existing, variants: seed.variants });
-              }
-              // Backfill mrp/stockLeft for seeds saved before those fields existed
-              if (existing && existing.mrp == null && seed.mrp != null) {
-                merged.set(seed.id, { ...existing, mrp: seed.mrp });
-              }
-              if (existing && existing.stockLeft == null && seed.stockLeft != null) {
-                merged.set(seed.id, { ...existing, stockLeft: seed.stockLeft });
-              }
-            }
-            // Sort by createdAt descending
-            const sorted = Array.from(merged.values()).sort((a, b) => b.createdAt - a.createdAt);
-            setPosts(sorted);
-          } catch {
-            // corrupted data, use seeds
-          }
-        }
-        setLoaded(true);
-      })
-      .catch(() => {
-        setLoaded(true);
-      });
+      }
+      if (!cancelled) setLoaded(true);
+    };
+    setLoaded(false);
+    setPosts([]);
+    load();
+    return () => { cancelled = true; };
+  }, [getPostsKey, tokenSeq]);
+
+
+  const getHiddenKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${HIDDEN_KEY_BASE}:${u}` : HIDDEN_KEY_BASE;
+  }, [user?.username]);
+  const getMutedKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${MUTED_KEY_BASE}:${u}` : MUTED_KEY_BASE;
+  }, [user?.username]);
+  const getReportsKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${REPORTS_KEY_BASE}:${u}` : REPORTS_KEY_BASE;
+  }, [user?.username]);
+  const getLikedKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${LIKED_KEY_BASE}:${u}` : LIKED_KEY_BASE;
+  }, [user?.username]);
+  const getTombstoneKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${TOMBSTONE_KEY_BASE}:${u}` : TOMBSTONE_KEY_BASE;
+  }, [user?.username]);
+
+  const persistMod = useCallback((key: string, value: unknown) => {
+    AsyncStorage.setItem(key, JSON.stringify(value)).catch(() => {});
   }, []);
 
-// Demo-friendly: if the logged-in user has NO listings yet, seed 3 authored posts
-  // (local bundled images — offline-safe) so their Profile grid never looks broken.
-  // NOTE: use resolveAssetSource().uri — raw require() numbers stored in data crash
-  // RN new-arch ImageView ("Value for uri cannot be cast from Double to String").
+  // Reset moderation state on account switch (tokenSeq) to prevent
+  // cross-account data leaks: User A's hidden/muted/liked/tombstone state
+  // must not appear for User B after logout -> login.
   useEffect(() => {
-    if (!loaded || !user?.username) return;
-    if (posts.some((p) => p.sellerUsername === user.username)) return;
-    const ts = Date.now();
-    const name = user.name || 'My Store';
-    const loc = user.location || 'Mumbai, India';
-    const uriOf = (asset: any): string => Image.resolveAssetSource(asset)?.uri ?? '';
-    const g0 = uriOf(productDetailImages.gallery[0]);
-    const g1 = uriOf(productDetailImages.gallery[1]);
-    const g2 = uriOf(productDetailImages.gallery[2]);
-    const demo: Post[] = [
-      {
-        id: `demo_${user.username}_1_${ts}`,
-        sellerName: name,
-        sellerUsername: user.username,
-        sellerLocation: loc,
-        verified: true,
-        price: 4999,
-        description: 'Freshly listed from my shop — handpicked & ready to ship. #newdrop #handpicked #susej',
-        category: 'Fashion',
-        hashtags: ['newdrop', 'handpicked', 'susej'],
-        likes: 24,
-        comments: 6,
-        commentList: [
-          { author: 'Priya', text: 'Obsessed with this piece!', time: ts - 3600000 },
-          { author: 'Rohan', text: 'Shipping available?', time: ts - 1800000 },
-        ],
-        createdAt: ts - 7200000,
-        image: g0,
-        images: [g0],
-      },
-      {
-        id: `demo-${user.username}-2-${ts}`,
-        sellerName: name,
-        sellerUsername: user.username,
-        sellerLocation: loc,
-        verified: true,
-        price: 1499,
-        description: 'Studio pick — minimal, premium, made to last. #minimal #premium #susej',
-        category: 'Electronics',
-        hashtags: ['minimal', 'premium', 'susej'],
-        likes: 17,
-        comments: 4,
-        createdAt: ts - 3600000 * 5,
-        image: g1,
-        images: [g1],
-      },
-      {
-        id: `demo_${user.username}_3_${ts}`,
-        sellerName: name,
-        sellerUsername: user.username,
-        sellerLocation: loc,
-        verified: false,
-        price: 799,
-        description: 'Community favourite back in stock. #restocked #susejpicks',
-        category: 'Fashion',
-        hashtags: ['restocked', 'susejpicks'],
-        likes: 9,
-        comments: 2,
-        createdAt: ts - 3600000 * 7,
-        image: g2,
-        images: [g2],
-      },
-    ];
-    setPosts((prev) => [...demo, ...prev]);
-  }, [loaded, user?.username, user?.name, user?.location]);
+    setHiddenPostIds([]);
+    setMutedSellers([]);
+    setReports([]);
+    setLiked({});
+    likedRef.current = {};
+    setTombstones([]);
+    setModLoaded(false);
+  }, [tokenSeq]);
 
-  // Load moderation state (hidden posts, muted sellers, reports, liked posts) from AsyncStorage
+  // Load moderation state per-user (hidden posts, muted sellers, reports, liked posts, tombstones)
   useEffect(() => {
+    let cancelled = false;
+    const hiddenKey = getHiddenKey();
+    const mutedKey = getMutedKey();
+    const reportsKey = getReportsKey();
+    const likedKey = getLikedKey();
+    const tombKey = getTombstoneKey();
     Promise.all([
-      AsyncStorage.getItem(HIDDEN_KEY),
-      AsyncStorage.getItem(MUTED_KEY),
-      AsyncStorage.getItem(REPORTS_KEY),
-      AsyncStorage.getItem(LIKED_KEY),
+      AsyncStorage.getItem(hiddenKey),
+      AsyncStorage.getItem(mutedKey),
+      AsyncStorage.getItem(reportsKey),
+      AsyncStorage.getItem(likedKey),
+      AsyncStorage.getItem(tombKey),
     ])
-      .then(([hidden, muted, rep, likedData]) => {
+      .then(([hidden, muted, rep, likedData, tombData]) => {
+        if (cancelled) return;
         try {
           const parsed = hidden ? JSON.parse(hidden) : null;
-          if (Array.isArray(parsed)) setHiddenPostIds(parsed);
-        } catch {}
+          if (Array.isArray(parsed)) setHiddenPostIds(parsed); else setHiddenPostIds([]);
+        } catch { if (!cancelled) setHiddenPostIds([]); }
         try {
           const parsed = muted ? JSON.parse(muted) : null;
-          if (Array.isArray(parsed)) setMutedSellers(parsed);
-        } catch {}
+          if (Array.isArray(parsed)) setMutedSellers(parsed); else setMutedSellers([]);
+        } catch { if (!cancelled) setMutedSellers([]); }
         try {
           const parsed = rep ? JSON.parse(rep) : null;
-          if (Array.isArray(parsed)) setReports(parsed);
-        } catch {}
+          if (Array.isArray(parsed)) setReports(parsed); else setReports([]);
+        } catch { if (!cancelled) setReports([]); }
         try {
           const parsed = likedData ? JSON.parse(likedData) : null;
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             setLiked(parsed);
             likedRef.current = parsed;
-          }
-        } catch {}
-        setModLoaded(true);
+          } else { setLiked({}); likedRef.current = {}; }
+        } catch { if (!cancelled) { setLiked({}); likedRef.current = {}; } }
+        try {
+          const parsed = tombData ? JSON.parse(tombData) : null;
+          if (Array.isArray(parsed)) setTombstones(parsed.filter((x: unknown) => typeof x === 'string')); else setTombstones([]);
+        } catch { if (!cancelled) setTombstones([]); }
+        if (!cancelled) setModLoaded(true);
       })
       .catch(() => {
-        setModLoaded(true);
+        if (!cancelled) setModLoaded(true);
       });
-  }, []);
+    return () => { cancelled = true; };
+  }, [getHiddenKey, getMutedKey, getReportsKey, getLikedKey, getTombstoneKey, tokenSeq]);
 
   // Persist whenever posts change (skip initial seed load)
   const persist = useCallback((updated: Post[]) => {
-    AsyncStorage.setItem(POSTS_KEY, JSON.stringify(updated)).catch(() => {});
-  }, []);
-
-  const persistMod = useCallback((key: string, value: unknown) => {
-    AsyncStorage.setItem(key, JSON.stringify(value)).catch(() => {});
-  }, []);
+    AsyncStorage.setItem(getPostsKey(), JSON.stringify(updated)).catch(() => {});
+  }, [getPostsKey]);
 
   // Persist posts + tombstones via effects once loaded (no side-effects inside updaters)
   useEffect(() => {
@@ -529,20 +280,126 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
   }, [posts, loaded, persist]);
 
   useEffect(() => {
-    if (!loaded) return;
-    persistMod(TOMBSTONE_KEY, tombstones);
-  }, [tombstones, loaded, persistMod]);
+    if (!loaded || !modLoaded) return;
+    persistMod(getTombstoneKey(), tombstones);
+  }, [tombstones, loaded, modLoaded, getTombstoneKey, persistMod]);
 
+  // ── Server sync: pull the shared backend's posts once per login, merge the
+  // real multi-user feed with local cache (server wins, tombstones respected).
+  const normalizeServerPost = useCallback((p: any): Post | null => {
+    if (!p || !p.id) return null;
+    return {
+      type: (p.type as Post["type"]) ?? 'product',
+      id: String(p.id),
+      description: String(p.description ?? p.title ?? 'Untitled'),
+      price: Number(p.price ?? 0),
+      mrp: p.mrp != null && Number(p.mrp) > Number(p.price ?? 0) ? Number(p.mrp) : undefined,
+      category: String(p.category ?? 'General'),
+      subCategories: Array.isArray(p.subCategories) ? p.subCategories.map(String) : undefined,
+      hashtags: Array.isArray(p.hashtags) ? p.hashtags.map(String) : [],
+      likes: Number(p.likes ?? 0),
+      comments: Number(p.comments ?? 0),
+      createdAt: typeof p.createdAt === 'string' ? Date.parse(p.createdAt) : Number(p.createdAt ?? Date.now()),
+      image: String(p.image ?? ''),
+      images: Array.isArray(p.images) ? p.images.map(String) : [],
+      isSold: Boolean(p.isSold),
+      status: typeof p.status === 'string' ? p.status : undefined,
+      verified: Boolean(p.verified),
+      featured: Boolean(p.featured),
+      sellerUsername: String(p.sellerUsername ?? 'user'),
+      sellerName: String(p.sellerName ?? p.sellerUsername ?? 'susej user'),
+      sellerLocation: String(p.sellerLocation ?? ''),
+      variants: Array.isArray(p.variants) ? p.variants : undefined,
+      stockLeft: typeof p.stockLeft === 'number' ? p.stockLeft : undefined,
+      condition: p.condition ? String(p.condition) : undefined,
+      brand: p.brand ? String(p.brand) : undefined,
+      delivery: p.deliveryMode ? true : undefined,
+      deliveryMode: typeof p.deliveryMode === 'string' ? p.deliveryMode : undefined,
+      shippingFee: typeof p.shippingFee === 'number' ? p.shippingFee : undefined,
+      negotiable: typeof p.negotiable === 'boolean' ? p.negotiable : undefined,
+      listingLat: typeof p.listingLat === 'number' ? p.listingLat : undefined,
+      listingLng: typeof p.listingLng === 'number' ? p.listingLng : undefined,
+      listingLocation: p.listingLocation ? String(p.listingLocation) : undefined,
+      likedByMe: Boolean(p.likedByMe),
+    };
+  }, []);
+
+  // Re-seed on every account switch (tokenSeq) so the feed reflects the
+  // new account's likedByMe + server posts, even with an identical username.
+  const serverSeeded = useRef(-1);
+  useEffect(() => {
+    if (!loaded || !modLoaded || !user?.username) return;
+    if (serverSeeded.current === tokenSeq) return;
+    serverSeeded.current = tokenSeq;
+    serverApi.getPosts().then((res) => {
+      // An EMPTY server feed is still the truth — it must clear cached
+      // server-sourced posts (e.g. after a data reset). Only !ok skips.
+      if (!res.ok) return;
+      const serverPosts = (res.data?.posts ?? []).map(normalizeServerPost).filter(Boolean) as Post[];
+      // Seed liked map from server truth — REPLACE, not merge, so an
+      // unlike on another device clears the local entry.
+      const serverLikedIds = new Set(serverPosts.filter((sp) => sp.likedByMe).map((sp) => sp.id));
+      const nextLiked: Record<string, boolean> = {};
+      for (const sp of serverPosts) if (sp.likedByMe) nextLiked[sp.id] = true;
+      // Keep only local-only (post_*) likes that server doesn't know about;
+      // drop stale server likes where server says not liked.
+      for (const [k, v] of Object.entries(likedRef.current)) {
+        if (k.startsWith('post_') && v) nextLiked[k] = true;
+      }
+      likedRef.current = nextLiked;
+      setLiked(nextLiked);
+      if (Object.keys(nextLiked).length) persistMod(getLikedKey(), nextLiked);
+      else persistMod(getLikedKey(), {});
+      // Reconcile: the server response IS the truth for everything it manages.
+      // Previously-cached server posts that are absent from the response were
+      // deleted/removed server-side and must vanish from every device.
+      // Only offline-created local posts ('post_' ids, not yet synced) survive.
+      setPosts((prev) => {
+        const localOnly = prev.filter((p) => p.id.startsWith('post_') && p.sellerUsername === user.username);
+        const visible = serverPosts.filter((sp) => !tombstones.includes(sp.id));
+        return [...visible, ...localOnly];
+      });
+    });
+  }, [loaded, modLoaded, user?.username, tokenSeq, tombstones, normalizeServerPost, getLikedKey, persistMod]);
+
+  // User-initiated full refresh (pull-to-refresh): re-fetch server posts and reconcile —
+  // same merge as the seed above (cache wins on request failure — honest no-spinner-lie).
+  const refresh = useCallback(async () => {
+    if (!user?.username) return;
+    const res = await serverApi.getPosts();
+    if (!res.ok) return;
+    const rawPosts = ((res.data?.posts ?? []) as any[]);
+    const serverPosts = rawPosts
+      .map((p) => normalizeServerPost(p))
+      .filter((p) => p !== null) as Post[];
+    const nextLiked: Record<string, boolean> = {};
+    for (const sp of serverPosts) {
+      if (sp.likedByMe) nextLiked[sp.id] = true;
+    }
+    for (const [k, v] of Object.entries(likedRef.current)) {
+      if (k.startsWith('post_') && v) nextLiked[k] = true;
+    }
+    likedRef.current = nextLiked;
+    setLiked(nextLiked);
+    if (Object.keys(nextLiked).length > 0) persistMod(getLikedKey(), nextLiked);
+    else persistMod(getLikedKey(), {});
+    setPosts((prev) => {
+      const localOnly = prev.filter((p) => p.id.startsWith('post_') && p.sellerUsername === user.username);
+      const visible = serverPosts.filter((sp) => !tombstones.includes(sp.id));
+      return [...visible, ...localOnly];
+    });
+  }, [normalizeServerPost, user?.username, tombstones, getLikedKey, persistMod]);
+ 
   const hidePost = useCallback(
     (id: string) => {
       setHiddenPostIds((prev) => {
         if (prev.includes(id)) return prev;
         const updated = [...prev, id];
-        if (modLoaded) persistMod(HIDDEN_KEY, updated);
+        if (modLoaded) persistMod(getHiddenKey(), updated);
         return updated;
       });
     },
-    [modLoaded, persistMod]
+    [modLoaded, persistMod, getHiddenKey]
   );
 
   const toggleMuteSeller = useCallback(
@@ -551,62 +408,154 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         const updated = prev.includes(username)
           ? prev.filter((u) => u !== username)
           : [...prev, username];
-        if (modLoaded) persistMod(MUTED_KEY, updated);
+        if (modLoaded) persistMod(getMutedKey(), updated);
         return updated;
       });
     },
-    [modLoaded, persistMod]
+    [modLoaded, persistMod, getMutedKey]
   );
 
   const reportPost = useCallback(
-    (postId: string, reason: string) => {
+    async (postId: string, reason: string): Promise<boolean> => {
+      const row = {
+        id: `report_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        postId,
+        reason,
+        time: Date.now(),
+      };
       setReports((prev) => {
-        const updated = [
-          ...prev,
-          { id: `report_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, postId, reason, time: Date.now() },
-        ];
-        if (modLoaded) persistMod(REPORTS_KEY, updated);
+        const updated = [...prev, row];
+        if (modLoaded) persistMod(getReportsKey(), updated);
         return updated;
       });
+      try {
+        const res = await serverApi.reportPost(postId, reason);
+        if (res.ok) return true;
+      } catch {}
+      // Server refused/offline: retract the local mirror so the user is never
+      // told a report was filed when the moderation queue never got it.
+      setReports((prev) => {
+        const updated = prev.filter((r) => r.id !== row.id);
+        if (modLoaded) persistMod(getReportsKey(), updated);
+        return updated;
+      });
+      return false;
     },
-    [modLoaded, persistMod]
+    [modLoaded, persistMod, getReportsKey]
   );
 
   const addPost = useCallback(
     (input: Omit<Post, 'id' | 'createdAt' | 'likes' | 'comments'>) => {
+      const localId = `post_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const newPost: Post = {
         type: 'product',
         ...input,
-        id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: localId,
         likes: 0,
         comments: 0,
         createdAt: Date.now(),
       };
       setPosts((prev) => [newPost, ...prev]);
+      // Push to the shared backend — on success the local id is replaced by the
+      // real server id so likes/comments/delete all hit the same row.
+      serverApi
+        .createPost({
+          title: String(input.description ?? '').split('\n')[0].slice(0, 200) || 'New listing',
+          price: input.price,
+          description: input.description,
+          category: input.category,
+          image: input.image,
+          images: input.images,
+          hashtags: input.hashtags,
+          mrp: input.mrp,
+          stockLeft: input.stockLeft,
+          condition: input.condition,
+          brand: input.brand,
+          negotiable: input.negotiable,
+          deliveryMode: input.deliveryMode,
+          shippingFee: input.shippingFee,
+          listingFor: input.listingFor,
+          listingLat: input.listingLat,
+          listingLng: input.listingLng,
+          listingLocation: input.listingLocation,
+        })
+        .then((res) => {
+          if (res.ok && res.data?.post?.id) {
+            const serverId = String(res.data.post.id);
+            setPosts((prev) => prev.map((p) => (p.id === localId ? { ...p, id: serverId } : p)));
+          }
+        })
+        .catch(() => {});
     },
     []
   );
 
-  const removePost = useCallback((id: string) => {
-    setPosts((prev) => prev.filter((p) => p.id !== id));
-    setTombstones((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  }, []);
+  const removePost = useCallback(
+    (id: string) => {
+      setPosts((prev) => prev.filter((p) => p.id !== id));
+      setTombstones((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      if (isServerPostId(id)) {
+        serverApi.deletePost(id).catch(() => {});
+      }
+    },
+    []
+  );
 
-  const deletePost = useCallback((id: string) => {
-    setPosts((prev) => prev.filter((p) => p.id !== id));
-    setTombstones((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  }, []);
+  const deletePost = useCallback(
+    (id: string) => {
+      setPosts((prev) => prev.filter((p) => p.id !== id));
+      setTombstones((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      if (isServerPostId(id)) {
+        serverApi.deletePost(id).catch(() => {});
+      }
+    },
+    []
+  );
 
   const updatePost = useCallback(
     (id: string, patch: Partial<Post>) => {
       setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+      if (isServerPostId(id)) {
+        const sp: Record<string, unknown> = {};
+        if (patch.description !== undefined) {
+          sp.title = String(patch.description).split('\n')[0].slice(0, 200);
+          sp.description = patch.description;
+        }
+        if (patch.price !== undefined) sp.price = patch.price;
+        if (patch.category !== undefined) sp.category = patch.category;
+        if (patch.isSold !== undefined) sp.isSold = patch.isSold;
+        // Shop deactivation: the server accepts author-set hidden/published
+        // (featured stays engine-owned and is ignored there).
+        if (patch.status !== undefined) sp.status = patch.status;
+        if (patch.featured !== undefined) sp.featured = patch.featured;
+        // Edit parity: seller-side edits to media/inventory/fulfillment must
+        // reach the server or the storefront silently diverges per device.
+        if (patch.images !== undefined) sp.images = patch.images;
+        if (patch.image !== undefined && patch.images === undefined) sp.images = [patch.image];
+        if (patch.variants !== undefined) sp.variants = patch.variants;
+        if (patch.stockLeft !== undefined) sp.stockLeft = patch.stockLeft;
+        if (patch.negotiable !== undefined) sp.negotiable = patch.negotiable;
+        if (patch.condition !== undefined) sp.condition = patch.condition;
+        if (patch.deliveryMode !== undefined) sp.deliveryMode = patch.deliveryMode;
+        if (patch.shippingFee !== undefined) sp.shippingFee = patch.shippingFee;
+        if (Object.keys(sp).length) serverApi.updatePost(id, sp).catch(() => {});
+      }
     },
     []
   );
 
   const toggleSold = useCallback(
     (id: string) => {
-      setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, isSold: !p.isSold } : p)));
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (p.id !== id) return p;
+          const nextSold = !p.isSold;
+          if (isServerPostId(id)) {
+            serverApi.updatePost(id, { isSold: nextSold }).catch(() => {});
+          }
+          return { ...p, isSold: nextSold };
+        })
+      );
     },
     []
   );
@@ -625,6 +574,9 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         });
         return updated;
       });
+      if (isServerPostId(postId)) {
+        serverApi.addComment(postId, comment.text).catch(() => {});
+      }
     },
     []
   );
@@ -633,6 +585,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
     (postId: string): boolean => {
       // Derive from the latest liked map (ref keeps rapid taps race-free)
       const nextLiked = !likedRef.current[postId];
+      const prevLiked = !!likedRef.current[postId];
       likedRef.current = { ...likedRef.current, [postId]: nextLiked };
       setLiked((prev) => ({ ...prev, [postId]: nextLiked }));
       setPosts((prev) =>
@@ -640,16 +593,30 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
           p.id === postId ? { ...p, likes: Math.max(0, p.likes + (nextLiked ? 1 : -1)) } : p
         )
       );
-      if (modLoaded) persistMod(LIKED_KEY, likedRef.current);
+      if (modLoaded) persistMod(getLikedKey(), likedRef.current);
+      if (isServerPostId(postId)) {
+        serverApi.toggleLike(postId).catch(() => {
+          // Server rejected (offline/401/409): rollback optimistic like to keep truth.
+          likedRef.current = { ...likedRef.current, [postId]: prevLiked };
+          setLiked((prev) => ({ ...prev, [postId]: prevLiked }));
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId ? { ...p, likes: Math.max(0, p.likes + (nextLiked ? -1 : 1)) } : p
+            )
+          );
+          // Revert persisted liked map (posts effect will persist posts separately)
+          persistMod(getLikedKey(), likedRef.current);
+        });
+      }
       return nextLiked;
     },
-    [modLoaded, persistMod]
+    [modLoaded, persistMod, getLikedKey]
   );
 
   const isLiked = useCallback((postId: string) => !!liked[postId], [liked]);
 
   return (
-    <PostContext.Provider value={{ posts, loaded, addPost, removePost, deletePost, addComment, toggleLike, isLiked, updatePost, toggleSold, hiddenPostIds, hidePost, mutedSellers, toggleMuteSeller, reportPost }}>
+    <PostContext.Provider value={{ posts, loaded, refresh, addPost, removePost, deletePost, addComment, toggleLike, isLiked, updatePost, toggleSold, hiddenPostIds, hidePost, mutedSellers, toggleMuteSeller, reportPost, reports }}>
       {children}
     </PostContext.Provider>
   );

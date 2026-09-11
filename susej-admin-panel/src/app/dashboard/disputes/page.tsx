@@ -12,7 +12,7 @@ import { Select } from "@/components/ui/select";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Scale, CheckCircle2, ShieldCheck } from "lucide-react";
-import type { MockDispute } from "@/services/mock-data";
+import type { MockDispute } from "@/types/admin-rows";
 
 const column = createColumnHelper<MockDispute>();
 
@@ -40,7 +40,7 @@ const makeColumns = (
   column.accessor("amount", { header: "Amount", cell: (info) => <span className="font-medium tabular-nums">{formatCurrency(info.getValue())}</span> }),
   column.accessor("status", {
     header: "Status",
-    cell: (info) => <Badge variant={statusVariant[info.getValue()]} className="capitalize">{String(info.getValue()).replace("_", " ")}</Badge>,
+    cell: (info) => <Badge variant={statusVariant[info.getValue()]} className="capitalize">{String(info.getValue()).replaceAll("_", " ")}</Badge>,
   }),
   column.display({
     id: "outcome",
@@ -81,6 +81,7 @@ export default function DisputesPage() {
   const { data: rows, refresh } = useDbResource<MockDispute>("disputes");
   const [items, setItems] = useState<MockDispute[] | null>(rows);
   const [resolving, setResolving] = useState<MockDispute | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<string>("full_refund");
   const [note, setNote] = useState("");
 
@@ -93,6 +94,7 @@ export default function DisputesPage() {
     fetch("/api/data/disputes", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: d.id, data: { status: "under_review" } }),
     }).finally(refresh);
   }
@@ -116,11 +118,27 @@ export default function DisputesPage() {
     fetch("/api/data/disputes", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         id: resolving.id,
         data: { status: "resolved", outcome, note, resolvedAt },
       }),
     })
+      .then(async (res) => {
+        // Surface settlement refusals (unknown order, split/full already
+        // paid): refresh() below snaps the row back, but not silently.
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          setResolveError(
+            String((body as { error?: unknown } | null)?.error || `Ruling refused (HTTP ${res.status}). No money moved.`)
+          );
+          return;
+        }
+        setResolveError(null);
+      })
+      .catch(() => {
+        setResolveError("Could not reach the server. No money moved.");
+      })
       .finally(() => {
         setResolving(null);
         refresh();
@@ -140,6 +158,11 @@ export default function DisputesPage() {
           Order disputes between buyers and sellers — review evidence and issue rulings.
         </p>
       </div>
+      {resolveError && (
+        <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-2.5 text-[13px] text-[#B91C1C]">
+          {resolveError}
+        </div>
+      )}
 
       <div className="grid grid-cols-4 gap-4">
         <StatTile label="Open disputes" value={openList.length} tone="red" />

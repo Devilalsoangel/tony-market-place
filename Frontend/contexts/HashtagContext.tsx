@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
+import { useAuth } from './AuthContext';
 
-const HASHTAGS_KEY = '@susej_followed_hashtags';
+const HASHTAGS_KEY_BASE = '@susej_followed_hashtags';
 
 const normalizeTag = (tag: string) => tag.trim().toLowerCase().replace(/^#/, '');
 
@@ -18,26 +19,37 @@ interface HashtagContextType {
 const HashtagContext = createContext<HashtagContextType | null>(null);
 
 export function HashtagProvider({ children }: { children: React.ReactNode }) {
+  const { user, tokenSeq } = useAuth();
   const [followedHashtags, setFollowedHashtags] = useState<string[]>([]);
   const dirty = useRef(false);
 
-  // Load from AsyncStorage on mount and re-sync whenever the screen regains
-  // focus — providers are mounted per-screen (feed + hashtag page), so focus
-  // reload keeps both instances in sync with the persisted value.
+  const getKey = useCallback(() => {
+    const u = user?.username?.trim();
+    return u ? `${HASHTAGS_KEY_BASE}:${u}` : HASHTAGS_KEY_BASE;
+  }, [user?.username]);
+
+  // Reset in-memory state on account switch so User A's hashtags never flash for User B
+  useEffect(() => {
+    setFollowedHashtags([]);
+    dirty.current = false;
+  }, [tokenSeq]);
+
+  // Load from per-user AsyncStorage key on mount / identity switch and on focus
   const load = useCallback(() => {
     if (dirty.current) return;
-    AsyncStorage.getItem(HASHTAGS_KEY)
+    const key = getKey();
+    AsyncStorage.getItem(key)
       .then((data) => {
-        if (!data) return;
+        if (!data) { setFollowedHashtags([]); return; }
         try {
           const arr = JSON.parse(data) as string[];
           setFollowedHashtags(arr.map(normalizeTag).filter(Boolean));
         } catch {
-          // corrupted data — start fresh
+          setFollowedHashtags([]);
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => { setFollowedHashtags([]); });
+  }, [getKey]);
 
   useEffect(() => {
     load();
@@ -50,8 +62,8 @@ export function HashtagProvider({ children }: { children: React.ReactNode }) {
   );
 
   const persist = useCallback((updated: string[]) => {
-    AsyncStorage.setItem(HASHTAGS_KEY, JSON.stringify(updated)).catch(() => {});
-  }, []);
+    AsyncStorage.setItem(getKey(), JSON.stringify(updated)).catch(() => {});
+  }, [getKey]);
 
   const isFollowingHashtag = useCallback(
     (tag: string) => followedHashtags.includes(normalizeTag(tag)),

@@ -404,6 +404,7 @@ export type SellerAuditLogCreateOrConnectWithoutSellerInput = {
 
 export type SellerAuditLogCreateManySellerInputEnvelope = {
   data: Prisma.SellerAuditLogCreateManySellerInput | Prisma.SellerAuditLogCreateManySellerInput[]
+  skipDuplicates?: boolean
 }
 
 export type SellerAuditLogUpsertWithWhereUniqueWithoutSellerInput = {
@@ -1194,6 +1195,7 @@ export type SellerAuditLogCreateManyArgs<ExtArgs extends runtime.Types.Extension
    * The data used to create many SellerAuditLogs.
    */
   data: Prisma.SellerAuditLogCreateManyInput | Prisma.SellerAuditLogCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1212,6 +1214,7 @@ export type SellerAuditLogCreateManyAndReturnArgs<ExtArgs extends runtime.Types.
    * The data used to create many SellerAuditLogs.
    */
   data: Prisma.SellerAuditLogCreateManyInput | Prisma.SellerAuditLogCreateManyInput[]
+  skipDuplicates?: boolean
   /**
    * Choose, which related nodes to fetch as well
    */

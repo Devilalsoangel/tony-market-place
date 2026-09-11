@@ -35,6 +35,7 @@ module.exports = {
       },
       fontSize: {
         'figma-10': ['10px', { lineHeight: '14px' }],
+        'figma-11': ['11px', { lineHeight: '15px' }],
         'figma-12': ['12px', { lineHeight: '16px' }],
         'figma-14': ['14px', { lineHeight: '20px' }],
         'figma-16': ['16px', { lineHeight: '22px' }],

@@ -1,10 +1,13 @@
-import { View, Text, Image, ScrollView, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BackIcon, BagIcon } from '../utils/icons';
+import { BackIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useCart } from '../contexts/CartContext';
-import { productImages } from '../utils/productImages';
+import { usePosts } from '../contexts/PostContext';
+import { serverApi } from '../utils/serverApi';
+import { resolveListingImage } from '../utils/productImages';
 
 interface BundleItem {
   listingId: string;
@@ -24,61 +27,10 @@ interface Bundle {
   items: BundleItem[];
 }
 
-const SEED_BUNDLES: Bundle[] = [
-  {
-    id: 'bundle_home',
-    title: 'Home Starter Kit',
-    tagline: 'Kit out your kitchen & living space',
-    originalPrice: 6999,
-    bundlePrice: 5499,
-    thumbnails: ['post_001', 'post_002', 'bundle_home_3'],
-    items: [
-      { listingId: 'bundle_home_1', name: 'Ceramic Dinner Set (12pc)', price: 1833, seller: 'Nest & Nook', sellerUsername: 'nestnook' },
-      { listingId: 'bundle_home_2', name: 'Cotton Kitchen Towels (6pc)', price: 1833, seller: 'Nest & Nook', sellerUsername: 'nestnook' },
-      { listingId: 'bundle_home_3', name: 'Scented Soy Candle Trio', price: 1833, seller: 'WarmWicks', sellerUsername: 'warmwicks' },
-    ],
-  },
-  {
-    id: 'bundle_fashion',
-    title: 'Fashion Fest Combo',
-    tagline: 'Mix & match streetwear staples',
-    originalPrice: 4500,
-    bundlePrice: 3299,
-    thumbnails: ['bundle_fashion_1', 'bundle_fashion_2'],
-    items: [
-      { listingId: 'bundle_fashion_1', name: 'Oversized Graphic Tee', price: 1650, seller: 'ThreadTheory', sellerUsername: 'threadtheory' },
-      { listingId: 'bundle_fashion_2', name: 'Slim Fit Denim Jeans', price: 1650, seller: 'ThreadTheory', sellerUsername: 'threadtheory' },
-    ],
-  },
-  {
-    id: 'bundle_tech',
-    title: 'Tech Essentials',
-    tagline: 'Everyday carry for the modern desk',
-    originalPrice: 12000,
-    bundlePrice: 9999,
-    thumbnails: ['post_002', 'bundle_tech_2', 'bundle_tech_3'],
-    items: [
-      { listingId: 'bundle_tech_1', name: 'Wireless Charging Pad', price: 3333, seller: 'TechVault', sellerUsername: 'techvault' },
-      { listingId: 'bundle_tech_2', name: 'Noise Cancelling Earbuds', price: 3333, seller: 'TechVault', sellerUsername: 'techvault' },
-      { listingId: 'bundle_tech_3', name: 'Smart LED Desk Lamp', price: 3333, seller: 'TechVault', sellerUsername: 'techvault' },
-    ],
-  },
-  {
-    id: 'bundle_selfcare',
-    title: 'Self-Care Set',
-    tagline: 'Unwind with a spa day at home',
-    originalPrice: 2400,
-    bundlePrice: 1799,
-    thumbnails: ['bundle_selfcare_1', 'bundle_selfcare_2'],
-    items: [
-      { listingId: 'bundle_selfcare_1', name: 'Vitamin-C Face Serum', price: 900, seller: 'GlowLab', sellerUsername: 'glowlab' },
-      { listingId: 'bundle_selfcare_2', name: 'Bamboo Bath Essentials', price: 900, seller: 'GlowLab', sellerUsername: 'glowlab' },
-    ],
-  },
-];
-
 const thumbSource = (key: string) =>
-  productImages[key] ?? { uri: `https://picsum.photos/seed/${key}/96/96` };
+  key.startsWith('__listing_')
+    ? resolveListingImage(null, key.slice('__listing_'.length) || 'bundle')
+    : { uri: key };
 
 const savePct = (bundle: Bundle) => {
   const originalSum = bundle.items.reduce((sum, i) => sum + i.price, 0);
@@ -89,6 +41,73 @@ const savePct = (bundle: Bundle) => {
 export default function BundlesScreen() {
   const insets = useSafeAreaInsets();
   const { addToCart } = useCart();
+  const { posts } = usePosts();
+  const [loading, setLoading] = useState(true);
+  const [serverBundles, setServerBundles] = useState<any[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        try {
+          const res = await serverApi.getBundles();
+          if (active && res.ok && res.data?.bundles) setServerBundles(res.data.bundles);
+        } catch {
+          // offline: honest empty state below
+        } finally {
+          if (active) setLoading(false);
+        }
+      })();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
+  const postById = useMemo(() => {
+    const m = new Map<string, any>();
+    for (const p of posts as any[]) m.set(p.id, p);
+    return m;
+  }, [posts]);
+
+  // Server rows -> render cards. Item images resolve from the live feed when
+  // the listing is in memory, else the deterministic listing placeholder.
+  // Legacy rows without items link the seller's shop instead of cart.
+  const bundles: Bundle[] = useMemo(
+    () =>
+      serverBundles.map((b) => {
+        const rawItems: any[] = Array.isArray(b.items) ? b.items : [];
+        const items: BundleItem[] = rawItems.map((i) => {
+          const post = postById.get(String(i.listingId ?? ''));
+          return {
+            listingId: String(i.listingId ?? ''),
+            name: String(i.name ?? ''),
+            price: Number(i.price ?? 0),
+            seller: b.sellerName,
+            sellerUsername: post?.sellerUsername ?? '',
+          };
+        });
+        const thumbs = items
+          .map((i) => {
+            const post = postById.get(i.listingId);
+            const img = post?.images?.[0] ?? post?.image;
+            return typeof img === 'string' && img ? img : null;
+          })
+          .filter((u): u is string => !!u);
+        while (thumbs.length < Math.min(3, Math.max(items.length, 1))) thumbs.push('');
+        const originalPrice = b.discount > 0 ? Math.round(Number(b.price) / (1 - Number(b.discount) / 100)) : Number(b.price);
+        return {
+          id: b.id,
+          title: b.title,
+          tagline: `${b.sellerName} · ${b.discount}% off combo`,
+          originalPrice,
+          bundlePrice: Number(b.price),
+          thumbnails: thumbs.slice(0, 3).map((u, i) => (u || `__listing_${items[i]?.listingId ?? b.id}_${i}`)),
+          items,
+        };
+      }),
+    [serverBundles, postById]
+  );
 
   const addBundle = (bundle: Bundle) => {
     const n = bundle.items.length;
@@ -119,14 +138,26 @@ export default function BundlesScreen() {
         <Text className="flex-1 font-inter-700" style={{ fontSize: 20, lineHeight: 28, letterSpacing: -0.5, color: colors.textPrimary }}>
           Bundle Deals
         </Text>
-        <BagIcon size={18} color={colors.primary} />
+        <View className="w-5" />
       </View>
 
       <ScrollView className="flex-1 px-5" contentContainerClassName="pb-24">
         <Text className="font-inter-400 mt-2 mb-4 text-textSecondary" style={{ fontSize: 13, lineHeight: 18 }}>
           Hand-picked combos at a better price — one tap adds the whole set.
         </Text>
-        {SEED_BUNDLES.map((bundle) => {
+        {loading && bundles.length === 0 && (
+          <View className="items-center py-16">
+            <ActivityIndicator size="large" color={colors.primaryContainer} />
+          </View>
+        )}
+        {!loading && bundles.length === 0 && (
+          <View className="items-center py-16 px-8">
+            <Text className="font-inter-500 text-textSecondary text-center" style={{ fontSize: 14, lineHeight: 20 }}>
+              No bundle deals right now. Check back soon — sellers bundle bestsellers here.
+            </Text>
+          </View>
+        )}
+        {bundles.map((bundle) => {
           const pct = savePct(bundle);
           return (
             <View
@@ -157,7 +188,7 @@ export default function BundlesScreen() {
                 </View>
               </View>
               <Text className="font-inter-400 text-textSecondary mt-1" style={{ fontSize: 13, lineHeight: 18 }}>
-                {bundle.items.length} items · {bundle.tagline}
+                {bundle.items.length > 0 ? `${bundle.items.length} items · ${bundle.tagline}` : bundle.tagline}
               </Text>
               {/* Price row */}
               <View className="flex-row items-baseline mt-2" style={{ gap: 8 }}>
@@ -169,15 +200,21 @@ export default function BundlesScreen() {
                 </Text>
               </View>
               {/* CTA */}
-              <TouchableOpacity
-                className="w-full items-center justify-center mt-4"
-                style={{ height: 48, borderRadius: 16, backgroundColor: colors.primaryContainer }}
-                onPress={() => addBundle(bundle)}
-              >
-                <Text className="text-white font-inter-600" style={{ fontSize: 15, lineHeight: 20 }}>
-                  Add bundle to cart
+              {bundle.items.length > 0 ? (
+                <TouchableOpacity
+                  className="w-full items-center justify-center mt-4"
+                  style={{ height: 48, borderRadius: 16, backgroundColor: colors.primaryContainer }}
+                  onPress={() => addBundle(bundle)}
+                >
+                  <Text className="text-white font-inter-600" style={{ fontSize: 15, lineHeight: 20 }}>
+                    Add bundle to cart
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text className="font-inter-400 text-textSecondary mt-4" style={{ fontSize: 13, lineHeight: 18 }}>
+                  Curated by {bundle.tagline.split('·')[0]?.trim() ?? 'the seller'} — message them for the full set.
                 </Text>
-              </TouchableOpacity>
+              )}
             </View>
           );
         })}

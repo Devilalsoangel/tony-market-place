@@ -1172,6 +1172,7 @@ export type LedgerEntryCreateManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * The data used to create many LedgerEntries.
    */
   data: Prisma.LedgerEntryCreateManyInput | Prisma.LedgerEntryCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1190,6 +1191,7 @@ export type LedgerEntryCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ext
    * The data used to create many LedgerEntries.
    */
   data: Prisma.LedgerEntryCreateManyInput | Prisma.LedgerEntryCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

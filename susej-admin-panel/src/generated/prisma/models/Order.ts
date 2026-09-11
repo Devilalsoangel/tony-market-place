@@ -29,11 +29,13 @@ export type AggregateOrder = {
 export type OrderAvgAggregateOutputType = {
   amount: number | null
   items: number | null
+  rating: number | null
 }
 
 export type OrderSumAggregateOutputType = {
   amount: number | null
   items: number | null
+  rating: number | null
 }
 
 export type OrderMinAggregateOutputType = {
@@ -52,6 +54,14 @@ export type OrderMinAggregateOutputType = {
   paymentMethod: string | null
   paymentStatus: string | null
   createdAt: Date | null
+  orderNumber: string | null
+  buyerUsername: string | null
+  sellerUsername: string | null
+  reviewed: boolean | null
+  rating: number | null
+  reviewComment: string | null
+  placedAt: Date | null
+  updatedAt: Date | null
 }
 
 export type OrderMaxAggregateOutputType = {
@@ -70,6 +80,14 @@ export type OrderMaxAggregateOutputType = {
   paymentMethod: string | null
   paymentStatus: string | null
   createdAt: Date | null
+  orderNumber: string | null
+  buyerUsername: string | null
+  sellerUsername: string | null
+  reviewed: boolean | null
+  rating: number | null
+  reviewComment: string | null
+  placedAt: Date | null
+  updatedAt: Date | null
 }
 
 export type OrderCountAggregateOutputType = {
@@ -90,6 +108,14 @@ export type OrderCountAggregateOutputType = {
   paymentStatus: number
   createdAt: number
   deliveryLog: number
+  orderNumber: number
+  buyerUsername: number
+  sellerUsername: number
+  reviewed: number
+  rating: number
+  reviewComment: number
+  placedAt: number
+  updatedAt: number
   _all: number
 }
 
@@ -97,11 +123,13 @@ export type OrderCountAggregateOutputType = {
 export type OrderAvgAggregateInputType = {
   amount?: true
   items?: true
+  rating?: true
 }
 
 export type OrderSumAggregateInputType = {
   amount?: true
   items?: true
+  rating?: true
 }
 
 export type OrderMinAggregateInputType = {
@@ -120,6 +148,14 @@ export type OrderMinAggregateInputType = {
   paymentMethod?: true
   paymentStatus?: true
   createdAt?: true
+  orderNumber?: true
+  buyerUsername?: true
+  sellerUsername?: true
+  reviewed?: true
+  rating?: true
+  reviewComment?: true
+  placedAt?: true
+  updatedAt?: true
 }
 
 export type OrderMaxAggregateInputType = {
@@ -138,6 +174,14 @@ export type OrderMaxAggregateInputType = {
   paymentMethod?: true
   paymentStatus?: true
   createdAt?: true
+  orderNumber?: true
+  buyerUsername?: true
+  sellerUsername?: true
+  reviewed?: true
+  rating?: true
+  reviewComment?: true
+  placedAt?: true
+  updatedAt?: true
 }
 
 export type OrderCountAggregateInputType = {
@@ -158,6 +202,14 @@ export type OrderCountAggregateInputType = {
   paymentStatus?: true
   createdAt?: true
   deliveryLog?: true
+  orderNumber?: true
+  buyerUsername?: true
+  sellerUsername?: true
+  reviewed?: true
+  rating?: true
+  reviewComment?: true
+  placedAt?: true
+  updatedAt?: true
   _all?: true
 }
 
@@ -265,6 +317,14 @@ export type OrderGroupByOutputType = {
   paymentStatus: string
   createdAt: Date
   deliveryLog: runtime.JsonValue
+  orderNumber: string | null
+  buyerUsername: string | null
+  sellerUsername: string | null
+  reviewed: boolean
+  rating: number | null
+  reviewComment: string | null
+  placedAt: Date
+  updatedAt: Date
   _count: OrderCountAggregateOutputType | null
   _avg: OrderAvgAggregateOutputType | null
   _sum: OrderSumAggregateOutputType | null
@@ -308,6 +368,14 @@ export type OrderWhereInput = {
   paymentStatus?: Prisma.StringFilter<"Order"> | string
   createdAt?: Prisma.DateTimeFilter<"Order"> | Date | string
   deliveryLog?: Prisma.JsonFilter<"Order">
+  orderNumber?: Prisma.StringNullableFilter<"Order"> | string | null
+  buyerUsername?: Prisma.StringNullableFilter<"Order"> | string | null
+  sellerUsername?: Prisma.StringNullableFilter<"Order"> | string | null
+  reviewed?: Prisma.BoolFilter<"Order"> | boolean
+  rating?: Prisma.IntNullableFilter<"Order"> | number | null
+  reviewComment?: Prisma.StringNullableFilter<"Order"> | string | null
+  placedAt?: Prisma.DateTimeFilter<"Order"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"Order"> | Date | string
 }
 
 export type OrderOrderByWithRelationInput = {
@@ -328,6 +396,14 @@ export type OrderOrderByWithRelationInput = {
   paymentStatus?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   deliveryLog?: Prisma.SortOrder
+  orderNumber?: Prisma.SortOrderInput | Prisma.SortOrder
+  buyerUsername?: Prisma.SortOrderInput | Prisma.SortOrder
+  sellerUsername?: Prisma.SortOrderInput | Prisma.SortOrder
+  reviewed?: Prisma.SortOrder
+  rating?: Prisma.SortOrderInput | Prisma.SortOrder
+  reviewComment?: Prisma.SortOrderInput | Prisma.SortOrder
+  placedAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type OrderWhereUniqueInput = Prisma.AtLeast<{
@@ -351,6 +427,14 @@ export type OrderWhereUniqueInput = Prisma.AtLeast<{
   paymentStatus?: Prisma.StringFilter<"Order"> | string
   createdAt?: Prisma.DateTimeFilter<"Order"> | Date | string
   deliveryLog?: Prisma.JsonFilter<"Order">
+  orderNumber?: Prisma.StringNullableFilter<"Order"> | string | null
+  buyerUsername?: Prisma.StringNullableFilter<"Order"> | string | null
+  sellerUsername?: Prisma.StringNullableFilter<"Order"> | string | null
+  reviewed?: Prisma.BoolFilter<"Order"> | boolean
+  rating?: Prisma.IntNullableFilter<"Order"> | number | null
+  reviewComment?: Prisma.StringNullableFilter<"Order"> | string | null
+  placedAt?: Prisma.DateTimeFilter<"Order"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"Order"> | Date | string
 }, "id">
 
 export type OrderOrderByWithAggregationInput = {
@@ -371,6 +455,14 @@ export type OrderOrderByWithAggregationInput = {
   paymentStatus?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   deliveryLog?: Prisma.SortOrder
+  orderNumber?: Prisma.SortOrderInput | Prisma.SortOrder
+  buyerUsername?: Prisma.SortOrderInput | Prisma.SortOrder
+  sellerUsername?: Prisma.SortOrderInput | Prisma.SortOrder
+  reviewed?: Prisma.SortOrder
+  rating?: Prisma.SortOrderInput | Prisma.SortOrder
+  reviewComment?: Prisma.SortOrderInput | Prisma.SortOrder
+  placedAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
   _count?: Prisma.OrderCountOrderByAggregateInput
   _avg?: Prisma.OrderAvgOrderByAggregateInput
   _max?: Prisma.OrderMaxOrderByAggregateInput
@@ -399,6 +491,14 @@ export type OrderScalarWhereWithAggregatesInput = {
   paymentStatus?: Prisma.StringWithAggregatesFilter<"Order"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Order"> | Date | string
   deliveryLog?: Prisma.JsonWithAggregatesFilter<"Order">
+  orderNumber?: Prisma.StringNullableWithAggregatesFilter<"Order"> | string | null
+  buyerUsername?: Prisma.StringNullableWithAggregatesFilter<"Order"> | string | null
+  sellerUsername?: Prisma.StringNullableWithAggregatesFilter<"Order"> | string | null
+  reviewed?: Prisma.BoolWithAggregatesFilter<"Order"> | boolean
+  rating?: Prisma.IntNullableWithAggregatesFilter<"Order"> | number | null
+  reviewComment?: Prisma.StringNullableWithAggregatesFilter<"Order"> | string | null
+  placedAt?: Prisma.DateTimeWithAggregatesFilter<"Order"> | Date | string
+  updatedAt?: Prisma.DateTimeWithAggregatesFilter<"Order"> | Date | string
 }
 
 export type OrderCreateInput = {
@@ -417,8 +517,16 @@ export type OrderCreateInput = {
   shippingAddress: string
   paymentMethod: string
   paymentStatus: string
-  createdAt: Date | string
+  createdAt?: Date | string
   deliveryLog: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  orderNumber?: string | null
+  buyerUsername?: string | null
+  sellerUsername?: string | null
+  reviewed?: boolean
+  rating?: number | null
+  reviewComment?: string | null
+  placedAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type OrderUncheckedCreateInput = {
@@ -437,8 +545,16 @@ export type OrderUncheckedCreateInput = {
   shippingAddress: string
   paymentMethod: string
   paymentStatus: string
-  createdAt: Date | string
+  createdAt?: Date | string
   deliveryLog: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  orderNumber?: string | null
+  buyerUsername?: string | null
+  sellerUsername?: string | null
+  reviewed?: boolean
+  rating?: number | null
+  reviewComment?: string | null
+  placedAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type OrderUpdateInput = {
@@ -459,6 +575,14 @@ export type OrderUpdateInput = {
   paymentStatus?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   deliveryLog?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  orderNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  buyerUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sellerUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  reviewed?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rating?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  reviewComment?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  placedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type OrderUncheckedUpdateInput = {
@@ -479,6 +603,14 @@ export type OrderUncheckedUpdateInput = {
   paymentStatus?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   deliveryLog?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  orderNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  buyerUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sellerUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  reviewed?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rating?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  reviewComment?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  placedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type OrderCreateManyInput = {
@@ -497,8 +629,16 @@ export type OrderCreateManyInput = {
   shippingAddress: string
   paymentMethod: string
   paymentStatus: string
-  createdAt: Date | string
+  createdAt?: Date | string
   deliveryLog: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  orderNumber?: string | null
+  buyerUsername?: string | null
+  sellerUsername?: string | null
+  reviewed?: boolean
+  rating?: number | null
+  reviewComment?: string | null
+  placedAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type OrderUpdateManyMutationInput = {
@@ -519,6 +659,14 @@ export type OrderUpdateManyMutationInput = {
   paymentStatus?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   deliveryLog?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  orderNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  buyerUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sellerUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  reviewed?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rating?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  reviewComment?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  placedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type OrderUncheckedUpdateManyInput = {
@@ -539,6 +687,14 @@ export type OrderUncheckedUpdateManyInput = {
   paymentStatus?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   deliveryLog?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  orderNumber?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  buyerUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sellerUsername?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  reviewed?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rating?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  reviewComment?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  placedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type OrderCountOrderByAggregateInput = {
@@ -559,11 +715,20 @@ export type OrderCountOrderByAggregateInput = {
   paymentStatus?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   deliveryLog?: Prisma.SortOrder
+  orderNumber?: Prisma.SortOrder
+  buyerUsername?: Prisma.SortOrder
+  sellerUsername?: Prisma.SortOrder
+  reviewed?: Prisma.SortOrder
+  rating?: Prisma.SortOrder
+  reviewComment?: Prisma.SortOrder
+  placedAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type OrderAvgOrderByAggregateInput = {
   amount?: Prisma.SortOrder
   items?: Prisma.SortOrder
+  rating?: Prisma.SortOrder
 }
 
 export type OrderMaxOrderByAggregateInput = {
@@ -582,6 +747,14 @@ export type OrderMaxOrderByAggregateInput = {
   paymentMethod?: Prisma.SortOrder
   paymentStatus?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  orderNumber?: Prisma.SortOrder
+  buyerUsername?: Prisma.SortOrder
+  sellerUsername?: Prisma.SortOrder
+  reviewed?: Prisma.SortOrder
+  rating?: Prisma.SortOrder
+  reviewComment?: Prisma.SortOrder
+  placedAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type OrderMinOrderByAggregateInput = {
@@ -600,11 +773,28 @@ export type OrderMinOrderByAggregateInput = {
   paymentMethod?: Prisma.SortOrder
   paymentStatus?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  orderNumber?: Prisma.SortOrder
+  buyerUsername?: Prisma.SortOrder
+  sellerUsername?: Prisma.SortOrder
+  reviewed?: Prisma.SortOrder
+  rating?: Prisma.SortOrder
+  reviewComment?: Prisma.SortOrder
+  placedAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type OrderSumOrderByAggregateInput = {
   amount?: Prisma.SortOrder
   items?: Prisma.SortOrder
+  rating?: Prisma.SortOrder
+}
+
+export type NullableIntFieldUpdateOperationsInput = {
+  set?: number | null
+  increment?: number
+  decrement?: number
+  multiply?: number
+  divide?: number
 }
 
 
@@ -627,6 +817,14 @@ export type OrderSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   paymentStatus?: boolean
   createdAt?: boolean
   deliveryLog?: boolean
+  orderNumber?: boolean
+  buyerUsername?: boolean
+  sellerUsername?: boolean
+  reviewed?: boolean
+  rating?: boolean
+  reviewComment?: boolean
+  placedAt?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["order"]>
 
 export type OrderSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -647,6 +845,14 @@ export type OrderSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensi
   paymentStatus?: boolean
   createdAt?: boolean
   deliveryLog?: boolean
+  orderNumber?: boolean
+  buyerUsername?: boolean
+  sellerUsername?: boolean
+  reviewed?: boolean
+  rating?: boolean
+  reviewComment?: boolean
+  placedAt?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["order"]>
 
 export type OrderSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -667,6 +873,14 @@ export type OrderSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensi
   paymentStatus?: boolean
   createdAt?: boolean
   deliveryLog?: boolean
+  orderNumber?: boolean
+  buyerUsername?: boolean
+  sellerUsername?: boolean
+  reviewed?: boolean
+  rating?: boolean
+  reviewComment?: boolean
+  placedAt?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["order"]>
 
 export type OrderSelectScalar = {
@@ -687,9 +901,17 @@ export type OrderSelectScalar = {
   paymentStatus?: boolean
   createdAt?: boolean
   deliveryLog?: boolean
+  orderNumber?: boolean
+  buyerUsername?: boolean
+  sellerUsername?: boolean
+  reviewed?: boolean
+  rating?: boolean
+  reviewComment?: boolean
+  placedAt?: boolean
+  updatedAt?: boolean
 }
 
-export type OrderOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "buyerName" | "sellerName" | "amount" | "status" | "deliveryStatus" | "items" | "itemsList" | "shippingCarrier" | "trackingNumber" | "estimatedDelivery" | "actualDelivery" | "shippingAddress" | "paymentMethod" | "paymentStatus" | "createdAt" | "deliveryLog", ExtArgs["result"]["order"]>
+export type OrderOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "buyerName" | "sellerName" | "amount" | "status" | "deliveryStatus" | "items" | "itemsList" | "shippingCarrier" | "trackingNumber" | "estimatedDelivery" | "actualDelivery" | "shippingAddress" | "paymentMethod" | "paymentStatus" | "createdAt" | "deliveryLog" | "orderNumber" | "buyerUsername" | "sellerUsername" | "reviewed" | "rating" | "reviewComment" | "placedAt" | "updatedAt", ExtArgs["result"]["order"]>
 
 export type $OrderPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Order"
@@ -712,6 +934,14 @@ export type $OrderPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
     paymentStatus: string
     createdAt: Date
     deliveryLog: runtime.JsonValue
+    orderNumber: string | null
+    buyerUsername: string | null
+    sellerUsername: string | null
+    reviewed: boolean
+    rating: number | null
+    reviewComment: string | null
+    placedAt: Date
+    updatedAt: Date
   }, ExtArgs["result"]["order"]>
   composites: {}
 }
@@ -1152,6 +1382,14 @@ export interface OrderFieldRefs {
   readonly paymentStatus: Prisma.FieldRef<"Order", 'String'>
   readonly createdAt: Prisma.FieldRef<"Order", 'DateTime'>
   readonly deliveryLog: Prisma.FieldRef<"Order", 'Json'>
+  readonly orderNumber: Prisma.FieldRef<"Order", 'String'>
+  readonly buyerUsername: Prisma.FieldRef<"Order", 'String'>
+  readonly sellerUsername: Prisma.FieldRef<"Order", 'String'>
+  readonly reviewed: Prisma.FieldRef<"Order", 'Boolean'>
+  readonly rating: Prisma.FieldRef<"Order", 'Int'>
+  readonly reviewComment: Prisma.FieldRef<"Order", 'String'>
+  readonly placedAt: Prisma.FieldRef<"Order", 'DateTime'>
+  readonly updatedAt: Prisma.FieldRef<"Order", 'DateTime'>
 }
     
 
@@ -1362,6 +1600,7 @@ export type OrderCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Interna
    * The data used to create many Orders.
    */
   data: Prisma.OrderCreateManyInput | Prisma.OrderCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1380,6 +1619,7 @@ export type OrderCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extension
    * The data used to create many Orders.
    */
   data: Prisma.OrderCreateManyInput | Prisma.OrderCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

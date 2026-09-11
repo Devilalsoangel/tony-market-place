@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeftIcon, MoreIcon } from '../utils/icons';
+import { ChevronLeftIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
-import { sellerImages } from '../utils/screenImages';
+import { resolveListingImage } from '../utils/productImages';
 import { useAuth } from '../contexts/AuthContext';
 import { useOrders, Order, OrderStatus } from '../contexts/OrderContext';
+import { sellerNetForOrders } from '../utils/marketplace';
+import { usePosts } from '../contexts/PostContext';
 
 // Seller Orders — Incoming (Figma 245:2376) — live orders from OrderContext,
 // grouped by seller tab, with working Accept / Ship transitions.
@@ -23,7 +25,6 @@ const TAB_STATUSES: Partial<Record<Tab, OrderStatus[]>> = {
 };
 
 const NOTE_BY_STATUS: Partial<Record<OrderStatus, string>> = {
-  placed: 'Payment received · awaiting acceptance',
   confirmed: 'Accepted · awaiting shipment',
   preparing: 'Packing your order',
   out_for_delivery: 'In transit',
@@ -31,50 +32,16 @@ const NOTE_BY_STATUS: Partial<Record<OrderStatus, string>> = {
   cancelled: 'Cancelled',
 };
 
-const DEMO_QUEUE: Order[] = [
-  {
-    id: 'demo_sell_1',
-    orderNumber: '#SUJ-4821',
-    kind: 'order',
-    sellerName: 'Your Store',
-    sellerUsername: 'demo_seller',
-    items: [
-      { listingId: 'demo_a', name: 'Vintage Silk Saree', price: 4999, quantity: 1 },
-      { listingId: 'demo_b', name: 'Handmade Ceramic Set', price: 1299, quantity: 1 },
-    ],
-    total: 6298,
-    status: 'placed',
-    placedAt: Date.now() - 2 * 36e5,
-    reviewed: false,
-    tracking: [],
-  },
-  {
-    id: 'demo_sell_2',
-    orderNumber: '#SUJ-4710',
-    kind: 'order',
-    sellerName: 'Your Store',
-    sellerUsername: 'demo_seller',
-    items: [{ listingId: 'demo_c', name: 'Canvas Tote Bag', price: 850, quantity: 1 }],
-    total: 850,
-    status: 'confirmed',
-    placedAt: Date.now() - 24 * 36e5,
-    reviewed: false,
-    tracking: [],
-  },
-  {
-    id: 'demo_sell_3',
-    orderNumber: '#SUJ-4605',
-    kind: 'order',
-    sellerName: 'Your Store',
-    sellerUsername: 'demo_seller',
-    items: [{ listingId: 'demo_d', name: 'Silver Filigree Earrings', price: 2400, quantity: 1 }],
-    total: 2400,
-    status: 'out_for_delivery',
-    placedAt: Date.now() - 3 * 24 * 36e5,
-    reviewed: false,
-    tracking: [],
-  },
-];
+// Honest money copy: COD orders have NOT been paid at placement time.
+function isCashOrder(o: Order): boolean {
+  return /cash|cod/i.test(o.paymentMethod ?? '');
+}
+
+function noteFor(o: Order): string {
+  if (o.status === 'placed')
+    return isCashOrder(o) ? 'Awaiting acceptance · cash on delivery' : 'Payment received · awaiting acceptance';
+  return NOTE_BY_STATUS[o.status] ?? '';
+}
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -89,17 +56,31 @@ export default function SellerOrdersScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { orders, updateOrderStatus, respondRefund } = useOrders();
+  const { posts } = usePosts();
   const [tab, setTab] = useState<Tab>('All');
-  const [demoQueue, setDemoQueue] = useState<Order[]>(DEMO_QUEUE);
 
-  // Real orders for this seller; fall back to the demo queue when the account
-  // has no seller orders yet so the screen stays meaningful in the demo.
-  const myOrders = useMemo(
-    () => orders.filter((o) => o.sellerUsername === (user?.username || 'user')),
-    [orders, user]
-  );
-  const isDemo = myOrders.length === 0;
-  const queue = isDemo ? demoQueue : myOrders;
+  // Canonical listing image: the real post's own photo when available; seeded
+  // fallback only when the listing is not in the local cache.
+  // Canonical listing image, in priority order: the image captured on the
+  // ORDER ITEM at checkout (same picture the buyer saw), then the live post,
+  // then the deterministic fallback.
+  const listingImageSource = (listingId: string, orderImageUrl?: string) => {
+    const fromOrder = orderImageUrl;
+    if (fromOrder) return { uri: String(fromOrder) };
+    const listing = posts.find((p) => p.id === listingId);
+    const img = listing ? listing.image ?? listing.images?.[0] : undefined;
+    if (img === undefined || img === null) return resolveListingImage(null, listingId);
+    return typeof img === 'number' ? img : { uri: String(img) };
+  };
+
+  // Real orders for this seller only — honest empty state when none exist.
+  // Case-insensitive: server stores exact username casing, client may vary.
+  const myOrders = useMemo(() => {
+    const me = (user?.username ?? '').trim().toLowerCase();
+    if (!me) return [];
+    return orders.filter((o) => (o.sellerUsername ?? '').toLowerCase() === me);
+  }, [orders, user]);
+  const queue = myOrders;
 
   const visible = tab === 'All' ? queue : queue.filter((o) => TAB_STATUSES[tab]?.includes(o.status));
   const counts = useMemo(() => {
@@ -110,15 +91,14 @@ export default function SellerOrdersScreen() {
     return c;
   }, [queue]);
 
-  const earnings = isDemo
-    ? 38412
-    : queue.filter((o) => o.status === 'delivered').reduce((s, o) => s + (o.chargedTotal ?? o.total), 0);
+  // Net after 8% commission — matches hub + dashboard + wallet (gross here
+  // would show sellers money they never receive).
+  // Seller earnings — single definition shared with every seller surface
+  // (marketplace.sellerNetForOrders): goods-only × live rate. A third local
+  // formula here disagreed with hub + dashboard on identical orders.
+  const earnings = sellerNetForOrders(queue);
 
   const transition = (order: Order, next: OrderStatus) => {
-    if (isDemo) {
-      setDemoQueue((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: next } : o)));
-      return;
-    }
     if (!updateOrderStatus(order.id, next)) {
       Alert.alert('Cannot update', 'This order status can no longer be changed.');
     }
@@ -127,12 +107,13 @@ export default function SellerOrdersScreen() {
   const primaryAction = (o: Order) => {
     if (o.status === 'placed')
       return { label: 'Accept Order', run: () => transition(o, 'confirmed') };
-    if (o.status === 'confirmed' || o.status === 'preparing')
+    if (o.status === 'confirmed')
+      return { label: 'Start Preparing', run: () => transition(o, 'preparing') };
+    if (o.status === 'preparing')
       return { label: 'Mark Shipped', run: () => transition(o, 'out_for_delivery') };
     if (o.status === 'out_for_delivery')
-      return { label: 'Track via courier', run: () => Alert.alert('In transit', `Order ${o.orderNumber} is with the courier.`) };
-    if (o.status === 'delivered')
-      return { label: 'Message Buyer', run: () => router.push('/(tabs)/chat') };
+      return { label: 'Mark Delivered', run: () => transition(o, 'delivered') };
+    // delivered/cancelled are terminal: neutral placeholder + single Message Buyer CTA below
     return null;
   };
 
@@ -145,25 +126,6 @@ export default function SellerOrdersScreen() {
 
   const respondToRefund = (o: Order, approve: boolean) => {
     const doRespond = (note?: string) => {
-      if (isDemo) {
-        setDemoQueue((prev) =>
-          prev.map((x) =>
-            x.id === o.id
-              ? {
-                  ...x,
-                  refund: {
-                    id: `ref_demo_${Date.now()}`,
-                    reason: x.refund?.reason || 'Buyer requested a refund',
-                    status: approve ? ('approved' as const) : ('rejected' as const),
-                    requestedAt: Date.now(),
-                    timeline: [],
-                  },
-                }
-              : x
-          )
-        );
-        return;
-      }
       respondRefund(
         o.id,
         'seller',
@@ -193,23 +155,22 @@ export default function SellerOrdersScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <ChevronLeftIcon size={18} color={colors.primary} />
         </TouchableOpacity>
-        <Text className="flex-1 text-center font-inter-700 text-textPrimary" style={{ fontSize: 18, lineHeight: 24 }}>
-          Orders
-        </Text>
-        <TouchableOpacity>
-          <MoreIcon size={20} color={colors.textSecondary} />
-        </TouchableOpacity>
-      </View>
+          <Text className="flex-1 text-center font-inter-700 text-textPrimary" style={{ fontSize: 18, lineHeight: 24 }}>
+            Orders
+          </Text>
+          <View style={{ width: 20 }} />
+        </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
-        {/* Earnings pill */}
+        {/* Earnings pill — opens the wallet where seller earnings live. */}
         <TouchableOpacity
           className="self-start mx-5 mb-4 px-4 py-2 rounded-full flex-row items-center"
           style={{ backgroundColor: colors.primaryContainer, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 4 }}
+          onPress={() => router.push('/wallet')}
         >
-          <Text className="font-inter-600 text-white" style={{ fontSize: 13, lineHeight: 18 }}>
-            {formatPrice(earnings)} this month
-          </Text>
+            <Text className="font-inter-600 text-white" style={{ fontSize: 13, lineHeight: 18 }}>
+              {formatPrice(earnings)} net earned
+            </Text>
           <Text className="font-inter-500 text-white/80 ml-1" style={{ fontSize: 12, lineHeight: 16 }}>
             ›
           </Text>
@@ -220,7 +181,7 @@ export default function SellerOrdersScreen() {
           {(['All', 'Placed', 'Confirmed', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled'] as Tab[]).map((t) => {
             const on = tab === t;
             return (
-              <TouchableOpacity key={t} onPress={() => setTab(t)} className="px-4 py-2 rounded-full" style={{ backgroundColor: on ? colors.primaryContainer : colors.surfaceContainer }}>
+              <TouchableOpacity key={t} onPress={() => setTab(t)} className="px-4 py-2 rounded-full" accessibilityRole="button" accessibilityLabel={'Filter orders by status: ' + t} style={{ backgroundColor: on ? colors.primaryContainer : colors.surfaceContainer }}>
                 <Text className="font-inter-500" style={{ fontSize: 13, lineHeight: 18, color: on ? colors.onPrimary : colors.textPrimary }}>
                   {t} ({counts[t] ?? 0})
                 </Text>
@@ -258,7 +219,7 @@ export default function SellerOrdersScreen() {
                   </Text>
                 </View>
                 <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 12, lineHeight: 16 }}>
-                  {NOTE_BY_STATUS[o.status]}
+                  {noteFor(o)}
                 </Text>
                 {o.refund && (
                   <View className="self-start mt-2 px-2 py-1 rounded-full" style={{ backgroundColor: o.refund.status === 'requested' ? colors.errorContainer : colors.surfaceContainer }}>
@@ -272,7 +233,7 @@ export default function SellerOrdersScreen() {
                 <View className="mt-3" style={{ gap: 8 }}>
                   {o.items.map((item, idx) => (
                     <View key={item.listingId + idx} className="flex-row items-center">
-                      <Image source={sellerImages.products[idx % sellerImages.products.length]} className="w-10 h-10 rounded-figma-10 mr-3" resizeMode="cover" />
+                      <Image source={listingImageSource(item.listingId, item.imageUrl)} className="w-10 h-10 rounded-figma-10 mr-3" resizeMode="cover" />
                       <View className="flex-1">
                         <Text className="font-inter-500 text-textPrimary" style={{ fontSize: 13, lineHeight: 16 }}>
                           {item.name}
@@ -293,7 +254,7 @@ export default function SellerOrdersScreen() {
                     Buyer
                   </Text>
                   <Text className="font-inter-500 text-textPrimary ml-2 flex-1" style={{ fontSize: 12, lineHeight: 16 }} numberOfLines={1}>
-                    via SUSEJ checkout
+                    {o.buyerUsername || o.buyerName || 'via SUSEJ checkout'}
                   </Text>
                   <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 18 }}>
                     {formatPrice(o.chargedTotal ?? o.total)}
@@ -327,7 +288,14 @@ export default function SellerOrdersScreen() {
                       </Text>
                     </View>
                   )}
-                  <TouchableOpacity className="flex-1 h-11 rounded-figma-12 items-center justify-center" style={{ backgroundColor: colors.surfaceContainer }} onPress={() => router.push('/(tabs)/chat')}>
+                  <TouchableOpacity
+                    className="flex-1 h-11 rounded-figma-12 items-center justify-center"
+                    style={{ backgroundColor: colors.surfaceContainer }}
+                    onPress={() => {
+                      const to = o.buyerUsername || o.buyerName;
+                      router.push(to ? { pathname: '/(tabs)/chat', params: { to } } : '/(tabs)/chat');
+                    }}
+                  >
                     <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 13, lineHeight: 16 }}>
                       Message Buyer
                     </Text>

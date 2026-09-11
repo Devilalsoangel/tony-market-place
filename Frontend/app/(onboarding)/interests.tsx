@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,8 +6,9 @@ import { ChevronLeftIcon, ArrowRightIcon } from '../../utils/icons';
 import { colors } from '../../utils/theme';
 import { interestImages } from '../../utils/screenImages';
 import { useAuth } from '../../contexts/AuthContext';
+import { serverApi } from '../../utils/serverApi';
 
-const allInterests = [
+const FALLBACK_INTERESTS = [
   'Fashion', 'Electronics', 'Real Estate', 'Food',
   'Beauty', 'Fitness', 'Travel', 'Automotive',
 ];
@@ -15,8 +16,19 @@ const allInterests = [
 export default function InterestsScreen() {
   const { updateUser, completeOnboarding } = useAuth();
   const [selected, setSelected] = useState<string[]>([]);
+  const [allInterests, setAllInterests] = useState<string[]>(FALLBACK_INTERESTS);
   const hasMin = selected.length >= 3;
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    let alive = true;
+    serverApi.getCategories().then((r) => {
+      if (!alive || !r.ok || !r.data?.categories?.length) return;
+      const names = r.data.categories.map((c: any) => c.name).filter(Boolean);
+      if (names.length >= 8) setAllInterests(names.slice(0, 12));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const toggle = (interest: string) => {
     setSelected((prev) =>

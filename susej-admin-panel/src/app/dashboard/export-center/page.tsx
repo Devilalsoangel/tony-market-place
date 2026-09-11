@@ -25,7 +25,8 @@ const RESOURCES: { value: string; label: string }[] = [
   { value: "coupons", label: "Coupons" },
   { value: "promotions", label: "Promotions & Ads" },
   { value: "commission", label: "Commission & Fees" },
-  { value: "subscribers", label: "Subscribers" },
+  // Subscribers removed: no such resource exists (export 404ed). Re-add only
+  // with a real newsletter/subscriber table behind it.
   { value: "audit-logs", label: "Audit Logs" },
   { value: "admins", label: "Admins" },
 ];

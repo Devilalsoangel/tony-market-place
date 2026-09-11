@@ -1200,6 +1200,7 @@ export type DisputeCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * The data used to create many Disputes.
    */
   data: Prisma.DisputeCreateManyInput | Prisma.DisputeCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1218,6 +1219,7 @@ export type DisputeCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many Disputes.
    */
   data: Prisma.DisputeCreateManyInput | Prisma.DisputeCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

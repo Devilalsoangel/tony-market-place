@@ -81,9 +81,10 @@ const makeColumns = (
 ];
 
 export default function RefundsPage() {
-  const { data: refunds, refresh } = useDbResource<RefundRequest>("refunds");
+  const { data: refunds, refresh } = useDbResource<RefundRequest>("refunds", { take: 500 });
   const [rows, setRows] = useState<RefundRequest[] | null>(refunds);
-  const [confirm, setConfirm] = useState<{ r: RefundRequest; decision: "approve" | "reject" } | null>(null);
+  const [confirm, setConfirm] = useState<{ r: RefundRequest; decision: "approve" | "reject" | "issue" } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     setRows(refunds ?? null);
@@ -94,25 +95,49 @@ export default function RefundsPage() {
   const refundedAmount = (rows ?? []).filter((r) => r.status === "refunded").reduce((s, r) => s + r.amount, 0);
 
   function patchRow(r: RefundRequest, data: Partial<RefundRequest>) {
+    setActionError(null);
     setRows((prev) => (prev ?? []).map((x) => (x.id === r.id ? { ...x, ...data } : x)));
     fetch("/api/data/refunds", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: r.id, data }),
-    }).finally(() => {
-      setConfirm(null);
-      refresh();
-    });
+    })
+      .then(async (res) => {
+        // Surface refusals (dual-control 409, invalid transition): refresh()
+        // below snaps the row back, but silently — the desk must know WHY.
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          setActionError(
+            String((body as { error?: unknown } | null)?.error || `Refund update refused (HTTP ${res.status}). No money moved.`)
+          );
+        }
+      })
+      .catch(() => {
+        setActionError("Could not reach the server. No money moved.");
+      })
+      .finally(() => {
+        setConfirm(null);
+        refresh();
+      });
   }
 
   function handleDecision() {
     if (!confirm) return;
     const { r, decision } = confirm;
-    patchRow(r, { status: decision === "approve" ? "approved" : "rejected", respondedAt: new Date().toISOString() });
+    // Mark-issued moves real money (buyer re-credit + seller clawback settle
+    // server-side): same confirm dialog as approve/reject, plus a dual-control
+    // hint in the copy below — a second pair of eyes before money moves.
+    patchRow(
+      r,
+      decision === "issue"
+        ? { status: "refunded", respondedAt: new Date().toISOString() }
+        : { status: decision === "approve" ? "approved" : "rejected", respondedAt: new Date().toISOString() }
+    );
   }
 
   function handleIssue(r: RefundRequest) {
-    patchRow(r, { status: "refunded", respondedAt: new Date().toISOString() });
+    setConfirm({ r, decision: "issue" });
   }
 
   return (
@@ -135,6 +160,11 @@ export default function RefundsPage() {
         <CardHeader>
           <CardTitle>Refund Requests</CardTitle>
         </CardHeader>
+        {actionError && (
+          <div className="mx-6 mb-2 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-2.5 text-[13px] text-[#B91C1C]">
+            {actionError}
+          </div>
+        )}
         <CardContent>
           <DataTable
             columns={makeColumns(
@@ -167,17 +197,19 @@ export default function RefundsPage() {
               <RotateCcw className="h-6 w-6 text-[#6C3BFF]" />
             </div>
             <h3 className="mt-4 text-lg font-semibold text-[#18181B]">
-              {confirm.decision === "approve" ? "Approve refund" : "Reject refund"}
+              {confirm.decision === "approve" ? "Approve refund" : confirm.decision === "issue" ? "Issue refund — dual control" : "Reject refund"}
             </h3>
             <p className="mt-2 text-sm text-[#71717A]">
               {confirm.decision === "approve"
-                ? `Approve refund of ${formatCurrency(confirm.r.amount)} to ${confirm.r.buyerName} for ${confirm.r.orderRef}? The seller has agreed to this request.`
-                : `Reject the refund request from ${confirm.r.buyerName} for ${confirm.r.orderRef}?`}
+                ? `Approve refund of ${formatCurrency(confirm.r.amount)} to ${confirm.r.buyerName} for ${confirm.r.orderRef}? This moves money: the buyer is re-credited and the seller's earnings are reversed.`
+                : confirm.decision === "issue"
+                  ? `Issue ${formatCurrency(confirm.r.amount)} to ${confirm.r.buyerName} for ${confirm.r.orderRef}? Have a second team member verify the order first — this moves money and cannot be undone from here.`
+                  : `Reject the refund request from ${confirm.r.buyerName} for ${confirm.r.orderRef}?`}
             </p>
             <div className="mt-6 flex justify-center gap-3">
               <Button variant="secondary" onClick={() => setConfirm(null)}>Cancel</Button>
-              <Button variant={confirm.decision === "approve" ? "primary" : "danger"} onClick={handleDecision}>
-                {confirm.decision === "approve" ? "Approve refund" : "Reject refund"}
+              <Button variant={confirm.decision === "reject" ? "danger" : "primary"} onClick={handleDecision}>
+                {confirm.decision === "approve" ? "Approve refund" : confirm.decision === "issue" ? "Yes, issue refund" : "Reject refund"}
               </Button>
             </div>
           </div>

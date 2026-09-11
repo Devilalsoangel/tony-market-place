@@ -5,10 +5,12 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/shared/empty-state";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPost } from "@/lib/api-mutate";
-import { Search, Send, Phone, Video, MoreVertical } from "lucide-react";
+import { formatDate } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth-store";
+import { Search, Send, MessageSquare } from "lucide-react";
 
 interface MessageRow {
   id: string;
@@ -25,38 +27,14 @@ interface ChatMessage {
   text: string;
   time: string;
   isAdmin: boolean;
-  system?: boolean;
 }
 
-interface ChatUser {
+interface ChatThread {
   id: string;
   name: string;
-  avatar: string;
-  status: "online" | "away" | "offline";
-  unread: number;
   lastMessage: string;
+  lastAt: string;
 }
-
-const chatUsers: ChatUser[] = [
-  { id: "u1", name: "Alice Johnson", avatar: "AJ", status: "online", unread: 2, lastMessage: "I need help with my order" },
-  { id: "u2", name: "Bob Smith", avatar: "BS", status: "away", unread: 0, lastMessage: "Thanks for the help!" },
-  { id: "u3", name: "Charlie Lee", avatar: "CL", status: "online", unread: 5, lastMessage: "My payment is stuck" },
-  { id: "u4", name: "Diana Ross", avatar: "DR", status: "offline", unread: 0, lastMessage: "Never mind, resolved" },
-  { id: "u5", name: "Eve Chen", avatar: "EC", status: "online", unread: 1, lastMessage: "How do I become a seller?" },
-];
-
-const initialMessages: Record<string, ChatMessage[]> = {
-  u1: [
-    { id: "m1", sender: "Alice Johnson", text: "Hi, I need help with my order #ORD-1001", time: "10:30 AM", isAdmin: false },
-    { id: "m2", sender: "Support Agent", text: "Hello Alice! I'd be happy to help. What seems to be the issue?", time: "10:31 AM", isAdmin: true },
-    { id: "m3", sender: "Alice Johnson", text: "The package hasn't arrived yet and it's been 2 weeks", time: "10:32 AM", isAdmin: false },
-    { id: "m4", sender: "Support Agent", text: "Let me check the tracking details for you. One moment please.", time: "10:33 AM", isAdmin: true },
-  ],
-  u3: [
-    { id: "m5", sender: "Charlie Lee", text: "My payment of $129 is stuck on pending", time: "9:15 AM", isAdmin: false },
-    { id: "m6", sender: "Support Agent", text: "I can see the transaction. Let me escalate this to the payments team.", time: "9:20 AM", isAdmin: true },
-  ],
-};
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -65,9 +43,10 @@ function formatTime(iso: string): string {
 }
 
 export default function LiveChatPage() {
-  const [activeChat, setActiveChat] = useState("u1");
+  const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
+  const adminUser = useAuthStore((s) => s.user);
   const { data: messageRows, refresh } = useDbResource<MessageRow>("messages");
 
   useEffect(() => {
@@ -76,33 +55,56 @@ export default function LiveChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const threadId = `lc_${activeChat}`;
+  const threads = useMemo<ChatThread[]>(() => {
+    const byThread = new Map<string, MessageRow[]>();
+    for (const row of messageRows ?? []) {
+      const list = byThread.get(row.threadId) ?? [];
+      list.push(row);
+      byThread.set(row.threadId, list);
+    }
+    return Array.from(byThread.entries())
+      .map(([threadId, rows]) => {
+        const sorted = [...rows].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+        const last = sorted[sorted.length - 1];
+        const counterpart = [...sorted].reverse().find((m) => m.senderRole !== "agent");
+        return {
+          id: threadId,
+          name: counterpart?.sender ?? last.sender,
+          lastMessage: last.body,
+          lastAt: last.createdAt,
+        };
+      })
+      .sort((a, b) => Date.parse(b.lastAt) - Date.parse(a.lastAt));
+  }, [messageRows]);
+
+  const activeChat = selected ?? threads[0]?.id ?? null;
 
   const messages = useMemo<ChatMessage[]>(() => {
-    const rows = (messageRows ?? []).filter((m) => m.threadId === threadId);
-    if (rows.length === 0) return initialMessages[activeChat] ?? [];
-    return rows.map((m) => ({
-      id: m.id,
-      sender: m.sender,
-      text: m.body,
-      time: formatTime(m.createdAt),
-      isAdmin: m.senderRole === "agent",
-    }));
-  }, [messageRows, threadId, activeChat]);
+    if (!activeChat) return [];
+    return (messageRows ?? [])
+      .filter((m) => m.threadId === activeChat)
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+      .map((m) => ({
+        id: m.id,
+        sender: m.sender,
+        text: m.body,
+        time: formatTime(m.createdAt),
+        isAdmin: m.senderRole === "agent",
+      }));
+  }, [messageRows, activeChat]);
 
-  const filteredUsers = useMemo(
-    () => chatUsers.filter((u) => u.name.toLowerCase().includes(search.toLowerCase())),
-    [search]
+  const filteredThreads = useMemo(
+    () => threads.filter((t) => t.name.toLowerCase().includes(search.toLowerCase())),
+    [threads, search]
   );
 
-  async function send(text: string, isAdmin: boolean) {
-    const user = chatUsers.find((u) => u.id === activeChat);
-    if (!user || !text.trim()) return;
+  async function send(text: string) {
+    if (!activeChat || !text.trim()) return;
     try {
       await apiPost("messages", {
-        threadId: `lc_${activeChat}`,
-        sender: isAdmin ? "Support Agent" : user.name,
-        senderRole: isAdmin ? "agent" : "user",
+        threadId: activeChat,
+        sender: adminUser?.name || "Admin",
+        senderRole: "agent",
         body: text.trim(),
         createdAt: new Date().toISOString(),
       });
@@ -113,9 +115,7 @@ export default function LiveChatPage() {
     }
   }
 
-  async function startCall(kind: "voice" | "video") {
-    await send(`${kind === "voice" ? "Voice call" : "Video call"} started with ${chatUsers.find((u) => u.id === activeChat)?.name ?? "user"}`, true);
-  }
+  const activeName = threads.find((t) => t.id === activeChat)?.name ?? "";
 
   return (
     <div className="space-y-6">
@@ -133,75 +133,82 @@ export default function LiveChatPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-1">
-            {filteredUsers.map((user) => (
-              <button
-                key={user.id}
-                onClick={() => setActiveChat(user.id)}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${
-                  activeChat === user.id ? "bg-[#6C3BFF]/10" : "hover:bg-[#FAFAFA] "
-                }`}
-              >
-                <div className="relative">
-                  <Avatar name={user.name} size="sm" />
-                  <div className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white ${
-                    user.status === "online" ? "bg-[#16A34A]" : user.status === "away" ? "bg-[#F59E0B]" : "bg-gray-300"
-                  }`} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-[#18181B] ">{user.name}</p>
-                  <p className="truncate text-xs text-gray-500">{user.lastMessage}</p>
-                </div>
-                {user.unread > 0 && <Badge variant="danger">{user.unread}</Badge>}
-              </button>
-            ))}
+            {filteredThreads.length === 0 ? (
+              <EmptyState
+                icon={<MessageSquare className="h-8 w-8 text-gray-300" />}
+                title="No active chats"
+                description="Chat threads will appear here once customers message support."
+                className="py-8"
+              />
+            ) : (
+              filteredThreads.map((thread) => (
+                <button
+                  key={thread.id}
+                  onClick={() => setSelected(thread.id)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${
+                    activeChat === thread.id ? "bg-[#6C3BFF]/10" : "hover:bg-[#FAFAFA] "
+                  }`}
+                >
+                  <Avatar name={thread.name} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[#18181B] ">{thread.name}</p>
+                    <p className="truncate text-xs text-gray-500">{thread.lastMessage}</p>
+                  </div>
+                  <span className="shrink-0 self-start text-[11px] text-gray-400">{formatDate(thread.lastAt, "relative")}</span>
+                </button>
+              ))
+            )}
           </CardContent>
         </Card>
 
         <Card className="flex-1">
-          <CardHeader className="flex-row items-center justify-between">
+          <CardHeader>
             <div className="flex items-center gap-3">
-              <Avatar name={chatUsers.find((u) => u.id === activeChat)?.name || ""} size="sm" />
-              <div>
-                <CardTitle className="text-base">{chatUsers.find((u) => u.id === activeChat)?.name}</CardTitle>
-                <p className="text-xs text-[#16A34A]">Online</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => startCall("voice")} title="Start voice call">
-                <Phone className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => startCall("video")} title="Start video call">
-                <Video className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => send("More options requested by agent.", true)} title="Open options">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
+              <Avatar name={activeName} size="sm" />
+              <CardTitle className="text-base">{activeName || "Select a conversation"}</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 flex h-[400px] flex-col gap-3 overflow-y-auto">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.isAdmin ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                    msg.isAdmin ? "bg-[#6C3BFF] text-white" : "bg-[#FAFAFA] text-[#18181B]  "
-                  }`}>
-                    <p className="text-sm">{msg.text}</p>
-                    <p className={`mt-1 text-right text-xs ${msg.isAdmin ? "text-white/70" : "text-gray-400"}`}>{msg.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 border-t border-[#E4E4E7] pt-4">
-              <Input
-                placeholder="Type a message..."
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && message.trim()) { send(message, true); } }}
+            {!activeChat ? (
+              <EmptyState
+                icon={<MessageSquare className="h-8 w-8 text-gray-300" />}
+                title="No conversation selected"
+                description="Pick a chat thread on the left to view its messages."
+                className="py-8"
               />
-              <Button variant="primary" size="sm" onClick={() => send(message, true)}>
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
+            ) : (
+              <>
+                <div className="mb-4 flex h-[400px] flex-col gap-3 overflow-y-auto">
+                  {messages.length === 0 ? (
+                    <div className="flex h-full items-center justify-center">
+                      <p className="rounded-xl bg-[#FAFAFA] px-4 py-3 text-center text-sm text-gray-500">No messages in this chat yet.</p>
+                    </div>
+                  ) : (
+                    messages.map((msg) => (
+                      <div key={msg.id} className={`flex ${msg.isAdmin ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[70%] rounded-2xl px-4 py-2 ${
+                          msg.isAdmin ? "bg-[#6C3BFF] text-white" : "bg-[#FAFAFA] text-[#18181B]  "
+                        }`}>
+                          <p className="text-sm">{msg.text}</p>
+                          <p className={`mt-1 text-right text-xs ${msg.isAdmin ? "text-white/70" : "text-gray-400"}`}>{msg.time}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="flex items-center gap-2 border-t border-[#E4E4E7] pt-4">
+                  <Input
+                    placeholder="Type a message..."
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && message.trim()) { send(message); } }}
+                  />
+                  <Button variant="primary" size="sm" onClick={() => send(message)}>
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

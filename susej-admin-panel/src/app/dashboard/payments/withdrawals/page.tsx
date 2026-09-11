@@ -15,7 +15,8 @@ import type { WithdrawalRequest } from "@/types";
 
 const column = createColumnHelper<WithdrawalRequest>();
 
-const STATUS_VARIANT: Record<WithdrawalRequest["status"], "warning" | "info" | "danger" | "success"> = {
+const STATUS_VARIANT: Record<WithdrawalRequest["status"] | "pending", "warning" | "info" | "danger" | "success"> = {
+  pending: "warning", // legacy mirror value — normalized to "requested" server-side on decision
   requested: "warning",
   approved: "info",
   rejected: "danger",
@@ -76,9 +77,10 @@ const makeColumns = (
 ];
 
 export default function WithdrawalsPage() {
-  const { data: withdrawals, refresh } = useDbResource<WithdrawalRequest>("withdrawals");
+  const { data: withdrawals, refresh } = useDbResource<WithdrawalRequest>("withdrawals", { take: 500 });
   const [items, setItems] = useState<WithdrawalRequest[] | null>(withdrawals);
-  const [confirm, setConfirm] = useState<{ w: WithdrawalRequest; decision: "approve" | "reject" } | null>(null);
+  const [confirm, setConfirm] = useState<{ w: WithdrawalRequest; decision: "approve" | "reject" | "complete" } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setItems(withdrawals ?? null);
@@ -88,26 +90,49 @@ export default function WithdrawalsPage() {
   const approved = (items ?? []).filter((w) => w.status === "approved");
   const paidOut = (items ?? []).filter((w) => w.status === "completed").reduce((s, w) => s + w.amount, 0);
 
-  function patchRow(w: WithdrawalRequest, data: Partial<WithdrawalRequest>) {
+  async function patchRow(w: WithdrawalRequest, data: Partial<WithdrawalRequest>) {
+    setError(null);
     setItems((prev) => (prev ?? []).map((x) => (x.id === w.id ? { ...x, ...data } : x)));
-    fetch("/api/data/withdrawals", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: w.id, data }),
-    }).finally(() => {
+    try {
+      // credentials:"include" so the server session identifies the deciding
+      // admin for the immutable audit trail (industry: state changes are
+      // attributed, timestamped and reviewable).
+      const res = await fetch("/api/data/withdrawals", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: w.id, data }),
+      });
+      if (!res.ok) {
+        const j: { error?: string } = await res.json().catch(() => ({}));
+        setError(j.error || `Payout update failed (HTTP ${res.status})`);
+      }
+      // Audit trail is written server-side in the data-plane PATCH
+      // (writeAuditSafe: action=data.update, admin identity from the session
+      // cookie, before/after diff) — no client-side audit call needed.
+    } catch {
+      setError("Network error — payout decision was not saved.");
+    } finally {
       setConfirm(null);
       refresh();
-    });
+    }
   }
 
   function handleDecision() {
     if (!confirm) return;
     const { w, decision } = confirm;
-    patchRow(w, { status: decision === "approve" ? "approved" : "rejected", respondedAt: new Date().toISOString() });
+    // Mark-paid moves real money (bank transfer happened offline): it goes
+    // through the same confirm dialog as approve/reject — no one-click payout.
+    patchRow(
+      w,
+      decision === "complete"
+        ? { status: "completed", respondedAt: new Date().toISOString() }
+        : { status: decision === "approve" ? "approved" : "rejected", respondedAt: new Date().toISOString() }
+    );
   }
 
   function handleComplete(w: WithdrawalRequest) {
-    patchRow(w, { status: "completed", respondedAt: new Date().toISOString() });
+    setConfirm({ w, decision: "complete" });
   }
 
   return (
@@ -125,6 +150,12 @@ export default function WithdrawalsPage() {
         <StatTile label="Approved, pending pay" value={approved.length} tone="purple" />
         <StatTile label="Paid out" value={formatCurrency(paidOut)} tone="green" />
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -160,17 +191,19 @@ export default function WithdrawalsPage() {
               <Wallet className="h-6 w-6 text-[#6C3BFF]" />
             </div>
             <h3 className="mt-4 text-lg font-semibold text-[#18181B]">
-              {confirm.decision === "approve" ? "Approve payout" : "Reject payout"}
+              {confirm.decision === "approve" ? "Approve payout" : confirm.decision === "complete" ? "Confirm money paid" : "Reject payout"}
             </h3>
             <p className="mt-2 text-sm text-[#71717A]">
               {confirm.decision === "approve"
                 ? `Approve ${formatCurrency(confirm.w.amount)} payout to ${confirm.w.userName} (${confirm.w.method})?`
-                : `Reject the payout request of ${formatCurrency(confirm.w.amount)} from ${confirm.w.userName}?`}
+                : confirm.decision === "complete"
+                  ? `Confirm ${formatCurrency(confirm.w.amount)} was actually paid to ${confirm.w.userName}? Only confirm after the bank transfer completes — this is irreversible.`
+                  : `Reject the payout request of ${formatCurrency(confirm.w.amount)} from ${confirm.w.userName}?`}
             </p>
             <div className="mt-6 flex justify-center gap-3">
               <Button variant="secondary" onClick={() => setConfirm(null)}>Cancel</Button>
-              <Button variant={confirm.decision === "approve" ? "primary" : "danger"} onClick={handleDecision}>
-                {confirm.decision === "approve" ? "Approve payout" : "Reject payout"}
+              <Button variant={confirm.decision === "reject" ? "danger" : "primary"} onClick={handleDecision}>
+                {confirm.decision === "approve" ? "Approve payout" : confirm.decision === "complete" ? "Yes, money paid" : "Reject payout"}
               </Button>
             </div>
           </div>

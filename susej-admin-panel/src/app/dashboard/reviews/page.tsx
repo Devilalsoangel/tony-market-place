@@ -83,6 +83,7 @@ export default function ReviewsPage() {
     fetch("/api/data/reviews", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: r.id, data: { status: "approved" } }),
     }).finally(refresh);
   }
@@ -93,6 +94,7 @@ export default function ReviewsPage() {
     fetch("/api/data/reviews", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id: deleteTarget.id }),
     }).finally(() => {
       setDeleteTarget(null);

@@ -4,7 +4,6 @@ import { sha256Hex, hashPassword, SESSION_COOKIE, getClientIp } from "@/lib/auth
 import { writeAudit } from "@/lib/audit";
 
 const MIN_PASSWORD_LENGTH = 8;
-const OTP_PATTERN = /^\d{6}$/;
 
 async function resolveToken(token: string) {
   if (!token) return null;
@@ -39,9 +38,8 @@ export async function POST(request: NextRequest) {
     const prisma = await getPrisma();
     if (!prisma) {
       return NextResponse.json(
-        OTP_PATTERN.test(token)
-          ? { ok: true, adminName: "Demo Admin", demo: true }
-          : { ok: false, error: "Enter the 6-digit code." }
+        { ok: false, error: "Database unavailable. Password reset is disabled." },
+        { status: 503 },
       );
     }
     const row = await resolveToken(token);
@@ -57,18 +55,12 @@ export async function POST(request: NextRequest) {
     }
     const row = await resolveToken(token);
     if (!row) {
-      const prisma = await getPrisma();
-      if (!prisma && OTP_PATTERN.test(token)) {
-        const response = NextResponse.json({ success: true, demo: true });
-        response.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
-        return response;
-      }
       return NextResponse.json({ error: "This reset code is invalid or has expired." }, { status: 400 });
     }
 
     const prisma = await getPrisma();
     if (!prisma) {
-      return NextResponse.json({ error: "This reset link is invalid or has expired." }, { status: 400 });
+      return NextResponse.json({ error: "Database unavailable. Password reset is disabled." }, { status: 503 });
     }
 
     await prisma.$transaction([

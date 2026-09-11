@@ -208,7 +208,7 @@ export type CarrierGroupByOutputType = {
   name: string
   rate: number
   avgDeliveryDays: number
-  onTimeRate: number
+  onTimeRate: number | null
   shipments: number
   active: boolean
   _count: CarrierCountAggregateOutputType | null
@@ -241,7 +241,7 @@ export type CarrierWhereInput = {
   name?: Prisma.StringFilter<"Carrier"> | string
   rate?: Prisma.FloatFilter<"Carrier"> | number
   avgDeliveryDays?: Prisma.IntFilter<"Carrier"> | number
-  onTimeRate?: Prisma.FloatFilter<"Carrier"> | number
+  onTimeRate?: Prisma.FloatNullableFilter<"Carrier"> | number | null
   shipments?: Prisma.IntFilter<"Carrier"> | number
   active?: Prisma.BoolFilter<"Carrier"> | boolean
 }
@@ -251,7 +251,7 @@ export type CarrierOrderByWithRelationInput = {
   name?: Prisma.SortOrder
   rate?: Prisma.SortOrder
   avgDeliveryDays?: Prisma.SortOrder
-  onTimeRate?: Prisma.SortOrder
+  onTimeRate?: Prisma.SortOrderInput | Prisma.SortOrder
   shipments?: Prisma.SortOrder
   active?: Prisma.SortOrder
 }
@@ -264,7 +264,7 @@ export type CarrierWhereUniqueInput = Prisma.AtLeast<{
   name?: Prisma.StringFilter<"Carrier"> | string
   rate?: Prisma.FloatFilter<"Carrier"> | number
   avgDeliveryDays?: Prisma.IntFilter<"Carrier"> | number
-  onTimeRate?: Prisma.FloatFilter<"Carrier"> | number
+  onTimeRate?: Prisma.FloatNullableFilter<"Carrier"> | number | null
   shipments?: Prisma.IntFilter<"Carrier"> | number
   active?: Prisma.BoolFilter<"Carrier"> | boolean
 }, "id">
@@ -274,7 +274,7 @@ export type CarrierOrderByWithAggregationInput = {
   name?: Prisma.SortOrder
   rate?: Prisma.SortOrder
   avgDeliveryDays?: Prisma.SortOrder
-  onTimeRate?: Prisma.SortOrder
+  onTimeRate?: Prisma.SortOrderInput | Prisma.SortOrder
   shipments?: Prisma.SortOrder
   active?: Prisma.SortOrder
   _count?: Prisma.CarrierCountOrderByAggregateInput
@@ -292,7 +292,7 @@ export type CarrierScalarWhereWithAggregatesInput = {
   name?: Prisma.StringWithAggregatesFilter<"Carrier"> | string
   rate?: Prisma.FloatWithAggregatesFilter<"Carrier"> | number
   avgDeliveryDays?: Prisma.IntWithAggregatesFilter<"Carrier"> | number
-  onTimeRate?: Prisma.FloatWithAggregatesFilter<"Carrier"> | number
+  onTimeRate?: Prisma.FloatNullableWithAggregatesFilter<"Carrier"> | number | null
   shipments?: Prisma.IntWithAggregatesFilter<"Carrier"> | number
   active?: Prisma.BoolWithAggregatesFilter<"Carrier"> | boolean
 }
@@ -302,7 +302,7 @@ export type CarrierCreateInput = {
   name: string
   rate: number
   avgDeliveryDays: number
-  onTimeRate: number
+  onTimeRate?: number | null
   shipments: number
   active: boolean
 }
@@ -312,7 +312,7 @@ export type CarrierUncheckedCreateInput = {
   name: string
   rate: number
   avgDeliveryDays: number
-  onTimeRate: number
+  onTimeRate?: number | null
   shipments: number
   active: boolean
 }
@@ -322,7 +322,7 @@ export type CarrierUpdateInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rate?: Prisma.FloatFieldUpdateOperationsInput | number
   avgDeliveryDays?: Prisma.IntFieldUpdateOperationsInput | number
-  onTimeRate?: Prisma.FloatFieldUpdateOperationsInput | number
+  onTimeRate?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   shipments?: Prisma.IntFieldUpdateOperationsInput | number
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
 }
@@ -332,7 +332,7 @@ export type CarrierUncheckedUpdateInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rate?: Prisma.FloatFieldUpdateOperationsInput | number
   avgDeliveryDays?: Prisma.IntFieldUpdateOperationsInput | number
-  onTimeRate?: Prisma.FloatFieldUpdateOperationsInput | number
+  onTimeRate?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   shipments?: Prisma.IntFieldUpdateOperationsInput | number
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
 }
@@ -342,7 +342,7 @@ export type CarrierCreateManyInput = {
   name: string
   rate: number
   avgDeliveryDays: number
-  onTimeRate: number
+  onTimeRate?: number | null
   shipments: number
   active: boolean
 }
@@ -352,7 +352,7 @@ export type CarrierUpdateManyMutationInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rate?: Prisma.FloatFieldUpdateOperationsInput | number
   avgDeliveryDays?: Prisma.IntFieldUpdateOperationsInput | number
-  onTimeRate?: Prisma.FloatFieldUpdateOperationsInput | number
+  onTimeRate?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   shipments?: Prisma.IntFieldUpdateOperationsInput | number
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
 }
@@ -362,7 +362,7 @@ export type CarrierUncheckedUpdateManyInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rate?: Prisma.FloatFieldUpdateOperationsInput | number
   avgDeliveryDays?: Prisma.IntFieldUpdateOperationsInput | number
-  onTimeRate?: Prisma.FloatFieldUpdateOperationsInput | number
+  onTimeRate?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   shipments?: Prisma.IntFieldUpdateOperationsInput | number
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
 }
@@ -463,7 +463,7 @@ export type $CarrierPayload<ExtArgs extends runtime.Types.Extensions.InternalArg
     name: string
     rate: number
     avgDeliveryDays: number
-    onTimeRate: number
+    onTimeRate: number | null
     shipments: number
     active: boolean
   }, ExtArgs["result"]["carrier"]>
@@ -1106,6 +1106,7 @@ export type CarrierCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * The data used to create many Carriers.
    */
   data: Prisma.CarrierCreateManyInput | Prisma.CarrierCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1124,6 +1125,7 @@ export type CarrierCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many Carriers.
    */
   data: Prisma.CarrierCreateManyInput | Prisma.CarrierCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

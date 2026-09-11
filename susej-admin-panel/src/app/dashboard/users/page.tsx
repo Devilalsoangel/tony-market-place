@@ -12,7 +12,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { mockReportedUsers, type MockReportedUser } from "@/services/mock-data";
+import { type MockReportedUser } from "@/types/admin-rows";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { apiPatch, apiDelete } from "@/lib/api-mutate";
 import { formatDate } from "@/lib/utils";
@@ -44,7 +44,13 @@ const columns = [
   }),
   columnHelper.accessor("verified", {
     header: "Verified",
-    cell: (info) => (info.getValue() ? <Badge variant="success">Verified</Badge> : <Badge variant="default">Unverified</Badge>),
+    cell: (info) => {
+      // KYC truth lives in `verification` (synced from seller approvals);
+      // `verified` is a legacy boolean that nothing sets.
+      const u = info.row.original;
+      const isVerified = u.verification === "approved" || (!u.verification && u.verified);
+      return isVerified ? <Badge variant="success">Verified</Badge> : <Badge variant="default">Unverified</Badge>;
+    },
   }),
   columnHelper.accessor("joinedAt", {
     header: "Joined",
@@ -86,8 +92,8 @@ export default function UsersPage() {
   const router = useRouter();
   const { data: users } = useDbResource<User>("users");
   const { data: reportedRows, refresh: refreshReported } = useDbResource<MockReportedUser>("reported-users");
-  const [reportedList, setReportedList] = useState<MockReportedUser[]>(reportedRows ?? mockReportedUsers);
-  const [confirmAction, setConfirmAction] = useState<{ name: string; action: ReportAction } | null>(null);
+  const [reportedList, setReportedList] = useState<MockReportedUser[]>(reportedRows ?? []);
+  const [confirmAction, setConfirmAction] = useState<{ id: string; name: string; action: ReportAction } | null>(null);
 
   useEffect(() => {
     if (reportedRows) setReportedList(reportedRows);
@@ -96,24 +102,30 @@ export default function UsersPage() {
   const totalReports = reportedList.reduce((sum, u) => sum + u.reports, 0);
   const pendingReports = reportedList.filter((u) => u.status === "pending").length;
 
-  async function handleAction(name: string, action: ReportAction) {
-    const target = reportedList.find((u) => u.name === name);
+  async function handleAction(targetId: string, action: ReportAction) {
+    const target = reportedList.find((u) => u.id === targetId);
     if (!target) return;
     try {
       if (action === "dismiss") {
         await apiDelete("reported-users", target.id);
       } else {
         await apiPatch("reported-users", target.id, { status: "reviewed" });
+        if (action === "suspend" || action === "ban") {
+          const userId = (target as unknown as { userId?: string }).userId;
+          if (userId) {
+            await apiPatch("users", userId, { status: action === "ban" ? "banned" : "suspended" }).catch(() => {});
+          }
+        }
       }
       refreshReported();
     } catch (e) {
       console.error(e);
     }
     if (action === "dismiss") {
-      setReportedList((prev) => prev.filter((u) => u.name !== name));
+      setReportedList((prev) => prev.filter((u) => u.id !== targetId));
     } else {
       setReportedList((prev) =>
-        prev.map((u) => (u.name === name ? { ...u, status: "reviewed" as const } : u))
+        prev.map((u) => (u.id === targetId ? { ...u, status: "reviewed" as const } : u))
       );
     }
     setConfirmAction(null);
@@ -124,12 +136,12 @@ export default function UsersPage() {
       <>
         {user.status === "pending" && (
           <>
-            <Button variant="secondary" size="sm" onClick={() => setConfirmAction({ name: user.name, action: "warn" })}>Warn</Button>
-            <Button variant="danger" size="sm" onClick={() => setConfirmAction({ name: user.name, action: "suspend" })}>Suspend</Button>
-            <Button variant="danger" size="sm" onClick={() => setConfirmAction({ name: user.name, action: "ban" })}>Ban</Button>
+            <Button variant="secondary" size="sm" onClick={() => setConfirmAction({ id: user.id, name: user.name, action: "warn" })}>Warn</Button>
+            <Button variant="danger" size="sm" onClick={() => setConfirmAction({ id: user.id, name: user.name, action: "suspend" })}>Suspend</Button>
+            <Button variant="danger" size="sm" onClick={() => setConfirmAction({ id: user.id, name: user.name, action: "ban" })}>Ban</Button>
           </>
         )}
-        <Button variant="ghost" size="sm" onClick={() => setConfirmAction({ name: user.name, action: "dismiss" })} className="text-gray-400">Dismiss</Button>
+        <Button variant="ghost" size="sm" onClick={() => setConfirmAction({ id: user.id, name: user.name, action: "dismiss" })} className="text-gray-400">Dismiss</Button>
       </>
     );
   }
@@ -155,6 +167,23 @@ export default function UsersPage() {
                     data={users ?? []}
                     searchable
                     searchKey="name"
+                    filename="users"
+                    exportColumns={[
+                      { key: "name", label: "Name" },
+                      { key: "email", label: "Email" },
+                      { key: "role", label: "Role" },
+                      { key: "status", label: "Status" },
+                      { key: "verification", label: "Verification" },
+                      { key: "joinedAt", label: "Joined" },
+                    ]}
+                    selectable
+                    onBulkDelete={async (rows) => {
+                      const ids = (rows as any[]).map((r) => r.id);
+                      if (!confirm(`Soft-delete ${ids.length} user(s)? They will be marked deleted and hidden from active views.`)) return;
+                      for (const id of ids) {
+                        await fetch(`/api/data/users`, { method: "DELETE", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ id }) }).catch(() => {});
+                      }
+                    }}
                     onRowClick={(row) => router.push(`/dashboard/users/${row.id}`)}
                   />
                 </CardContent>
@@ -198,7 +227,7 @@ export default function UsersPage() {
                           <div
                             key={user.id}
                             className="flex cursor-pointer items-center justify-between rounded-xl border border-[#E4E4E7] p-4 transition-colors hover:bg-gray-50  "
-                            onClick={() => router.push(`/dashboard/users/${user.id}`)}
+                            onClick={() => router.push(`/dashboard/users/${(user as unknown as { userId?: string }).userId ?? user.id}`)}
                           >
                             <div className="flex items-center gap-3">
                               <Avatar name={user.name} size="md" />
@@ -206,7 +235,7 @@ export default function UsersPage() {
                                 <p className="font-medium text-[#18181B] ">{user.name}</p>
                                 <div className="flex items-center gap-2 text-sm text-gray-500">
                                   <span>{user.reason}</span>
-                                  <span>Â·</span>
+                                  <span>·</span>
                                   <span className="flex items-center gap-1">
                                     <Flag className="h-3 w-3 text-[#EF4444]" />
                                     {user.reports} reports
@@ -250,7 +279,7 @@ export default function UsersPage() {
               <Button variant="secondary" onClick={() => setConfirmAction(null)}>Cancel</Button>
               <Button
                 variant={confirmAction.action === "warn" || confirmAction.action === "dismiss" ? "primary" : "danger"}
-                onClick={() => handleAction(confirmAction.name, confirmAction.action)}
+                onClick={() => handleAction(confirmAction.id, confirmAction.action)}
               >
                 {actionMeta[confirmAction.action].confirmLabel}
               </Button>

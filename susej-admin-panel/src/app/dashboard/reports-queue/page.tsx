@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { Package, MessageCircle, UsersRound, MessageSquare, Star, ChevronRight } from "lucide-react";
-import type { ReportedProductRow, ReportedMessageRow, ReportedCommentRow } from "@/services/mock-data";
+import type { ReportedProductRow, ReportedMessageRow, ReportedCommentRow } from "@/types/admin-rows";
 import type { Community, Review } from "@/types";
 
 const TONES: Record<string, string> = {

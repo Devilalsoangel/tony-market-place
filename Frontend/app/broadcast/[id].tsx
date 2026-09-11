@@ -5,12 +5,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
 import { ChevronLeftIcon, SendIcon, HeartIcon, CommentIcon } from '../../utils/icons';
-import { colors, formatCount, formatPrice } from '../../utils/theme';
-import { productImages } from '../../utils/productImages';
+import { colors } from '../../utils/theme';
 import { BROADCAST_CHANNELS } from '../broadcasts';
+import { serverApi } from '../../utils/serverApi';
+import { useAuth } from '../../contexts/AuthContext';
 
-const JOINED_KEY = '@susej_broadcast_joined';
-const POSTS_KEY = '@susej_broadcast_posts';
+const JOINED_KEY_BASE = '@susej_broadcast_joined';
+const POSTS_KEY_BASE = '@susej_broadcast_posts';
+const JOINED_KEY = JOINED_KEY_BASE;
+const POSTS_KEY = POSTS_KEY_BASE;
 
 interface BroadcastPost {
   id: string;
@@ -22,148 +25,93 @@ interface BroadcastPost {
   comments: number;
 }
 
-const SEED_POSTS: Record<string, BroadcastPost[]> = {
-  bc_saree: [
-    {
-      id: 'bp_s1',
-      author: 'Luxe Thread Studio',
-      time: '2h',
-      text: 'New Kanjivaram collection — 30% off. Pure silk, handloom weaves, 40+ new designs live now. Use code FEST30 at checkout.',
-      image: productImages['post_001'],
-      likes: 1284,
-      comments: 96,
-    },
-    {
-      id: 'bp_s2',
-      author: 'Luxe Thread Studio',
-      time: '1d',
-      text: 'Behind the loom: how our Kanjivaram sarees are woven. Full video up on the feed!',
-      likes: 4862,
-      comments: 210,
-    },
-    {
-      id: 'bp_s3',
-      author: 'Luxe Thread Studio',
-      time: '2d',
-      text: 'Festival styling tip: pair a plain blouse with a printed saree for a modern look.',
-      likes: 952,
-      comments: 41,
-    },
-  ],
-  bc_tech: [
-    {
-      id: 'bp_t1',
-      author: 'TechVault',
-      time: '5h',
-      text: `Apple Watch S9 refurb drop — ${formatPrice(24999)}. 90-day warranty, certified battery health.`,
-      image: productImages['post_002'],
-      likes: 731,
-      comments: 58,
-    },
-    {
-      id: 'bp_t2',
-      author: 'TechVault',
-      time: '1d',
-      text: `Refurb MacBook Air M1 back in stock — ${formatPrice(54999)}. Only 12 units, first come first served.`,
-      likes: 1102,
-      comments: 87,
-    },
-    {
-      id: 'bp_t3',
-      author: 'TechVault',
-      time: '3d',
-      text: 'Cleaning hack: 70% isopropyl + microfiber for screens. Never use alcohol wipes on coated displays.',
-      likes: 388,
-      comments: 22,
-    },
-  ],
-  bc_home: [
-    {
-      id: 'bp_h1',
-      author: 'Urban Nest',
-      time: '6h',
-      text: '5 living room hacks for small spaces — foldable tables, wall mirrors, and smart lighting.',
-      likes: 2103,
-      comments: 134,
-    },
-    {
-      id: 'bp_h2',
-      author: 'Urban Nest',
-      time: '1d',
-      text: "Today's palette: warm beige + terracotta + olive. Instant cozy, zero renovation.",
-      likes: 1567,
-      comments: 102,
-    },
-    {
-      id: 'bp_h3',
-      author: 'Urban Nest',
-      time: '2d',
-      text: `Budget makeover: a ${formatPrice(5000)} living room refresh — here's what we changed.`,
-      likes: 2894,
-      comments: 176,
-    },
-  ],
-};
-
-function PinIcon({ size = 14, color = colors.primaryContainer }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
-        fill={color}
-      />
-    </Svg>
-  );
-}
-
 export default function BroadcastChannelScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const channelId = Array.isArray(id) ? id[0] : id ?? '';
+  const { user, tokenSeq } = useAuth();
   const [joined, setJoined] = useState(false);
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState<BroadcastPost[] | null>(null);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [text, setText] = useState('');
 
-  const channel = BROADCAST_CHANNELS.find((c) => c.id === channelId);
-
+  const [serverChannel, setServerChannel] = useState<{ id: string; name: string; tagline: string } | null>(null);
   useEffect(() => {
-    AsyncStorage.getItem(JOINED_KEY)
-      .then((data) => {
-        if (data) {
-          try {
-            const map = JSON.parse(data) as Record<string, boolean>;
-            setJoined(!!map[channelId]);
-          } catch {}
-        }
+    let cancelled = false;
+    serverApi
+      .getBroadcasts()
+      .then((res) => {
+        if (cancelled || !res.ok || !res.data?.broadcasts) return;
+        const found = (res.data.broadcasts as any[]).find((c) => String(c.id) === channelId);
+        if (found) setServerChannel({ id: String(found.id), name: String(found.name ?? 'Channel'), tagline: String(found.tagline ?? '') });
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [channelId]);
+  const channel = serverChannel ?? BROADCAST_CHANNELS.find((c) => c.id === channelId);
+  const joinedKey = user?.username ? `${JOINED_KEY_BASE}:${user.username}` : JOINED_KEY_BASE;
+  const postsKey = user?.username ? `${POSTS_KEY_BASE}:${user.username}` : POSTS_KEY_BASE;
 
   useEffect(() => {
-    AsyncStorage.getItem(POSTS_KEY)
-      .then((data) => {
+    let cancelled = false;
+    AsyncStorage.getItem(joinedKey)
+      .then(async (data) => {
+        if (cancelled) return;
+        if (data) {
+          try { const map = JSON.parse(data) as Record<string, boolean>; setJoined(!!map[channelId]); return; } catch {}
+        }
+        if (joinedKey !== JOINED_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(JOINED_KEY_BASE);
+          if (!cancelled && legacy) {
+            try { const map = JSON.parse(legacy) as Record<string, boolean>; if (map[channelId]) { setJoined(true); try { await AsyncStorage.setItem(joinedKey, legacy); } catch {} return; } } catch {}
+          }
+        }
+        if (!cancelled) setJoined(false);
+      })
+      .catch(() => { if (!cancelled) setJoined(false); });
+    return () => { cancelled = true; };
+  }, [channelId, joinedKey, tokenSeq]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    AsyncStorage.getItem(postsKey)
+      .then(async (data) => {
+        if (cancelled) return;
+        let real: BroadcastPost[] = [];
+        let found = false;
         if (data) {
           try {
             const map = JSON.parse(data) as Record<string, BroadcastPost[]>;
-            setPosts(map[channelId] ?? SEED_POSTS[channelId] ?? []);
-          } catch {
-            setPosts(SEED_POSTS[channelId] ?? []);
-          }
-        } else {
-          setPosts(SEED_POSTS[channelId] ?? []);
+            const all = map[channelId] ?? [];
+            real = all.filter((p) => p && !String(p.id).startsWith('bp_'));
+            found = true;
+          } catch {}
         }
+        if (!found && postsKey !== POSTS_KEY_BASE) {
+          const legacy = await AsyncStorage.getItem(POSTS_KEY_BASE);
+          if (!cancelled && legacy) {
+            try {
+              const map = JSON.parse(legacy) as Record<string, BroadcastPost[]>;
+              const all = map[channelId] ?? [];
+              real = all.filter((p) => p && !String(p.id).startsWith('bp_'));
+              try { await AsyncStorage.setItem(postsKey, legacy); } catch {}
+            } catch {}
+          }
+        }
+        if (!cancelled) setPosts(real);
       })
-      .catch(() => {
-        setPosts(SEED_POSTS[channelId] ?? []);
-      })
-      .finally(() => setLoading(false));
-  }, [channelId]);
+      .catch(() => { if (!cancelled) setPosts([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [channelId, postsKey, tokenSeq]);
 
   const join = useCallback(() => {
     const next = { [channelId]: true };
-    AsyncStorage.getItem(JOINED_KEY)
+    AsyncStorage.getItem(joinedKey)
       .then((data) => {
         if (data) {
           try {
@@ -171,16 +119,18 @@ export default function BroadcastChannelScreen() {
           } catch {}
         }
         next[channelId] = true;
-        AsyncStorage.setItem(JOINED_KEY, JSON.stringify(next)).catch(() => {});
+        AsyncStorage.setItem(joinedKey, JSON.stringify(next)).catch(() => {});
       })
       .catch(() => {});
     setJoined(true);
-  }, [channelId]);
+  }, [channelId, joinedKey]);
 
   const handleSend = useCallback(() => {
     if (!text.trim()) return;
     const post: BroadcastPost = {
-      id: `bp_${Date.now()}`,
+      // Non-bp_ prefix: the load filter drops legacy bp_ demo seeds, so user
+      // posts must never use it (they would vanish on reload).
+      id: `bc_${Date.now()}`,
       author: 'You',
       time: 'Just now',
       text: text.trim(),
@@ -189,17 +139,17 @@ export default function BroadcastChannelScreen() {
     };
     setPosts((prev) => {
       const next = [post, ...(prev ?? [])];
-      AsyncStorage.getItem(POSTS_KEY)
+      AsyncStorage.getItem(postsKey)
         .then((data) => {
           const map = data ? (JSON.parse(data) as Record<string, BroadcastPost[]>) : {};
           map[channelId] = next;
-          AsyncStorage.setItem(POSTS_KEY, JSON.stringify(map)).catch(() => {});
+          AsyncStorage.setItem(postsKey, JSON.stringify(map)).catch(() => {});
         })
         .catch(() => {});
       return next;
     });
     setText('');
-  }, [text, channelId]);
+  }, [text, channelId, postsKey]);
 
   const toggleLike = useCallback((postId: string) => {
     setLiked((prev) => ({ ...prev, [postId]: !prev[postId] }));
@@ -220,7 +170,7 @@ export default function BroadcastChannelScreen() {
             {channel?.name ?? 'Broadcast'}
           </Text>
           <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 12, lineHeight: 14 }}>
-            {channel ? `${formatCount(channel.memberCount)} members` : 'Channel unavailable'}
+            {channel?.tagline ?? 'Channel unavailable'}
           </Text>
         </View>
         <View style={{ width: 18 }} />
@@ -245,22 +195,6 @@ export default function BroadcastChannelScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <View>
-              {/* Pinned announcement banner */}
-              <View
-                className="rounded-figma-16 px-4 py-3 mb-5 flex-row items-start"
-                style={{ backgroundColor: colors.surfaceContainerLow, borderWidth: 1, borderColor: colors.surfaceContainer }}
-              >
-                <View className="mt-0.5 mr-2">
-                  <PinIcon size={14} color={colors.primaryContainer} />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-figma-11 font-inter-600 text-primary">PINNED</Text>
-                  <Text className="text-figma-12 font-inter-400 text-textPrimary mt-1" style={{ lineHeight: 17 }}>
-                    {channel.pinned}
-                  </Text>
-                </View>
-              </View>
-
               {/* Join gate */}
               {!joined && (
                 <View className="rounded-figma-16 px-4 py-4 mb-5 items-center" style={{ backgroundColor: colors.surfaceContainerLow }}>

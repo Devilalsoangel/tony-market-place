@@ -4,18 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from '../../utils/icons';
 import { colors, shadows } from '../../utils/theme';
-
-const SELLER_NAMES: Record<string, string> = {
-  elara_finds: 'Elara Finds',
-  elara_mod: 'Elara Modern',
-  arc_design: 'Arc Design',
-  lux_gems: 'Lux Gems',
-  hype_vault: 'Hype Vault',
-  vintage_loft: 'Vintage Loft',
-  luxe: 'Luxe Thread Studio',
-  techvault: 'TechVault',
-  urbanjungle: 'Urban Jungle',
-};
+import { serverApi } from '../../utils/serverApi';
 
 const QR_SIZE = 21;
 const CELL = 8;
@@ -78,13 +67,30 @@ export default function ShopQrScreen() {
   }, []);
 
   const handle = useMemo(() => (username || '').toLowerCase().trim(), [username]);
-  const sellerName = SELLER_NAMES[handle] || (handle ? handle.charAt(0).toUpperCase() + handle.slice(1) : '');
+  const fallbackName = handle ? handle.charAt(0).toUpperCase() + handle.slice(1) : '';
+  const [sellerName, setSellerName] = useState(fallbackName);
+
+  // Resolve the REAL display name from the server profile (fallback: handle).
+  useEffect(() => {
+    if (!handle) return;
+    let active = true;
+    serverApi
+      .getUserProfile(handle)
+      .then((res) => {
+        if (!active || !res.ok || !res.data?.user?.name) return;
+        setSellerName(String(res.data.user.name));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [handle]);
   const matrix = useMemo(() => buildQrMatrix(hashCode(handle || 'susej')), [handle]);
 
   const onShare = async () => {
     try {
       await Share.share({
-        message: `Check out @${handle} on susej — scan or open https://susej.app/shop/${handle}`,
+        message: `Find my shop on susej: search @${handle} in the app`,
       });
     } catch {}
   };
@@ -133,7 +139,7 @@ export default function ShopQrScreen() {
             className="w-full items-center"
             style={{ borderRadius: 24, backgroundColor: colors.surfaceContainerLowest, paddingVertical: 28, paddingHorizontal: 20, ...shadows.card }}
           >
-            {/* Deterministic fake QR - 21x21 grid + finder patterns */}
+            {/* Decorative shop-card tile — NOT a scannable QR code */}
             <View
               className="items-center justify-center"
               style={{ width: QR_PX + 24, height: QR_PX + 24, borderRadius: 12, backgroundColor: colors.surfaceContainerLowest }}
@@ -157,7 +163,7 @@ export default function ShopQrScreen() {
               {sellerName}
             </Text>
             <Text className="font-inter-400 mt-4 text-center" style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
-              Scan with susej to view this shop
+              Shop share card — invite people to find your shop
             </Text>
 
             <TouchableOpacity
@@ -171,7 +177,7 @@ export default function ShopQrScreen() {
             </TouchableOpacity>
 
             <Text className="font-inter-400 mt-4 text-center" style={{ fontSize: 12, lineHeight: 16, color: colors.textTertiary }}>
-              Invite to follow — friends who scan get this shop instantly
+              Friends can search this handle in the app to follow your shop
             </Text>
           </View>
         </ScrollView>

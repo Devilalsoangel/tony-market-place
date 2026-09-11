@@ -27,69 +27,107 @@ export type AggregateStory = {
 }
 
 export type StoryAvgAggregateOutputType = {
+  durationMs: number | null
   views: number | null
 }
 
 export type StorySumAggregateOutputType = {
+  durationMs: number | null
   views: number | null
 }
 
 export type StoryMinAggregateOutputType = {
   id: string | null
+  username: string | null
   creatorName: string | null
+  image: string | null
+  caption: string | null
+  durationMs: number | null
   views: number | null
   status: string | null
   createdAt: Date | null
+  expiresAt: Date | null
 }
 
 export type StoryMaxAggregateOutputType = {
   id: string | null
+  username: string | null
   creatorName: string | null
+  image: string | null
+  caption: string | null
+  durationMs: number | null
   views: number | null
   status: string | null
   createdAt: Date | null
+  expiresAt: Date | null
 }
 
 export type StoryCountAggregateOutputType = {
   id: number
+  username: number
   creatorName: number
+  image: number
+  caption: number
+  durationMs: number
+  overlays: number
+  productRef: number
   views: number
   status: number
   createdAt: number
+  expiresAt: number
   _all: number
 }
 
 
 export type StoryAvgAggregateInputType = {
+  durationMs?: true
   views?: true
 }
 
 export type StorySumAggregateInputType = {
+  durationMs?: true
   views?: true
 }
 
 export type StoryMinAggregateInputType = {
   id?: true
+  username?: true
   creatorName?: true
+  image?: true
+  caption?: true
+  durationMs?: true
   views?: true
   status?: true
   createdAt?: true
+  expiresAt?: true
 }
 
 export type StoryMaxAggregateInputType = {
   id?: true
+  username?: true
   creatorName?: true
+  image?: true
+  caption?: true
+  durationMs?: true
   views?: true
   status?: true
   createdAt?: true
+  expiresAt?: true
 }
 
 export type StoryCountAggregateInputType = {
   id?: true
+  username?: true
   creatorName?: true
+  image?: true
+  caption?: true
+  durationMs?: true
+  overlays?: true
+  productRef?: true
   views?: true
   status?: true
   createdAt?: true
+  expiresAt?: true
   _all?: true
 }
 
@@ -181,10 +219,17 @@ export type StoryGroupByArgs<ExtArgs extends runtime.Types.Extensions.InternalAr
 
 export type StoryGroupByOutputType = {
   id: string
+  username: string
   creatorName: string
+  image: string
+  caption: string | null
+  durationMs: number
+  overlays: runtime.JsonValue | null
+  productRef: runtime.JsonValue | null
   views: number
   status: string
   createdAt: Date
+  expiresAt: Date
   _count: StoryCountAggregateOutputType | null
   _avg: StoryAvgAggregateOutputType | null
   _sum: StorySumAggregateOutputType | null
@@ -212,18 +257,32 @@ export type StoryWhereInput = {
   OR?: Prisma.StoryWhereInput[]
   NOT?: Prisma.StoryWhereInput | Prisma.StoryWhereInput[]
   id?: Prisma.StringFilter<"Story"> | string
+  username?: Prisma.StringFilter<"Story"> | string
   creatorName?: Prisma.StringFilter<"Story"> | string
+  image?: Prisma.StringFilter<"Story"> | string
+  caption?: Prisma.StringNullableFilter<"Story"> | string | null
+  durationMs?: Prisma.IntFilter<"Story"> | number
+  overlays?: Prisma.JsonNullableFilter<"Story">
+  productRef?: Prisma.JsonNullableFilter<"Story">
   views?: Prisma.IntFilter<"Story"> | number
   status?: Prisma.StringFilter<"Story"> | string
   createdAt?: Prisma.DateTimeFilter<"Story"> | Date | string
+  expiresAt?: Prisma.DateTimeFilter<"Story"> | Date | string
 }
 
 export type StoryOrderByWithRelationInput = {
   id?: Prisma.SortOrder
+  username?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  image?: Prisma.SortOrder
+  caption?: Prisma.SortOrderInput | Prisma.SortOrder
+  durationMs?: Prisma.SortOrder
+  overlays?: Prisma.SortOrderInput | Prisma.SortOrder
+  productRef?: Prisma.SortOrderInput | Prisma.SortOrder
   views?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  expiresAt?: Prisma.SortOrder
 }
 
 export type StoryWhereUniqueInput = Prisma.AtLeast<{
@@ -231,18 +290,32 @@ export type StoryWhereUniqueInput = Prisma.AtLeast<{
   AND?: Prisma.StoryWhereInput | Prisma.StoryWhereInput[]
   OR?: Prisma.StoryWhereInput[]
   NOT?: Prisma.StoryWhereInput | Prisma.StoryWhereInput[]
+  username?: Prisma.StringFilter<"Story"> | string
   creatorName?: Prisma.StringFilter<"Story"> | string
+  image?: Prisma.StringFilter<"Story"> | string
+  caption?: Prisma.StringNullableFilter<"Story"> | string | null
+  durationMs?: Prisma.IntFilter<"Story"> | number
+  overlays?: Prisma.JsonNullableFilter<"Story">
+  productRef?: Prisma.JsonNullableFilter<"Story">
   views?: Prisma.IntFilter<"Story"> | number
   status?: Prisma.StringFilter<"Story"> | string
   createdAt?: Prisma.DateTimeFilter<"Story"> | Date | string
+  expiresAt?: Prisma.DateTimeFilter<"Story"> | Date | string
 }, "id">
 
 export type StoryOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
+  username?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  image?: Prisma.SortOrder
+  caption?: Prisma.SortOrderInput | Prisma.SortOrder
+  durationMs?: Prisma.SortOrder
+  overlays?: Prisma.SortOrderInput | Prisma.SortOrder
+  productRef?: Prisma.SortOrderInput | Prisma.SortOrder
   views?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  expiresAt?: Prisma.SortOrder
   _count?: Prisma.StoryCountOrderByAggregateInput
   _avg?: Prisma.StoryAvgOrderByAggregateInput
   _max?: Prisma.StoryMaxOrderByAggregateInput
@@ -255,97 +328,172 @@ export type StoryScalarWhereWithAggregatesInput = {
   OR?: Prisma.StoryScalarWhereWithAggregatesInput[]
   NOT?: Prisma.StoryScalarWhereWithAggregatesInput | Prisma.StoryScalarWhereWithAggregatesInput[]
   id?: Prisma.StringWithAggregatesFilter<"Story"> | string
+  username?: Prisma.StringWithAggregatesFilter<"Story"> | string
   creatorName?: Prisma.StringWithAggregatesFilter<"Story"> | string
+  image?: Prisma.StringWithAggregatesFilter<"Story"> | string
+  caption?: Prisma.StringNullableWithAggregatesFilter<"Story"> | string | null
+  durationMs?: Prisma.IntWithAggregatesFilter<"Story"> | number
+  overlays?: Prisma.JsonNullableWithAggregatesFilter<"Story">
+  productRef?: Prisma.JsonNullableWithAggregatesFilter<"Story">
   views?: Prisma.IntWithAggregatesFilter<"Story"> | number
   status?: Prisma.StringWithAggregatesFilter<"Story"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Story"> | Date | string
+  expiresAt?: Prisma.DateTimeWithAggregatesFilter<"Story"> | Date | string
 }
 
 export type StoryCreateInput = {
   id?: string
-  creatorName: string
-  views: number
-  status: string
-  createdAt: Date | string
+  username: string
+  creatorName?: string
+  image?: string
+  caption?: string | null
+  durationMs?: number
+  overlays?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  productRef?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  views?: number
+  status?: string
+  createdAt?: Date | string
+  expiresAt?: Date | string
 }
 
 export type StoryUncheckedCreateInput = {
   id?: string
-  creatorName: string
-  views: number
-  status: string
-  createdAt: Date | string
+  username: string
+  creatorName?: string
+  image?: string
+  caption?: string | null
+  durationMs?: number
+  overlays?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  productRef?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  views?: number
+  status?: string
+  createdAt?: Date | string
+  expiresAt?: Date | string
 }
 
 export type StoryUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
   creatorName?: Prisma.StringFieldUpdateOperationsInput | string
+  image?: Prisma.StringFieldUpdateOperationsInput | string
+  caption?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  durationMs?: Prisma.IntFieldUpdateOperationsInput | number
+  overlays?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  productRef?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   views?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type StoryUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
   creatorName?: Prisma.StringFieldUpdateOperationsInput | string
+  image?: Prisma.StringFieldUpdateOperationsInput | string
+  caption?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  durationMs?: Prisma.IntFieldUpdateOperationsInput | number
+  overlays?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  productRef?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   views?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type StoryCreateManyInput = {
   id?: string
-  creatorName: string
-  views: number
-  status: string
-  createdAt: Date | string
+  username: string
+  creatorName?: string
+  image?: string
+  caption?: string | null
+  durationMs?: number
+  overlays?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  productRef?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  views?: number
+  status?: string
+  createdAt?: Date | string
+  expiresAt?: Date | string
 }
 
 export type StoryUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
   creatorName?: Prisma.StringFieldUpdateOperationsInput | string
+  image?: Prisma.StringFieldUpdateOperationsInput | string
+  caption?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  durationMs?: Prisma.IntFieldUpdateOperationsInput | number
+  overlays?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  productRef?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   views?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type StoryUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
   creatorName?: Prisma.StringFieldUpdateOperationsInput | string
+  image?: Prisma.StringFieldUpdateOperationsInput | string
+  caption?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  durationMs?: Prisma.IntFieldUpdateOperationsInput | number
+  overlays?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  productRef?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   views?: Prisma.IntFieldUpdateOperationsInput | number
   status?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type StoryCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  username?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  image?: Prisma.SortOrder
+  caption?: Prisma.SortOrder
+  durationMs?: Prisma.SortOrder
+  overlays?: Prisma.SortOrder
+  productRef?: Prisma.SortOrder
   views?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  expiresAt?: Prisma.SortOrder
 }
 
 export type StoryAvgOrderByAggregateInput = {
+  durationMs?: Prisma.SortOrder
   views?: Prisma.SortOrder
 }
 
 export type StoryMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  username?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  image?: Prisma.SortOrder
+  caption?: Prisma.SortOrder
+  durationMs?: Prisma.SortOrder
   views?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  expiresAt?: Prisma.SortOrder
 }
 
 export type StoryMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  username?: Prisma.SortOrder
   creatorName?: Prisma.SortOrder
+  image?: Prisma.SortOrder
+  caption?: Prisma.SortOrder
+  durationMs?: Prisma.SortOrder
   views?: Prisma.SortOrder
   status?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  expiresAt?: Prisma.SortOrder
 }
 
 export type StorySumOrderByAggregateInput = {
+  durationMs?: Prisma.SortOrder
   views?: Prisma.SortOrder
 }
 
@@ -353,47 +501,82 @@ export type StorySumOrderByAggregateInput = {
 
 export type StorySelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
+  username?: boolean
   creatorName?: boolean
+  image?: boolean
+  caption?: boolean
+  durationMs?: boolean
+  overlays?: boolean
+  productRef?: boolean
   views?: boolean
   status?: boolean
   createdAt?: boolean
+  expiresAt?: boolean
 }, ExtArgs["result"]["story"]>
 
 export type StorySelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
+  username?: boolean
   creatorName?: boolean
+  image?: boolean
+  caption?: boolean
+  durationMs?: boolean
+  overlays?: boolean
+  productRef?: boolean
   views?: boolean
   status?: boolean
   createdAt?: boolean
+  expiresAt?: boolean
 }, ExtArgs["result"]["story"]>
 
 export type StorySelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
+  username?: boolean
   creatorName?: boolean
+  image?: boolean
+  caption?: boolean
+  durationMs?: boolean
+  overlays?: boolean
+  productRef?: boolean
   views?: boolean
   status?: boolean
   createdAt?: boolean
+  expiresAt?: boolean
 }, ExtArgs["result"]["story"]>
 
 export type StorySelectScalar = {
   id?: boolean
+  username?: boolean
   creatorName?: boolean
+  image?: boolean
+  caption?: boolean
+  durationMs?: boolean
+  overlays?: boolean
+  productRef?: boolean
   views?: boolean
   status?: boolean
   createdAt?: boolean
+  expiresAt?: boolean
 }
 
-export type StoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "creatorName" | "views" | "status" | "createdAt", ExtArgs["result"]["story"]>
+export type StoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "username" | "creatorName" | "image" | "caption" | "durationMs" | "overlays" | "productRef" | "views" | "status" | "createdAt" | "expiresAt", ExtArgs["result"]["story"]>
 
 export type $StoryPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Story"
   objects: {}
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
+    username: string
     creatorName: string
+    image: string
+    caption: string | null
+    durationMs: number
+    overlays: runtime.JsonValue | null
+    productRef: runtime.JsonValue | null
     views: number
     status: string
     createdAt: Date
+    expiresAt: Date
   }, ExtArgs["result"]["story"]>
   composites: {}
 }
@@ -818,10 +1001,17 @@ export interface Prisma__StoryClient<T, Null = never, ExtArgs extends runtime.Ty
  */
 export interface StoryFieldRefs {
   readonly id: Prisma.FieldRef<"Story", 'String'>
+  readonly username: Prisma.FieldRef<"Story", 'String'>
   readonly creatorName: Prisma.FieldRef<"Story", 'String'>
+  readonly image: Prisma.FieldRef<"Story", 'String'>
+  readonly caption: Prisma.FieldRef<"Story", 'String'>
+  readonly durationMs: Prisma.FieldRef<"Story", 'Int'>
+  readonly overlays: Prisma.FieldRef<"Story", 'Json'>
+  readonly productRef: Prisma.FieldRef<"Story", 'Json'>
   readonly views: Prisma.FieldRef<"Story", 'Int'>
   readonly status: Prisma.FieldRef<"Story", 'String'>
   readonly createdAt: Prisma.FieldRef<"Story", 'DateTime'>
+  readonly expiresAt: Prisma.FieldRef<"Story", 'DateTime'>
 }
     
 
@@ -1032,6 +1222,7 @@ export type StoryCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Interna
    * The data used to create many Stories.
    */
   data: Prisma.StoryCreateManyInput | Prisma.StoryCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1050,6 +1241,7 @@ export type StoryCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extension
    * The data used to create many Stories.
    */
   data: Prisma.StoryCreateManyInput | Prisma.StoryCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { bookServiceImages } from '../utils/screenImages';
 import { BackIcon, StarIcon, MapPinIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
@@ -12,15 +12,6 @@ const servicePackages = [
   { name: 'Premium', price: 299 },
   { name: 'Business', price: 499 },
 ];
-
-const REVIEWS = [
-  { name: 'Priya', stars: 5, time: '2 days ago', text: 'Beautiful product shots — my listings finally look premium. Very quick turnaround.' },
-  { name: 'Rohan', stars: 5, time: '5 days ago', text: 'On time, polite, and delivered 12 clean edited photos. Great value for the premium package.' },
-  { name: 'Meera', stars: 4, time: '1 week ago', text: 'Great lighting and background removal. Took slightly longer than quoted but the results were worth it.' },
-  { name: 'Arjun', stars: 4, time: '2 weeks ago', text: 'Solid work for the price. Communication could be faster, but the shots came out really well.' },
-  { name: 'Kabir', stars: 3, time: '3 weeks ago', text: 'Decent photos, though a couple needed a reshoot. Prices are reasonable for the starter pack.' },
-  { name: 'Ananya', stars: 5, time: '1 month ago', text: 'Booked the business package for my store launch — flawless studio experience and delivery on time.' },
-] as const;
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -37,7 +28,8 @@ const TIME_SLOTS = [
   '5:00 PM',
   '6:00 PM',
 ];
-const BOOKED_TIMES = new Set(['1:00 PM', '4:00 PM']);
+// All slots honestly available — no phantom "booked" times.
+const BOOKED_TIMES = new Set<string>();
 
 const DAY_MS = 86400000;
 const BOOKING_WINDOW_DAYS = 14;
@@ -61,6 +53,23 @@ function buildMonthGrid(now: Date): (Date | null)[] {
 
 export default function BookServiceScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{
+    seller?: string | string[];
+    sellerUsername?: string | string[];
+    title?: string | string[];
+    description?: string | string[];
+    category?: string | string[];
+  }>();
+  const sellerNameParam = Array.isArray(params.seller) ? params.seller[0] : params.seller;
+  const sellerUsernameParam = Array.isArray(params.sellerUsername) ? params.sellerUsername[0] : params.sellerUsername;
+  const titleParam = Array.isArray(params.title) ? params.title[0] : params.title;
+  const descriptionParam = Array.isArray(params.description) ? params.description[0] : params.description;
+  const categoryParam = Array.isArray(params.category) ? params.category[0] : params.category;
+
+  // Listing context comes from the caller; fall back to generic honest copy.
+  const serviceTitle = titleParam?.trim() || 'Service booking';
+  const serviceDescription = descriptionParam?.trim() || 'Details provided by the seller.';
+  const serviceCategory = categoryParam?.trim() || 'Service';
   const { placeOrders } = useOrders();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -82,11 +91,11 @@ export default function BookServiceScreen() {
           {
             listingId: 'service-photo-shoot',
             type: 'service',
-            name: 'Professional Photo Shoot',
+            name: serviceTitle,
             price: selectedPackage.price,
             quantity: 1,
-            seller: 'Lens & Light Studio',
-            sellerUsername: 'lens_light',
+            seller: sellerNameParam || 'Service Provider',
+            sellerUsername: sellerUsernameParam || 'service_provider',
           },
         ],
         undefined,
@@ -126,18 +135,12 @@ export default function BookServiceScreen() {
         <View className="px-4 pt-4">
           <View className="flex-row items-center gap-1 mb-2">
             <Image source={bookServiceImages.avatar} className="w-10 h-10 rounded-full" style={{ backgroundColor: colors.surfaceContainer }} />
-            <StarIcon size={16} />
-            <Text className="text-figma-14 font-inter-600 text-textPrimary">4.9</Text>
-            <Text className="text-figma-14 font-inter-400 text-textSecondary ml-1">Photography</Text>
+            <Text className="text-figma-14 font-inter-600 text-textPrimary">{sellerNameParam || 'Service Provider'}</Text>
+            <Text className="text-figma-14 font-inter-400 text-textSecondary ml-1">{serviceCategory}</Text>
           </View>
-          <Text className="text-figma-22 font-inter-700 text-textPrimary mb-1">Professional Photo Shoot</Text>
-          <View className="flex-row items-center gap-2 mb-4">
-            <MapPinIcon size={14} color="#5c5e63" />
-            <Text className="text-figma-12 font-inter-400 text-textSecondary">2.3 km away</Text>
-          </View>
+          <Text className="text-figma-22 font-inter-700 text-textPrimary mb-1">{serviceTitle}</Text>
           <Text className="text-figma-14 font-inter-400 text-textSecondary leading-6 mb-6">
-            Professional product photography for your listings. Includes 10 edited photos with 
-            studio lighting and background removal.
+            {serviceDescription}
           </Text>
 
           <View className="flex-row gap-3 mb-6">
@@ -252,25 +255,9 @@ export default function BookServiceScreen() {
           </View>
 
           <Text className="text-figma-18 font-inter-700 text-textPrimary mb-3">Reviews</Text>
-          {REVIEWS.map((r) => (
-            <View key={r.name} className="flex-row mb-4 pb-4 border-b border-surfaceContainer">
-              <View className="w-10 h-10 rounded-full bg-surfaceContainerLow items-center justify-center mr-3">
-                <Text className="text-figma-12 font-inter-600 text-textPrimary">{r.name.charAt(0)}</Text>
-              </View>
-              <View className="flex-1">
-                <View className="flex-row items-center gap-2 mb-1">
-                  <Text className="text-figma-13 font-inter-600 text-textPrimary">{r.name}</Text>
-                  <View className="flex-row">
-                    {[1, 2, 3, 4, 5].map((s) => (
-                      <StarIcon key={s} size={10} color={s <= r.stars ? undefined : colors.outlineVariant} />
-                    ))}
-                  </View>
-                </View>
-                <Text className="text-figma-11 font-inter-400 text-textTertiary mb-1">{r.time}</Text>
-                <Text className="text-figma-12 font-inter-400 text-textSecondary">{r.text}</Text>
-              </View>
-            </View>
-          ))}
+          <Text className="text-figma-14 font-inter-400 text-textSecondary mb-6">
+            No reviews yet. Book this service and be the first to leave one.
+          </Text>
         </View>
       </ScrollView>
 

@@ -1274,6 +1274,7 @@ export type HotDealCreateManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * The data used to create many HotDeals.
    */
   data: Prisma.HotDealCreateManyInput | Prisma.HotDealCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1292,6 +1293,7 @@ export type HotDealCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensi
    * The data used to create many HotDeals.
    */
   data: Prisma.HotDealCreateManyInput | Prisma.HotDealCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

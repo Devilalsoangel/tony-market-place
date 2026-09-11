@@ -172,16 +172,6 @@ export type RevenueMetrics = Prisma.RevenueMetricsModel
  */
 export type AppSetting = Prisma.AppSettingModel
 /**
- * Model HeroBanner
- * 
- */
-export type HeroBanner = Prisma.HeroBannerModel
-/**
- * Model FeaturedCategory
- * 
- */
-export type FeaturedCategory = Prisma.FeaturedCategoryModel
-/**
  * Model TopSeller
  * 
  */
@@ -197,10 +187,20 @@ export type HotDeal = Prisma.HotDealModel
  */
 export type FeaturedPost = Prisma.FeaturedPostModel
 /**
+ * Model Spotlight
+ * 
+ */
+export type Spotlight = Prisma.SpotlightModel
+/**
  * Model HomeSection
  * 
  */
 export type HomeSection = Prisma.HomeSectionModel
+/**
+ * Model StorefrontBanner
+ * 
+ */
+export type StorefrontBanner = Prisma.StorefrontBannerModel
 /**
  * Model PromotionPurchase
  * 
@@ -326,3 +326,53 @@ export type CommissionSetting = Prisma.CommissionSettingModel
  * 
  */
 export type Message = Prisma.MessageModel
+/**
+ * Model AppSession
+ * 
+ */
+export type AppSession = Prisma.AppSessionModel
+/**
+ * Model Follow
+ * 
+ */
+export type Follow = Prisma.FollowModel
+/**
+ * Model PostLike
+ * 
+ */
+export type PostLike = Prisma.PostLikeModel
+/**
+ * Model PostComment
+ * 
+ */
+export type PostComment = Prisma.PostCommentModel
+/**
+ * Model ChatThread
+ * 
+ */
+export type ChatThread = Prisma.ChatThreadModel
+/**
+ * Model ChatMessage
+ * 
+ */
+export type ChatMessage = Prisma.ChatMessageModel
+/**
+ * Model WalletTransaction
+ * 
+ */
+export type WalletTransaction = Prisma.WalletTransactionModel
+/**
+ * Model UserNotification
+ * 
+ */
+export type UserNotification = Prisma.UserNotificationModel
+/**
+ * Model AuctionBid
+ * 
+ */
+export type AuctionBid = Prisma.AuctionBidModel
+/**
+ * Model CommunityMessage
+ * 
+ */
+export type CommunityMessage = Prisma.CommunityMessageModel

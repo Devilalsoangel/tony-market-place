@@ -1100,6 +1100,7 @@ export type LoyaltyUserCreateManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * The data used to create many LoyaltyUsers.
    */
   data: Prisma.LoyaltyUserCreateManyInput | Prisma.LoyaltyUserCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**
@@ -1118,6 +1119,7 @@ export type LoyaltyUserCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Ext
    * The data used to create many LoyaltyUsers.
    */
   data: Prisma.LoyaltyUserCreateManyInput | Prisma.LoyaltyUserCreateManyInput[]
+  skipDuplicates?: boolean
 }
 
 /**

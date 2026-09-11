@@ -1,21 +1,44 @@
-// Shared Figma-downloaded image maps, keyed by post id / story id.
-// Feed and Product Details both source from here so images never drift.
+// Unified listing-image / avatar resolution chain used across screens:
+// real data first, deterministic seeded fallback last - never position-based cycling.
+// (Legacy productImages/sellerAvatars maps removed: their post_001/post_002-era keys
+// can never match real post ids, so every lookup was dead weight.)
 
-export const storyAvatars: Record<string, any> = {
-  '0': require('../assets/images/img-1-3659.png'), // Your Story
-  '1': require('../assets/images/img-1-3667.png'), // elara_mod
-  '2': require('../assets/images/img-1-3673.png'), // arc_design
-  '3': require('../assets/images/img-1-3679.png'), // lux_gems
-  '4': require('../assets/images/img-1-3685.png'), // hype_vault
-  '5': require('../assets/images/img-1-3626.png'), // vintage_loft
-};
+/**
+ * Unified listing-image resolution chain.
+ * Prefers the item's own image, then its first carousel entry,
+ * then a stable seed-based fallback (same image for the same item everywhere).
+ */
+export function hasRealImage(source: { image?: unknown; images?: unknown } | null | undefined): boolean {
+  const image = (source as any)?.image;
+  if (typeof image === 'string' && image.trim().length > 0) return true;
+  const images = (source as any)?.images;
+  if (Array.isArray(images) && images.some((e: any) => typeof e === 'string' && e.trim().length > 0)) return true;
+  return false;
+}
 
-export const productImages: Record<string, any> = {
-  'post_001': require('../assets/images/img-1-3734.png'), // Luxe Thread Studio product
-  'post_002': require('../assets/images/img-1-3783.png'), // TechVault product
-};
+export function resolveListingImage(
+  source: { image?: unknown; images?: unknown } | null | undefined,
+  seedId: string
+): { uri: string } {
+  const image = source?.image;
+  if (typeof image === 'string' && image) return { uri: image };
+  const images = source?.images;
+  if (Array.isArray(images)) {
+    const first = images.find((entry): entry is string => typeof entry === 'string' && !!entry);
+    if (first) return { uri: first };
+  }
+  return { uri: `https://picsum.photos/seed/${encodeURIComponent(seedId)}/600/600` };
+}
 
-export const sellerAvatars: Record<string, any> = {
-  'post_001': require('../assets/images/img-1-3692.png'), // Luxe Thread Studio seller
-  'post_002': require('../assets/images/img-1-3741.png'), // TechVault seller
-};
+/**
+ * Deterministic avatar for any username/id - same identifier always renders
+ * the same initials avatar. Initials (not stock faces) so no fake identity
+ * is implied; blank-circle problem solved with an honest, stable render.
+ */
+export function resolveAvatar(usernameOrId: string, bgHex?: string): { uri: string } {
+  const seed = encodeURIComponent(usernameOrId || 'user');
+  // Optional brand-color background - storefront themes re-skin the initials
+  // avatar to the seller's purchased accent (Aug 25).
+  const bg = (bgHex || '5d5fef').replace('#', '');
+  return { uri: `https://api.dicebear.com/9.x/initials/png?seed=${seed}&backgroundColor=${bg}&fontSize=42` };
+}

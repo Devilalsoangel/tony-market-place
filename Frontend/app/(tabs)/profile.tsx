@@ -1,42 +1,15 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useMemo } from 'react';
 import { View, Text, Image, FlatList, TouchableOpacity, ScrollView, Share } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
-import Svg, { Path, Rect } from 'react-native-svg';
+import { router } from 'expo-router';
+import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { HamburgerIcon, VerifiedIcon, BellIcon, MoreIcon, PlusIcon, ShopIcon, ChevronRightIcon, CommentIcon } from 
+import { VerifiedIcon, BellIcon, MoreIcon, PlusIcon, ShopIcon, ChevronRightIcon, CommentIcon } from
 '../../utils/icons';
 import { colors, formatCount } from '../../utils/theme';
-import { productImages } from '../../utils/productImages';
 import { usePosts } from '../../contexts/PostContext';
 import { profileImages } from '../../utils/screenImages';
 import { useFollow } from '../../contexts/FollowContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { loadMyStory, type MyStory } from '../../utils/myStory';
-import { trayParam as trayParamAll } from '../../utils/storyTray';
-
-  const highlights = ['Style', 'Studio', 'Vibe'];
-
-const FOLLOWERS_COUNT = 1240;
-
-function GridIcon({ size = 18, color = colors.textSecondary }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">
-      <Rect x="1" y="1" width="6" height="6" rx="1" stroke={color} strokeWidth="1.5" />
-      <Rect x="11" y="1" width="6" height="6" rx="1" stroke={color} strokeWidth="1.5" />
-      <Rect x="1" y="11" width="6" height="6" rx="1" stroke={color} strokeWidth="1.5" />
-      <Rect x="11" y="11" width="6" height="6" rx="1" stroke={color} strokeWidth="1.5" />
-    </Svg>
-  );
-}
-
-function ReelIcon({ size = 20, color = colors.textSecondary }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size * 16 / 20} viewBox="0 0 20 16" fill="none">
-      <Rect x="1" y="1" width="18" height="14" rx="3" stroke={color} strokeWidth="1.5" />
-      <Path d="M8 5l5 3-5 3V5z" fill={color} />
-    </Svg>
-  );
-}
 
 function WalletIcon({ size = 20, color = colors.primary }: { size?: number; color?: string }) {
   return (
@@ -72,43 +45,42 @@ function LogOutIcon({ size = 20, color = colors.primary }: { size?: number; colo
   );
 }
 
-export default function ProfileScreen() {
-  const [activeTab, setActiveTab] = useState(0);
-  const [myStory, setMyStory] = useState<MyStory | null>(null);
-  const { posts } = usePosts();
-  const { followedSellers } = useFollow();
-  const { user, logout } = useAuth();
-  const myPosts = useMemo(() => posts.filter((p) => p.sellerUsername === (user?.username ?? 'user')), [posts, user?.username]);
-  const insets = useSafeAreaInsets();
-  const name = user?.name ?? 'Susej Design';
-
-  // Reflect an uploaded story in the highlights row (ring + preview instead of + tile)
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      loadMyStory().then((s) => {
-        if (active) setMyStory(s);
-      });
-      return () => {
-        active = false;
-      };
-    }, [])
+function AddressIcon({ size = 20, color = colors.primary }: { size?: number; color?: string }) {
+    return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 21s-7-5.1-7-10.5C5 6.5 8.1 3.5 12 3.5S19 6.5 19 10.5C19 15.9 12 21 12 21z" stroke={color} strokeWidth="1.8" />
+      <Circle cx="12" cy="10.5" r="2.2" stroke={color} strokeWidth="1.8" />
+    </Svg>
   );
-  const username = user?.username ?? 'susej_official';
-  const bio = user?.bio ?? 'Curating the future of digital aesthetics. ✦\nHigh-end commerce & Social discovery.';
+}
+
+function CardIcon({ size = 20, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="2.5" y="5.5" width="19" height="13" rx="2.5" stroke={color} strokeWidth="1.8" />
+      <Path d="M2.5 9.5h19" stroke={color} strokeWidth="1.8" />
+      <Path d="M5.5 15.5h4" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export default function ProfileScreen() {
+  const { user, logout } = useAuth();
+  const { followedSellers, followersList } = useFollow();
+  const insets = useSafeAreaInsets();
+  const name = user?.name ?? '';
+  const username = user?.username ?? '';
+  const bio = user?.bio ?? '';
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.surface }}>
       {/* Header - Top App Bar */}
       <View className="flex-row items-center justify-between px-5" style={{ height: 52 + insets.top, paddingTop: insets.top, backgroundColor: colors.surface }}>
         <View className="flex-row items-center gap-2">
-          <TouchableOpacity onPress={() => router.push('/settings')}>
-            <HamburgerIcon size={18} color={colors.primary} />
-          </TouchableOpacity>
           <Text className="font-inter-700" style={{ fontSize: 20, lineHeight: 28, letterSpacing: -0.5, color: colors.textPrimary }}>
             susej
           </Text>
-          <VerifiedIcon size={16} />
+          {user?.verification === 'approved' && <VerifiedIcon size={16} />}
         </View>
         <View className="flex-row items-center gap-4">
           {user?.isSeller && (
@@ -128,47 +100,37 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={activeTab === 0 ? myPosts : []}
-        numColumns={3}
-        keyExtractor={(item) => item.id}
-        contentContainerClassName="pb-24"
-        columnWrapperClassName="gap-0.5"
-        ListHeaderComponent={
-          <View>
+      {/* Account hub — posts live ONLY inside the store view (/seller/[username]).
+          Followers/Following stay: any user can follow any user or seller, and
+          this is how people find + DM the right person. No posts count/grid. */}
+      <ScrollView contentContainerClassName="pb-24">
+        <View>
             {/* Profile Header (padding: top16 bottom24 left20 right20, gap16) */}
             <View className="px-5 pt-4 pb-6" style={{ gap: 16 }}>
-              {/* Avatar + Stats Row (gap 40, h-24 = 96px) */}
-              <View className="flex-row items-center" style={{ gap: 40 }}>
-                <View className="w-24 h-24 rounded-full bg-surfaceContainerLow items-center justify-center overflow-hidden" style={{ borderWidth: 2.5, borderColor: colors.primaryContainer }}>
+              {/* Avatar Row */}
+              <View className="flex-row items-center" style={{ gap: 24 }}>
+                <View className="w-20 h-20 rounded-full bg-surfaceContainerLow items-center justify-center overflow-hidden" style={{ borderWidth: 2.5, borderColor: colors.primaryContainer }}>
                   {user?.avatar ? (
                     <Image source={{ uri: user.avatar }} className="w-full h-full" resizeMode="cover" />
                   ) : (
                     <Image source={profileImages.avatar} className="w-full h-full" resizeMode="cover" />
                   )}
                 </View>
-                <View className="flex-1 flex-row justify-center" style={{ gap: 24 }}>
-                  <View className="items-center">
-                    <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }}>
-                      {myPosts.length}
-                    </Text>
-                    <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 14, lineHeight: 20 }}>
-                      Posts
-                    </Text>
-                  </View>
+                {/* Follower stats (tap to open the people list and DM) */}
+                <View className="flex-row items-center" style={{ gap: 28 }}>
                   <TouchableOpacity className="items-center" onPress={() => router.push('/followers?tab=followers')}>
-                    <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }}>
-                      {formatCount(FOLLOWERS_COUNT)}
+                    <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 16, lineHeight: 20 }}>
+                      {formatCount(followersList.length)}
                     </Text>
-                    <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 14, lineHeight: 20 }}>
+                    <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
                       Followers
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity className="items-center" onPress={() => router.push('/followers?tab=following')}>
-                    <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }}>
-                      {followedSellers.size}
+                    <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 16, lineHeight: 20 }}>
+                      {formatCount(followedSellers.size)}
                     </Text>
-                    <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 14, lineHeight: 20 }}>
+                    <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
                       Following
                     </Text>
                   </TouchableOpacity>
@@ -177,9 +139,12 @@ export default function ProfileScreen() {
 
               {/* Name, Username, Bio */}
               <View style={{ gap: 2 }}>
-                <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }}>
-                  {name}
-                </Text>
+                <View className="flex-row items-center" style={{ gap: 6 }}>
+                  <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }}>
+                    {name}
+                  </Text>
+                  {user?.verification === 'approved' && <VerifiedIcon size={14} />}
+                </View>
                 <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 14, lineHeight: 20 }}>
                   @{username}
                 </Text>
@@ -206,74 +171,8 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            {/* Stories / Highlights (Figma: 64px circles, border surfaceContainerHigh; add-story + circle first) */}
-            <View className="px-5 pb-6">
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 16 }}>
-                {myStory ? (
-                  <TouchableOpacity
-                    className="items-center"
-                    style={{ width: 64 }}
-                    onPress={() => router.push({ pathname: '/story/me', params: { mine: '1', tray: trayParamAll(), idx: '0' } })}
-                  >
-                    <View
-                      className="w-16 h-16 rounded-full items-center justify-center"
-                      style={{ borderWidth: 1.5, borderColor: colors.primaryContainer, backgroundColor: colors.surfaceContainerLow }}
-                    >
-                      <View className="w-[58px] h-[58px] rounded-full overflow-hidden" style={{ backgroundColor: colors.surfaceContainerLowest }}>
-                        <Image source={{ uri: myStory.image }} className="w-full h-full" resizeMode="cover" />
-                      </View>
-                    </View>
-                    <Text className="font-inter-500 text-textSecondary mt-1 text-center" style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24 }}>
-                      Your Story
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity className="items-center" style={{ width: 64 }} onPress={() => router.push('/create-story')}>
-                    <View className="w-16 h-16 rounded-full items-center justify-center" style={{ borderWidth: 1.5, borderColor: colors.outlineVariant, borderStyle: 'dashed', backgroundColor: colors.surfaceContainerLow }}>
-                      <PlusIcon size={20} color={colors.primaryContainer} />
-                    </View>
-                    <Text className="font-inter-500 text-textSecondary mt-1 text-center" style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24 }}>
-                      New
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {highlights.map((label, i) => (
-                  <TouchableOpacity key={label} className="items-center" style={{ width: 64 }}>
-                    <View className="w-16 h-16 rounded-full items-center justify-center overflow-hidden" style={{ backgroundColor: colors.surfaceContainerHigh, borderWidth: 1.5, borderColor: colors.outlineVariant }}>
-                      <Image source={profileImages.highlights[i % profileImages.highlights.length]} className="w-14 h-14 rounded-full" resizeMode="cover" />
-                    </View>
-                    <Text className="font-inter-500 text-textSecondary mt-1 text-center" style={{ fontSize: 12, lineHeight: 14, letterSpacing: 0.24 }}>
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            {/* Nav Tabs (Figma: Posts 18x18, Reels 20x16, Shop 20x20) */}
-            <View className="flex-row border-b" style={{ borderBottomColor: colors.surfaceContainer }}>
-              {[
-                { icon: (c: string) => <GridIcon size={18} color={c} /> },
-                { icon: (c: string) => <ReelIcon size={20} color={c} /> },
-                { icon: (c: string) => <ShopIcon size={20} color={c} /> },
-              ].map((tab, i) => (
-                <TouchableOpacity
-                  key={i}
-                  className="flex-1 items-center py-3"
-                  onPress={() => {
-                    if (i === 2 && user?.isSeller) {
-                      router.push(`/seller/${user?.username}`);
-                    } else {
-                      setActiveTab(i);
-                    }
-                  }}
-                >
-                  <View className="pb-3" style={{ borderBottomWidth: 2, borderBottomColor: activeTab === i ? colors.primaryContainer : 'transparent' }}>
-                    {tab.icon(activeTab === i ? colors.primary : colors.textTertiary)}
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {/* Divider before account sections */}
+            <View className="h-px" style={{ backgroundColor: colors.surfaceContainer }} />
 
             {/* My Store (sellers) */}
             {user?.isSeller && (
@@ -311,7 +210,7 @@ export default function ProfileScreen() {
                       Apply to be a Seller
                     </Text>
                     <Text className="font-inter-400" style={{ fontSize: 11, lineHeight: 15, color: colors.textSecondary }}>
-                      Show your storefront · 3-step application
+                      Show your storefront · 4-step application
                     </Text>
                   </View>
                   <ChevronRightIcon size={14} color={colors.textTertiary} />
@@ -333,9 +232,9 @@ export default function ProfileScreen() {
                   <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: colors.textPrimary }}>
                     Refer & Earn
                   </Text>
-                  <Text className="font-inter-400" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
-                    Get ₹100 each
-                  </Text>
+                    <Text className="font-inter-400" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
+                      Invite friends to susej
+                    </Text>
                 </View>
                 <ChevronRightIcon size={12} color={colors.textTertiary} />
               </TouchableOpacity>
@@ -359,6 +258,42 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Account shortcuts — industry: Amazon/Flipkart profile menus surface Addresses + Payment Methods */}
+            <View className="px-5 mb-4">
+              <View className="flex-row" style={{ gap: 12 }}>
+                <TouchableOpacity
+                  className="flex-1 flex-row items-center px-3 py-3"
+                  style={{ borderRadius: 16, backgroundColor: colors.surfaceContainerLow }}
+                  onPress={() => router.push('/address-book')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage delivery addresses"
+                >
+                  <View className="w-9 h-9 rounded-full items-center justify-center" style={{ backgroundColor: colors.primaryFixed }}>
+                    <AddressIcon size={16} color={colors.primary} />
+                  </View>
+                  <View className="flex-1 ml-2">
+                    <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 15, color: colors.textPrimary }} numberOfLines={1}>Addresses</Text>
+                    <Text className="font-inter-400" style={{ fontSize: 10, lineHeight:  13, color: colors.textSecondary }} numberOfLines={1}>Deliver here</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="flex-1 flex-row items-center px-3 py-3"
+                  style={{ borderRadius: 16, backgroundColor: colors.surfaceContainerLow }}
+                  onPress={() => router.push('/payment-methods')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage payment methods"
+                >
+                  <View className="w-9 h-9 rounded-full items-center justify-center" style={{ backgroundColor: colors.primaryFixed }}>
+                    <CardIcon size={16} color={colors.primary} />
+                  </View>
+                  <View className="flex-1 ml-2">
+                    <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 15, color: colors.textPrimary }} numberOfLines={1}>Payments</Text>
+                    <Text className="font-inter-400" style={{ fontSize: 10, lineHeight:  13, color: colors.textSecondary }} numberOfLines={1}>Wallet & COD</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* Help & Support */}
             <View className="px-5 pb-4">
               <TouchableOpacity
@@ -374,7 +309,7 @@ export default function ProfileScreen() {
                     Help & Support
                   </Text>
                   <Text className="font-inter-400" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
-                    Raise a ticket · 24h response
+                    Raise a ticket and track replies
                   </Text>
                 </View>
                 <ChevronRightIcon size={12} color={colors.textTertiary} />
@@ -405,26 +340,8 @@ export default function ProfileScreen() {
                 <ChevronRightIcon size={12} color={colors.textTertiary} />
               </TouchableOpacity>
             </View>
-          </View>
-        }
-        renderItem={({ item }) => {
-          const source = item.image ? { uri: item.image } : productImages[item.id];
-          return (
-            <TouchableOpacity
-              className="flex-1 aspect-square"
-              style={{ backgroundColor: colors.surfaceContainer }}
-              onPress={() => router.push(`/product/${item.id}`)}
-            >
-              {source ? <Image source={source} className="w-full h-full" resizeMode="cover" /> : null}
-            </TouchableOpacity>
-          );
-        }}
-        ListEmptyComponent={
-          <View className="flex-1 items-center justify-center py-20">
-            <Text className="font-inter-400" style={{ fontSize: 14, color: colors.textSecondary }}>No posts yet</Text>
-          </View>
-        }
-      />
+        </View>
+      </ScrollView>
     </View>
   );
 }

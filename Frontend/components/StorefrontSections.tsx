@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
-import { useMemo } from 'react';
+import { useMemo, createContext, useContext } from 'react';
 import Svg, { Circle } from 'react-native-svg';
 import { colors, formatPrice } from '../utils/theme';
 import { StarIcon, PlusIcon, MapPinIcon, CheckIcon, BagIcon, ShopIcon } from '../utils/icons';
@@ -7,17 +7,18 @@ import { useOrders } from '../contexts/OrderContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { StorefrontChip, StorefrontDeal, MenuItem, ServiceItem, JobItem, ListingItem, BulkProduct, ShopProfile } from '../utils/storefronts';
 
+// Purchased storefront theme accent (seller-brand color). null = default
+// susej violet branding. app/seller/[username].tsx provides this around the
+// WHOLE screen so every section re-skins together - a paid theme must leave
+// zero default-violet accents behind (user correction Aug 25).
+const StoreAccentContext = createContext<string | null>(null);
+export const StoreAccentProvider = StoreAccentContext.Provider;
+export const useStoreAccent = () => useContext(StoreAccentContext);
+
 // Functional status colors (no matching theme token — same exemption as
 // message status labels elsewhere in the app).
 const VEG = '#22c55e';
 const NONVEG = '#d32f2f';
-
-export const SEED_REVIEWS = [
-  { id: 'r1', reviewer: 'Ananya Sharma', rating: 5, text: 'Gorgeous quality and fast shipping. Would buy again!', time: '2 weeks ago' },
-  { id: 'r2', reviewer: 'Raj Patel', rating: 5, text: 'Item exactly as described, beautifully packed.', time: '1 month ago' },
-  { id: 'r3', reviewer: 'Meera K.', rating: 4, text: 'Lovely piece — took a few extra days to ship though.', time: '2 months ago' },
-  { id: 'r4', reviewer: 'Vikram N.', rating: 5, text: 'Trusted seller, verified and super prompt.', time: '3 months ago' },
-];
 
 // ─── Chip rail (category chips / filters / listing types / menu chips) ──────
 export function ChipRail({
@@ -29,6 +30,7 @@ export function ChipRail({
   active: string;
   onSelect: (id: string) => void;
 }) {
+  const accent = useStoreAccent();
   return (
     <ScrollView
       horizontal
@@ -42,7 +44,7 @@ export function ChipRail({
             key={c.id}
             onPress={() => onSelect(c.id)}
             className="px-4 py-2 rounded-full"
-            style={{ backgroundColor: on ? colors.primaryContainer : colors.surfaceContainer }}
+            style={{ backgroundColor: on ? accent ?? colors.primaryContainer : colors.surfaceContainer }}
           >
             <Text className="font-inter-500" style={{ fontSize: 13, lineHeight: 18, color: on ? colors.onPrimary : colors.textPrimary }}>
               {c.label}
@@ -56,11 +58,12 @@ export function ChipRail({
 
 // ─── Info chips (service archetype: walk-ins, parking, etc.) ────────────────
 export function InfoChipRow({ labels }: { labels: string[] }) {
+  const accent = useStoreAccent();
   return (
     <View className="flex-row flex-wrap" style={{ gap: 8 }}>
       {labels.map((label) => (
         <View key={label} className="px-3 py-1.5 rounded-full flex-row items-center" style={{ backgroundColor: colors.surfaceContainerLow }}>
-          <CheckIcon size={12} color={colors.primaryContainer} />
+          <CheckIcon size={12} color={accent ?? colors.primaryContainer} />
           <Text className="font-inter-500 ml-1.5 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
             {label}
           </Text>
@@ -70,44 +73,9 @@ export function InfoChipRow({ labels }: { labels: string[] }) {
   );
 }
 
-// ─── Marketing banner (gradient overlay + headline + CTA) ───────────────────
-export function MarketingBanner({
-  banner,
-  height = 168,
-}: {
-  banner: ShopProfile['banner'];
-  height?: number;
-}) {
-  return (
-    <View className="mx-5 overflow-hidden rounded-figma-24" style={{ height }}>
-      {banner.image ? (
-        <Image source={banner.image} className="w-full h-full" resizeMode="cover" />
-      ) : (
-        <View className="w-full h-full" style={{ backgroundColor: colors.surfaceContainer }} />
-      )}
-      <View
-        className="absolute inset-0 justify-end px-5 pb-4"
-        style={{ backgroundColor: banner.gradient[0], opacity: 0.92 }}
-      >
-        <View className="absolute inset-0" style={{ backgroundColor: banner.gradient[1], opacity: 0.45 }} />
-        <Text className="font-inter-700 text-white" style={{ fontSize: 20, lineHeight: 26 }}>
-          {banner.headline}
-        </Text>
-        <Text className="font-inter-400 text-white/90 mt-0.5" style={{ fontSize: 13, lineHeight: 18 }}>
-          {banner.sub}
-        </Text>
-        <TouchableOpacity
-          className="mt-3 self-start px-4 py-2 rounded-figma-12"
-          style={{ backgroundColor: colors.onPrimary }}
-        >
-          <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 18, color: colors.primary }}>
-            {banner.cta}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
+// ─── Marketing banner REMOVED (Aug 24 audit): template banner with fabricated
+// headline/CTA was a Figma brainstorm artifact. Real seller banners render as
+// the storefront hero directly from the per-seller editor storage.
 
 // ─── Stats bar (3 stats with dividers) ─────────────────────────────────────
 export function StatsBar({ stats }: { stats: { label: string; value: string }[] }) {
@@ -147,11 +115,12 @@ export function ActionRow({
   onPrimary?: () => void;
   onSecondary?: () => void;
 }) {
+  const accent = useStoreAccent();
   return (
     <View className="flex-row gap-3">
       <TouchableOpacity
         className="flex-1 h-12 items-center justify-center rounded-figma-12"
-        style={{ backgroundColor: primaryFilled ? colors.primaryContainer : colors.surfaceContainer }}
+        style={{ backgroundColor: primaryFilled ? accent ?? colors.primaryContainer : colors.surfaceContainer }}
         onPress={onPrimary}
       >
         <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, color: primaryFilled ? colors.onPrimary : colors.textPrimary }}>
@@ -173,6 +142,7 @@ export function ActionRow({
 
 // ─── Deals rail (horizontal scroll cards, 169 wide) ─────────────────────────
 export function DealsRail({ deals, priceLabel }: { deals: StorefrontDeal[]; priceLabel?: string }) {
+  const accent = useStoreAccent();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 20 }}>
       {deals.map((d) => (
@@ -184,7 +154,7 @@ export function DealsRail({ deals, priceLabel }: { deals: StorefrontDeal[]; pric
           <View className="w-full" style={{ height: 169 }}>
             <Image source={d.image} className="w-full h-full" resizeMode="cover" />
             {d.tag && (
-              <View className="absolute top-2 left-2 px-2 py-0.5 rounded-full" style={{ backgroundColor: colors.primaryContainer }}>
+              <View className="absolute top-2 left-2 px-2 py-0.5 rounded-full" style={{ backgroundColor: accent ?? colors.primaryContainer }}>
                 <Text className="font-inter-600 text-white" style={{ fontSize: 10, lineHeight: 14 }}>
                   {d.tag}
                 </Text>
@@ -244,18 +214,21 @@ export function ProductGridSection({ items, onPress }: { items: { id: string; im
 
 // ─── Food menu list ─────────────────────────────────────────────────────────
 export function MenuListSection({ items }: { items: MenuItem[] }) {
+  const accent = useStoreAccent();
   return (
     <View className="mx-5" style={{ gap: 12 }}>
       {items.map((item) => (
         <View key={item.id} className="flex-row items-center p-4 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }}>
           <View className="flex-1 mr-3">
             <View className="flex-row items-center">
-              <View
-                className="w-3.5 h-3.5 rounded-sm mr-2 items-center justify-center"
-                style={{ borderWidth: 1.5, borderColor: item.veg ? VEG : NONVEG }}
-              >
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.veg ? VEG : NONVEG }} />
-              </View>
+              {item.veg !== undefined && (
+                <View
+                  className="w-3.5 h-3.5 rounded-sm mr-2 items-center justify-center"
+                  style={{ borderWidth: 1.5, borderColor: item.veg ? VEG : NONVEG }}
+                >
+                  <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.veg ? VEG : NONVEG }} />
+                </View>
+              )}
               <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 20 }} numberOfLines={1}>
                 {item.name}
               </Text>
@@ -275,7 +248,7 @@ export function MenuListSection({ items }: { items: MenuItem[] }) {
             </Text>
           </View>
           <TouchableOpacity className="px-4 py-2 rounded-figma-12 items-center" style={{ backgroundColor: colors.surfaceContainerLow }}>
-            <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: colors.primaryContainer }}>
+            <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: accent ?? colors.primaryContainer }}>
               ADD
             </Text>
           </TouchableOpacity>
@@ -287,6 +260,7 @@ export function MenuListSection({ items }: { items: MenuItem[] }) {
 
 // ─── Service categories (3-col grid) ────────────────────────────────────────
 export function ServiceCategoryGrid({ categories }: { categories: StorefrontChip[] }) {
+  const accent = useStoreAccent();
   return (
     <View className="flex-row flex-wrap mx-5" style={{ gap: 10 }}>
       {categories.map((c) => (
@@ -296,7 +270,7 @@ export function ServiceCategoryGrid({ categories }: { categories: StorefrontChip
           style={{ width: (392 - 40 - 20) / 3, height: 64, borderRadius: 16, backgroundColor: colors.surfaceContainerLow }}
         >
           <View className="w-8 h-8 rounded-full items-center justify-center mb-1" style={{ backgroundColor: colors.surfaceContainerLowest }}>
-            <ShopIcon size={16} color={colors.primaryContainer} />
+            <ShopIcon size={16} color={accent ?? colors.primaryContainer} />
           </View>
           <Text className="font-inter-500 text-textPrimary" style={{ fontSize: 12, lineHeight: 14 }}>
             {c.label}
@@ -309,6 +283,7 @@ export function ServiceCategoryGrid({ categories }: { categories: StorefrontChip
 
 // ─── Trending services rail (horizontal) ────────────────────────────────────
 export function TrendingRail({ items, onBook }: { items: ServiceItem[]; onBook?: (id: string) => void }) {
+  const accent = useStoreAccent();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 20 }}>
       {items.map((s) => (
@@ -319,7 +294,7 @@ export function TrendingRail({ items, onBook }: { items: ServiceItem[]; onBook?:
           onPress={() => onBook?.(s.id)}
         >
           <View className="w-10 h-10 rounded-full items-center justify-center mb-2" style={{ backgroundColor: colors.surfaceContainer }}>
-            <StarIcon size={16} color={colors.primaryContainer} />
+            <StarIcon size={16} color={accent ?? colors.primaryContainer} />
           </View>
           <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 13, lineHeight: 16 }} numberOfLines={1}>
             {s.name}
@@ -338,6 +313,7 @@ export function TrendingRail({ items, onBook }: { items: ServiceItem[]; onBook?:
 
 // ─── Service list rows ──────────────────────────────────────────────────────
 export function ServicesListSection({ items, onBook }: { items: ServiceItem[]; onBook?: (id: string) => void }) {
+  const accent = useStoreAccent();
   return (
     <View className="mx-5" style={{ gap: 12 }}>
       {items.map((s) => (
@@ -349,7 +325,7 @@ export function ServicesListSection({ items, onBook }: { items: ServiceItem[]; o
               </Text>
               {s.rating && (
                 <View className="flex-row items-center ml-2">
-                  <StarIcon size={11} color={colors.primaryContainer} />
+                  <StarIcon size={11} color={accent ?? colors.primaryContainer} />
                   <Text className="font-inter-500 text-textSecondary ml-0.5" style={{ fontSize: 11, lineHeight: 14 }}>
                     {s.rating}
                   </Text>
@@ -363,7 +339,7 @@ export function ServicesListSection({ items, onBook }: { items: ServiceItem[]; o
               {formatPrice(s.price)}
             </Text>
           </View>
-          <TouchableOpacity className="px-4 py-2 rounded-figma-12" style={{ backgroundColor: colors.primaryContainer }} onPress={() => onBook?.(s.id)}>
+          <TouchableOpacity className="px-4 py-2 rounded-figma-12" style={{ backgroundColor: accent ?? colors.primaryContainer }} onPress={() => onBook?.(s.id)}>
             <Text className="font-inter-600 text-white" style={{ fontSize: 12, lineHeight: 16 }}>
               Book
             </Text>
@@ -376,6 +352,7 @@ export function ServicesListSection({ items, onBook }: { items: ServiceItem[]; o
 
 // ─── Job list (jobs archetype) ──────────────────────────────────────────────
 export function JobListSection({ jobs, onApply }: { jobs: JobItem[]; onApply?: (id: string) => void }) {
+  const accent = useStoreAccent();
   return (
     <View className="mx-5" style={{ gap: 12 }}>
       {jobs.map((j) => (
@@ -393,7 +370,7 @@ export function JobListSection({ jobs, onApply }: { jobs: JobItem[]; onApply?: (
               </View>
             </View>
             <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: colors.surfaceContainer }}>
-              <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: colors.primaryContainer }}>
+              <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: accent ?? colors.primaryContainer }}>
                 {j.salary}
               </Text>
             </View>
@@ -409,7 +386,7 @@ export function JobListSection({ jobs, onApply }: { jobs: JobItem[]; onApply?: (
           </View>
           <TouchableOpacity
             className="mt-3 h-10 rounded-figma-12 items-center justify-center"
-            style={{ backgroundColor: colors.primaryContainer }}
+            style={{ backgroundColor: accent ?? colors.primaryContainer }}
             onPress={() => onApply?.(j.id)}
           >
             <Text className="font-inter-600 text-white" style={{ fontSize: 13, lineHeight: 16 }}>
@@ -503,6 +480,7 @@ export function BulkDealsRail({ deals }: { deals: StorefrontDeal[] }) {
 
 // ─── B2B product rows ───────────────────────────────────────────────────────
 export function BulkProductList({ products, onQuote }: { products: BulkProduct[]; onQuote?: (id: string) => void }) {
+  const accent = useStoreAccent();
   return (
     <View className="mx-5" style={{ gap: 12 }}>
       {products.map((p) => (
@@ -535,7 +513,7 @@ export function BulkProductList({ products, onQuote }: { products: BulkProduct[]
               </Text>
             </View>
           </View>
-          <TouchableOpacity className="px-4 py-2 rounded-figma-12" style={{ backgroundColor: colors.primaryContainer }} onPress={() => onQuote?.(p.id)}>
+          <TouchableOpacity className="px-4 py-2 rounded-figma-12" style={{ backgroundColor: accent ?? colors.primaryContainer }} onPress={() => onQuote?.(p.id)}>
             <Text className="font-inter-600 text-white" style={{ fontSize: 12, lineHeight: 16 }}>
               Quote
             </Text>
@@ -548,10 +526,11 @@ export function BulkProductList({ products, onQuote }: { products: BulkProduct[]
 
 // ─── Empty storefront (new seller) ──────────────────────────────────────────
 export function EmptyStorefront({ isOwner }: { isOwner: boolean }) {
+  const accent = useStoreAccent();
   return (
     <View className="mx-5 items-center px-6 py-10 rounded-figma-24" style={{ backgroundColor: colors.surfaceContainerLow }}>
       <View className="w-16 h-16 rounded-full items-center justify-center mb-4" style={{ backgroundColor: colors.surfaceContainer }}>
-        <BagIcon size={28} color={colors.primaryContainer} />
+        <BagIcon size={28} color={accent ?? colors.primaryContainer} />
       </View>
       <Text className="font-inter-600 text-textPrimary mb-1" style={{ fontSize: 16, lineHeight: 24 }}>
         {isOwner ? 'Your shop is live!' : 'No products yet'}
@@ -562,7 +541,7 @@ export function EmptyStorefront({ isOwner }: { isOwner: boolean }) {
           : 'This shop hasn\u2019t listed anything yet. Check back soon.'}
       </Text>
       {isOwner && (
-        <TouchableOpacity className="mt-5 px-6 h-11 rounded-figma-12 items-center justify-center" style={{ backgroundColor: colors.primaryContainer }}>
+        <TouchableOpacity className="mt-5 px-6 h-11 rounded-figma-12 items-center justify-center" style={{ backgroundColor: accent ?? colors.primaryContainer }}>
           <Text className="font-inter-600 text-white" style={{ fontSize: 14, lineHeight: 16 }}>
             Add your first product
           </Text>
@@ -573,27 +552,49 @@ export function EmptyStorefront({ isOwner }: { isOwner: boolean }) {
 }
 
 // ─── Reviews section (shared) ───────────────────────────────────────────────
-// Real reviews first (orders the buyer rated for this seller), then seeded
-// filler so a storefront never looks empty.
-export function ReviewsSection({ username }: { username?: string }) {
+// Real reviews only: orders the buyer rated for this seller. Empty state when
+// none exist — no fabricated filler reviews.
+export interface StorefrontReview {
+  id: string;
+  reviewer: string;
+  rating: number;
+  comment?: string;
+  time: string;
+}
+
+// Real reviews only, two sources merged (server rows first):
+// 1. serverReviews - post-delivery Review rows for this seller from the API
+//    (visible to EVERY visitor, anonymous ones show "Anonymous")
+// 2. the viewer's own rated orders for this seller (instant reflection)
+export function ReviewsSection({
+  username,
+  serverReviews,
+}: {
+  username?: string;
+  serverReviews?: StorefrontReview[];
+}) {
+  const accent = useStoreAccent();
   const { orders } = useOrders();
   const { user } = useAuth();
 
-  const realReviews = useMemo(() => {
-    if (!username) return [];
-    return orders
-      .filter((o) => o.sellerUsername === username && o.reviewed && o.rating && o.rating > 0)
-      .sort((a, b) => b.placedAt - a.placedAt)
-      .map((o) => ({
-        id: `order_${o.id}`,
-        reviewer: user?.name || 'Verified buyer',
-        rating: o.rating as number,
-        text: o.reviewComment || 'Great seller — smooth transaction.',
-        time: new Date(o.placedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-      }));
-  }, [orders, username, user]);
-
-  const reviews = realReviews.length >= 2 ? realReviews : [...realReviews, ...SEED_REVIEWS];
+  const reviews = useMemo(() => {
+    const local = username
+      ? orders
+          .filter((o) => o.sellerUsername === username && o.reviewed && o.rating && o.rating > 0)
+          .sort((a, b) => b.placedAt - a.placedAt)
+          .map((o) => ({
+            id: `order_${o.id}`,
+            // Anonymous stays anonymous everywhere - even to the author's own
+            // instant reflection (server rows already render "Anonymous").
+            reviewer: o.reviewAnonymous ? 'Anonymous' : user?.name || 'Verified buyer',
+            rating: o.rating as number,
+            comment: o.reviewComment || undefined,
+            time: new Date(o.placedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+          }))
+      : [];
+    const seen = new Set(local.map((r) => r.comment));
+    return [...(serverReviews ?? []), ...local.filter((r) => !r.comment || !seen.has(r.comment))];
+  }, [orders, username, user, serverReviews]);
 
   return (
     <View className="mx-5" style={{ gap: 12 }}>
@@ -622,38 +623,49 @@ export function ReviewsSection({ username }: { username?: string }) {
             </View>
             <View className="flex-row" style={{ gap: 2 }}>
               {[1, 2, 3, 4, 5].map((star) => (
-                <StarIcon key={star} size={13} color={star <= review.rating ? colors.primary : colors.surfaceContainerHigh} />
+                <StarIcon key={star} size={13} color={star <= review.rating ? accent ?? colors.primary : colors.surfaceContainerHigh} />
               ))}
             </View>
           </View>
-          <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 14, lineHeight: 21 }}>
-            {review.text}
-          </Text>
+          {review.comment ? (
+            <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 14, lineHeight: 21 }}>
+              {review.comment}
+            </Text>
+          ) : (
+            <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 13, lineHeight: 19 }}>
+              (Rated without a comment)
+            </Text>
+          )}
         </View>
       ))}
     </View>
   );
 }
 
-// ─── About section (bio + location) ─────────────────────────────────────────
-export function AboutSection({ profile }: { profile: ShopProfile }) {
+// ─── About section (bio + optional real location) ───────────────────────────
+export function AboutSection({ profile, location }: { profile: ShopProfile; location?: string }) {
+  const accent = useStoreAccent();
+  const realLocation = typeof location === 'string' ? location.trim() : '';
   return (
     <View className="mx-5">
       <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 14, lineHeight: 24 }}>
         {profile.bio}
       </Text>
-      <View className="flex-row items-center mt-4 p-4 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
-        <MapPinIcon size={16} color={colors.primaryContainer} />
-        <Text className="font-inter-500 text-textSecondary ml-2" style={{ fontSize: 13, lineHeight: 18 }}>
-          Bengaluru, Karnataka, India
-        </Text>
-      </View>
+      {realLocation ? (
+        <View className="flex-row items-center mt-4 p-4 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLow }}>
+          <MapPinIcon size={16} color={accent ?? colors.primaryContainer} />
+          <Text className="font-inter-500 text-textSecondary ml-2" style={{ fontSize: 13, lineHeight: 18 }}>
+            {realLocation}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 // ─── Sticky booking bar (service archetype) ─────────────────────────────────
 export function StickyActionBar({ label, onPress }: { label: string; onPress?: () => void }) {
+  const accent = useStoreAccent();
   return (
     <View
       className="px-5 pt-3 pb-2"
@@ -661,7 +673,16 @@ export function StickyActionBar({ label, onPress }: { label: string; onPress?: (
     >
       <TouchableOpacity
         className="h-14 rounded-figma-16 items-center justify-center"
-        style={{ backgroundColor: colors.primaryContainer }}
+        style={{
+          backgroundColor: accent ?? colors.primaryContainer,
+          // Themed CTA glow - bumped to perceptible (GPT re-verdict: the
+          // 0.3/14 glow was invisible in capture; halo must read as premium).
+          shadowColor: accent ?? 'transparent',
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: accent ? 0.55 : 0,
+          shadowRadius: 22,
+          elevation: accent ? 8 : 0,
+        }}
         onPress={onPress}
       >
         <Text className="font-inter-600 text-white" style={{ fontSize: 16, lineHeight: 24 }}>
@@ -688,13 +709,21 @@ export function StatusBadge({ label }: { label: string }) {
 
 // ─── Section title ──────────────────────────────────────────────────────────
 export function SectionTitle({ title, action }: { title: string; action?: string }) {
+  const accent = useStoreAccent();
   return (
     <View className="flex-row items-center justify-between mx-5">
-      <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 16, lineHeight: 24 }}>
-        {title}
-      </Text>
+      <View className="flex-row items-center">
+        {/* Themed storefronts get a premium accent bar before section titles -
+            a structural signature of the paid theme, not just recoloring. */}
+        {accent ? (
+          <View style={{ width: 4, height: 18, borderRadius: 2, backgroundColor: accent, marginRight: 8 }} />
+        ) : null}
+        <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 16, lineHeight: 24 }}>
+          {title}
+        </Text>
+      </View>
       {action ? (
-        <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: colors.primaryContainer }}>
+        <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: accent ?? colors.primaryContainer }}>
           {action}
         </Text>
       ) : null}
@@ -704,8 +733,9 @@ export function SectionTitle({ title, action }: { title: string; action?: string
 
 // ─── Plus icon chip (used by menu add buttons in Figma) ─────────────────────
 export function AddButton() {
+  const accent = useStoreAccent();
   return (
-    <View className="w-8 h-8 rounded-full items-center justify-center" style={{ backgroundColor: colors.primaryContainer }}>
+    <View className="w-8 h-8 rounded-full items-center justify-center" style={{ backgroundColor: accent ?? colors.primaryContainer }}>
       <PlusIcon size={14} color={colors.onPrimary} />
     </View>
   );
