@@ -3,7 +3,11 @@ import { createRequire } from 'module';
 const require = createRequire('C:/Users/TONI/projects/social-commerce/susej-admin-panel/package.json');
 const { Client } = require('pg');
 
-const url = 'postgresql://neondb_owner:npg_v8puCj2MZPIW@ep-gentle-haze-b31gtn74-pooler.c-4.ap-southeast-1.aws.neon.tech/susej?sslmode=require';
+const url = process.env.DATABASE_URL;
+if (!url) {
+  console.log('DATABASE_URL is not set — refusing to run. Export it in your shell; never hardcode prod credentials.');
+  process.exit(2);
+}
 const c = new Client({ connectionString: url });
 await c.connect();
 const t = await c.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name`);
