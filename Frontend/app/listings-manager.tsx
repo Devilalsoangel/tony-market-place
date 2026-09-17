@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Image, Alert } from 'react-native';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { ChevronLeftIcon, SearchIcon, PlusIcon, StarIcon, PencilIcon, CheckIcon } from '../utils/icons';
+import { ChevronLeftIcon, SearchIcon, PlusIcon, StarIcon, EyeIcon, PencilIcon, CheckIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePosts } from '../contexts/PostContext';
 import { resolveListingImage, hasRealImage } from '../utils/productImages';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useEffect, useRef } from 'react';
+import { isApprovedSeller } from '../utils/marketplace';
+import SellerGate from '../components/SellerGate';
 
 // My Listings Manager (Figma 245:1567) — status tabs, search, 4-action cards.
 // Wired to PostContext: every card is the seller's real post, and the
@@ -52,21 +55,45 @@ export default function ListingsManagerScreen() {
   const { user } = useAuth();
   const { posts, deletePost, toggleSold } = usePosts();
   const { addNotification } = useNotifications();
+  // Warned set persists per account: the old in-memory ref re-minted one
+  // warning notification per imageless listing on EVERY cold start, forever.
+  const warnedKey = user?.username ? `@susej_imageless_warned:${user.username}` : null;
   const warnedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!warnedKey) return;
+    let alive = true;
+    AsyncStorage.getItem(warnedKey).then((raw) => {
+      if (!alive || !raw) return;
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) warnedRef.current = new Set(arr.filter((x) => typeof x === 'string'));
+      } catch {}
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [warnedKey]);
   const [tab, setTab] = useState<(typeof TABS)[number]>('All');
   const [category, setCategory] = useState('All Categories');
   const [query, setQuery] = useState('');
 
-  const username = user?.username || 'user';
-  const myPosts = useMemo(() => posts.filter((p) => p.sellerUsername === username), [posts, username]);
+  // Logged-out fallback is '' (matches nobody): 'user' previously rendered
+  // seller "user"'s listings to logged-out viewers (cross-account leak, C2).
+  // Case-insensitive like seller-orders (server keeps exact casing, C3).
+  const username = user?.username ?? '';
+  const myPosts = useMemo(() => {
+    const me = username.trim().toLowerCase();
+    if (!me) return [];
+    return posts.filter((p) => (p.sellerUsername ?? '').toLowerCase() === me);
+  }, [posts, username]);
 
   // Industry standard: warn seller for imageless listings (no real image = not sellable)
   const imagelessIds = useMemo(() => myPosts.filter((p) => !hasRealImage(p)).map((p) => p.id), [myPosts]);
 
   useEffect(() => {
+    let added = false;
     for (const p of myPosts) {
       if (!hasRealImage(p) && !warnedRef.current.has(p.id)) {
         warnedRef.current.add(p.id);
+        added = true;
         const title = (p.description || '').split('\n')[0]?.slice(0, 32) || 'your listing';
         addNotification({
           type: 'warning',
@@ -76,7 +103,10 @@ export default function ListingsManagerScreen() {
         });
       }
     }
-  }, [myPosts, addNotification]);
+    if (added && warnedKey) {
+      AsyncStorage.setItem(warnedKey, JSON.stringify([...warnedRef.current])).catch(() => {});
+    }
+  }, [myPosts, addNotification, warnedKey]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -115,6 +145,10 @@ export default function ListingsManagerScreen() {
       { text: 'Delete', style: 'destructive', onPress: () => deletePost(id) },
     ]);
   };
+
+  // Approved sellers only (SELLER-C1): buyers/pending deep-links get status,
+  // never tools. Matches server 403s. After all hooks (rules-of-hooks safe).
+  if (!isApprovedSeller(user)) return <SellerGate title="My listings" user={user} />;
 
   return (
     <View className="flex-1 bg-surface">
@@ -306,7 +340,7 @@ export default function ListingsManagerScreen() {
                       </View>
                     </View>
                     {noImage && (
-                      <TouchableOpacity className="mt-2 self-start px-3 py-1.5 rounded-full" style={{ backgroundColor: colors.primary }} onPress={() => router.push('/(tabs)/create')}>
+                      <TouchableOpacity className="mt-2 self-start px-3 py-1.5 rounded-full" style={{ backgroundColor: colors.primary }} onPress={() => router.push(`/edit-listing/${l.id}`)}>
                         <Text className="font-inter-600" style={{ fontSize: 11, color: '#fff' }}>Add image</Text>
                       </TouchableOpacity>
                     )}
@@ -333,9 +367,21 @@ export default function ListingsManagerScreen() {
                     accessibilityLabel={`View listing ${l.id}`}
                     onPress={() => router.push(`/product/${l.id}`)}
                   >
-                    <PencilIcon size={16} color={colors.textSecondary} />
+                    <EyeIcon size={16} color={colors.textSecondary} />
                     <Text className="font-inter-500 mt-1" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
                       View
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="flex-1 items-center py-2.5"
+                    style={{ borderLeftWidth: 1, borderLeftColor: colors.surfaceContainer }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit listing ${l.id}`}
+                    onPress={() => router.push(`/edit-listing/${l.id}`)}
+                  >
+                    <PencilIcon size={16} color={colors.textSecondary} />
+                    <Text className="font-inter-500 mt-1" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
+                      Edit
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity

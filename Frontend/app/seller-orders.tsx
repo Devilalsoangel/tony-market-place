@@ -7,7 +7,8 @@ import { colors, formatPrice } from '../utils/theme';
 import { resolveListingImage } from '../utils/productImages';
 import { useAuth } from '../contexts/AuthContext';
 import { useOrders, Order, OrderStatus } from '../contexts/OrderContext';
-import { sellerNetForOrders } from '../utils/marketplace';
+import { sellerNetForOrders, isApprovedSeller } from '../utils/marketplace';
+import SellerGate from '../components/SellerGate';
 import { usePosts } from '../contexts/PostContext';
 
 // Seller Orders — Incoming (Figma 245:2376) — live orders from OrderContext,
@@ -33,8 +34,11 @@ const NOTE_BY_STATUS: Partial<Record<OrderStatus, string>> = {
 };
 
 // Honest money copy: COD orders have NOT been paid at placement time.
+// Exact trimmed-lowercase match (server canonical) — the old /cash|cod/
+// substring labeled e.g. "Cashback reward" prepaid rows as cash-on-delivery.
 function isCashOrder(o: Order): boolean {
-  return /cash|cod/i.test(o.paymentMethod ?? '');
+  const m = String(o.paymentMethod ?? '').trim().toLowerCase();
+  return m === 'cash on delivery' || m === 'cod' || m === 'cash';
 }
 
 function noteFor(o: Order): string {
@@ -55,7 +59,7 @@ function timeAgo(ts: number): string {
 export default function SellerOrdersScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { orders, updateOrderStatus, respondRefund } = useOrders();
+  const { orders, loaded: ordersLoaded, updateOrderStatus, respondRefund } = useOrders();
   const { posts } = usePosts();
   const [tab, setTab] = useState<Tab>('All');
 
@@ -98,9 +102,10 @@ export default function SellerOrdersScreen() {
   // formula here disagreed with hub + dashboard on identical orders.
   const earnings = sellerNetForOrders(queue);
 
-  const transition = (order: Order, next: OrderStatus) => {
-    if (!updateOrderStatus(order.id, next)) {
-      Alert.alert('Cannot update', 'This order status can no longer be changed.');
+  const transition = async (order: Order, next: OrderStatus) => {
+    const ok = await updateOrderStatus(order.id, next);
+    if (!ok) {
+      Alert.alert('Update did not go through', 'The order may have changed, or the sync failed. Refresh and try again — nothing was recorded.');
     }
   };
 
@@ -112,7 +117,18 @@ export default function SellerOrdersScreen() {
     if (o.status === 'preparing')
       return { label: 'Mark Shipped', run: () => transition(o, 'out_for_delivery') };
     if (o.status === 'out_for_delivery')
-      return { label: 'Mark Delivered', run: () => transition(o, 'delivered') };
+      return {
+        label: 'Mark Delivered',
+        run: () =>
+          Alert.alert(
+            'Confirm delivery',
+            'Only mark delivered after the buyer receives the goods (POD / handover). False delivery marks settle COD earnings and can be disputed — abuse leads to suspension.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Confirm POD', onPress: () => transition(o, 'delivered') },
+            ]
+          ),
+      };
     // delivered/cancelled are terminal: neutral placeholder + single Message Buyer CTA below
     return null;
   };
@@ -124,6 +140,10 @@ export default function SellerOrdersScreen() {
     refunded: 'REFUND ISSUED',
   };
 
+  // Approved sellers only (SELLER-C1): buyers/pending deep-links get status,
+  // never tools. Matches server 403s. After all hooks (rules-of-hooks safe).
+  if (!isApprovedSeller(user)) return <SellerGate title="Orders" user={user} />;
+
   const respondToRefund = (o: Order, approve: boolean) => {
     const doRespond = (note?: string) => {
       respondRefund(
@@ -133,7 +153,11 @@ export default function SellerOrdersScreen() {
           ? `Refund approved${note ? `: ${note}` : ''}. The amount will be returned to the buyer's wallet.`
           : `Refund declined${note ? `: ${note}` : ''}.`,
         approve ? 'approved' : 'rejected'
-      );
+      ).then((ok) => {
+        if (!ok) {
+          Alert.alert('Decision not recorded', 'The server refused or could not sync — the refund was rolled back. Check your connection and try again.');
+        }
+      });
     };
     if (!approve) {
       Alert.alert('Reject refund request', `${o.orderNumber} — ${o.refund?.reason || 'Buyer requested a refund'}. Reason for declining?`, [
@@ -192,7 +216,14 @@ export default function SellerOrdersScreen() {
 
         {/* Orders */}
         <View className="mx-5 mt-4" style={{ gap: 12 }}>
-          {visible.length === 0 && (
+          {!ordersLoaded && (
+            <View className="p-6 rounded-figma-24 items-center" style={{ backgroundColor: colors.surfaceContainer }}>
+              <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 13, lineHeight: 18 }}>
+                Loading orders…
+              </Text>
+            </View>
+          )}
+          {ordersLoaded && visible.length === 0 && (
             <View className="p-6 rounded-figma-24 items-center" style={{ backgroundColor: colors.surfaceContainer }}>
               <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 13, lineHeight: 18 }}>
                 No {tab === 'All' ? '' : tab.toLowerCase() + ' '}orders yet
@@ -260,6 +291,15 @@ export default function SellerOrdersScreen() {
                     {formatPrice(o.chargedTotal ?? o.total)}
                   </Text>
                 </View>
+                {/* Ship-to: the seller fulfils FROM this screen — address is mandatory. */}
+                <View className="mt-2 px-3 py-2 rounded-figma-12" style={{ backgroundColor: colors.surfaceContainer }}>
+                  <Text className="font-inter-600 text-textSecondary" style={{ fontSize: 10, lineHeight: 12, letterSpacing: 0.8 }}>
+                    SHIP TO
+                  </Text>
+                  <Text className="font-inter-500 text-textPrimary mt-0.5" style={{ fontSize: 12, lineHeight: 16 }}>
+                    {o.address || 'Address not yet synced — pull to refresh before shipping.'}
+                  </Text>
+                </View>
 
                 <View className="flex-row mt-3" style={{ gap: 10 }}>
                   {o.refund && o.refund.status === 'requested' ? (
@@ -276,11 +316,35 @@ export default function SellerOrdersScreen() {
                       </TouchableOpacity>
                     </>
                   ) : action ? (
-                    <TouchableOpacity className="flex-1 h-11 rounded-figma-12 items-center justify-center" style={{ backgroundColor: colors.primaryContainer }} onPress={action.run}>
-                      <Text className="font-inter-600 text-white" style={{ fontSize: 13, lineHeight: 16 }}>
-                        {action.label}
-                      </Text>
-                    </TouchableOpacity>
+                    <>
+                      <TouchableOpacity className="flex-1 h-11 rounded-figma-12 items-center justify-center" style={{ backgroundColor: colors.primaryContainer }} onPress={action.run}>
+                        <Text className="font-inter-600 text-white" style={{ fontSize: 13, lineHeight: 16 }}>
+                          {action.label}
+                        </Text>
+                      </TouchableOpacity>
+                      {(o.status === 'placed' || o.status === 'confirmed') && (
+                        <TouchableOpacity
+                          className="h-11 px-3 rounded-figma-12 items-center justify-center"
+                          style={{ backgroundColor: colors.surfaceContainer }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Decline order ${o.orderNumber}`}
+                          onPress={() =>
+                            Alert.alert(
+                              'Decline order?',
+                              `${o.orderNumber} will be cancelled and the buyer refunded to their wallet. Only decline when you cannot fulfil — repeated declines hurt your seller standing.`,
+                              [
+                                { text: 'Keep order', style: 'cancel' },
+                                { text: 'Decline & refund buyer', style: 'destructive', onPress: () => transition(o, 'cancelled') },
+                              ]
+                            )
+                          }
+                        >
+                          <Text className="font-inter-600 text-error" style={{ fontSize: 13, lineHeight: 16 }}>
+                            Decline
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
                   ) : (
                     <View className="flex-1 h-11 rounded-figma-12 items-center justify-center" style={{ backgroundColor: colors.surfaceContainer }}>
                       <Text className="font-inter-600 text-textSecondary" style={{ fontSize: 13, lineHeight: 16 }}>
@@ -292,8 +356,15 @@ export default function SellerOrdersScreen() {
                     className="flex-1 h-11 rounded-figma-12 items-center justify-center"
                     style={{ backgroundColor: colors.surfaceContainer }}
                     onPress={() => {
-                      const to = o.buyerUsername || o.buyerName;
-                      router.push(to ? { pathname: '/(tabs)/chat', params: { to } } : '/(tabs)/chat');
+                      // Username-only: a display name ("Aarav Sharma") is not a
+                      // thread identity — pushing it opens a device-local stub
+                      // that can never deliver. Say so instead of failing mute.
+                      const to = (o.buyerUsername ?? '').trim();
+                      if (to) {
+                        router.push({ pathname: '/(tabs)/chat', params: { to } });
+                      } else {
+                        Alert.alert('No contact linked', 'This order has no buyer account attached (legacy row) — the buyer cannot be messaged from here.');
+                      }
                     }}
                   >
                     <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 13, lineHeight: 16 }}>

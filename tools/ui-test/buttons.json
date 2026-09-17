@@ -1,0 +1,8612 @@
+{
+ "(onboarding)/auth.tsx": [
+  {
+   "line": 1,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 81,
+   "label": "Continue with Phone",
+   "handler": "(composite)"
+  },
+  {
+   "line": 82,
+   "label": "Continue with Phone",
+   "handler": "(composite)"
+  },
+  {
+   "line": 84,
+   "label": "Continue with Phone",
+   "handler": "() => router.push('/(onboarding)/otp')"
+  },
+  {
+   "line": 88,
+   "label": "Continue with Phone",
+   "handler": "(composite)"
+  },
+  {
+   "line": 90,
+   "label": "Continue with Phone",
+   "handler": "(composite)"
+  },
+  {
+   "line": 91,
+   "label": "Continue with Phone",
+   "handler": "(composite)"
+  },
+  {
+   "line": 93,
+   "label": "Continue with Phone",
+   "handler": "handleGoogleSignIn"
+  },
+  {
+   "line": 97,
+   "label": "Continue with Google",
+   "handler": "(composite)"
+  },
+  {
+   "line": 103,
+   "label": "Continue with Google",
+   "handler": "(composite)"
+  },
+  {
+   "line": 104,
+   "label": "Continue with Google",
+   "handler": "(composite)"
+  },
+  {
+   "line": 106,
+   "label": "Already have an account?",
+   "handler": "() => router.push('/login')"
+  },
+  {
+   "line": 111,
+   "label": "Already have an account?",
+   "handler": "(composite)"
+  },
+  {
+   "line": 256,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 277,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 309,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "(onboarding)/first-feed.tsx": [
+  {
+   "line": 1,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 40,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 43,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 56,
+   "label": "Start Exploring",
+   "handler": "(composite)"
+  }
+ ],
+ "(onboarding)/interests.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 47,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 50,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 53,
+   "label": "Step 07",
+   "handler": "(composite)"
+  },
+  {
+   "line": 78,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 79,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 90,
+   "label": "Skip",
+   "handler": "(composite)"
+  },
+  {
+   "line": 116,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 126,
+   "label": "(unlabeled)",
+   "handler": "() => toggle(interest)"
+  },
+  {
+   "line": 153,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 182,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 189,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 210,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "(onboarding)/location.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 588,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 590,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 614,
+   "label": "Location off — tap to retry",
+   "handler": "(composite)"
+  },
+  {
+   "line": 617,
+   "label": "Location off — tap to retry",
+   "handler": "() => detectLocation()"
+  },
+  {
+   "line": 623,
+   "label": "Location off — tap to retry",
+   "handler": "(composite)"
+  },
+  {
+   "line": 643,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 646,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 649,
+   "label": "Allow Location Access",
+   "handler": "() => detectLocation()"
+  },
+  {
+   "line": 658,
+   "label": "Allow Location Access",
+   "handler": "(composite)"
+  },
+  {
+   "line": 695,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 707,
+   "label": "(unlabeled)",
+   "handler": "() => pickSuggestion(s.name, s.city, s.kind)"
+  },
+  {
+   "line": 741,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 748,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 755,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 788,
+   "label": "Popular Cities",
+   "handler": "(composite)"
+  },
+  {
+   "line": 801,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 809,
+   "label": "(unlabeled)",
+   "handler": "() => setSelectedCity(city.name)"
+  },
+  {
+   "line": 835,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 843,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 846,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 857,
+   "label": "Continue",
+   "handler": "(composite)"
+  },
+  {
+   "line": 858,
+   "label": "Continue",
+   "handler": "(composite)"
+  },
+  {
+   "line": 860,
+   "label": "Skip for now",
+   "handler": "() => router.push('/(onboarding)/profile-setup')"
+  },
+  {
+   "line": 868,
+   "label": "Skip for now",
+   "handler": "(composite)"
+  }
+ ],
+ "(onboarding)/otp.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 119,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 121,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 161,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 164,
+   "label": "(unlabeled)",
+   "handler": "() => setShowCountryPicker(true)"
+  },
+  {
+   "line": 173,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 191,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 192,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 195,
+   "label": "Send OTP",
+   "handler": "handleSendOtp"
+  },
+  {
+   "line": 203,
+   "label": "Send OTP",
+   "handler": "(composite)"
+  },
+  {
+   "line": 242,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 243,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 249,
+   "label": "(unlabeled)",
+   "handler": "handleVerify"
+  },
+  {
+   "line": 262,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 272,
+   "label": "(unlabeled)",
+   "handler": "handleResend"
+  },
+  {
+   "line": 283,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 297,
+   "label": "Select country",
+   "handler": "() => setShowCountryPicker(false)"
+  },
+  {
+   "line": 302,
+   "label": "Select country",
+   "handler": "() => { setCountryCode(item.code); setShowCountryPicker(false); "
+  },
+  {
+   "line": 306,
+   "label": "Select country",
+   "handler": "(composite)"
+  },
+  {
+   "line": 310,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "(onboarding)/profile-setup.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 78,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 80,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 117,
+   "label": "(unlabeled)",
+   "handler": "() => setPickerOpen((o) => !o)"
+  },
+  {
+   "line": 136,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 137,
+   "label": "(unlabeled)",
+   "handler": "() => setPickerOpen((o) => !o)"
+  },
+  {
+   "line": 144,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 159,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 167,
+   "label": "(unlabeled)",
+   "handler": "() => setAvatar(opt.uri || undefined)"
+  },
+  {
+   "line": 170,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 175,
+   "label": "Remove photo",
+   "handler": "() => setAvatar(undefined)"
+  },
+  {
+   "line": 182,
+   "label": "Remove photo",
+   "handler": "(composite)"
+  },
+  {
+   "line": 263,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 267,
+   "label": "(unlabeled)",
+   "handler": "() => setRole(r)"
+  },
+  {
+   "line": 280,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 284,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 285,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 288,
+   "label": "Continue",
+   "handler": "continuePressed"
+  },
+  {
+   "line": 297,
+   "label": "Continue",
+   "handler": "(composite)"
+  }
+ ],
+ "(onboarding)/welcome.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 137,
+   "label": "Get Started",
+   "handler": "(composite)"
+  },
+  {
+   "line": 138,
+   "label": "Get Started",
+   "handler": "(composite)"
+  },
+  {
+   "line": 141,
+   "label": "Get Started",
+   "handler": "() => router.push('/(onboarding)/auth')"
+  },
+  {
+   "line": 147,
+   "label": "Get Started",
+   "handler": "(composite)"
+  },
+  {
+   "line": 150,
+   "label": "Get Started",
+   "handler": "(composite)"
+  },
+  {
+   "line": 152,
+   "label": "Sign In",
+   "handler": "() => router.push('/login')"
+  },
+  {
+   "line": 158,
+   "label": "Sign In",
+   "handler": "(composite)"
+  },
+  {
+   "line": 327,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "(tabs)/chat.tsx": [
+  {
+   "line": 4,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 763,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 767,
+   "label": "(unlabeled)",
+   "handler": "() => handleAccept(msg.id, offer)"
+  },
+  {
+   "line": 772,
+   "label": "Counter",
+   "handler": "(composite)"
+  },
+  {
+   "line": 773,
+   "label": "Counter",
+   "handler": "(composite)"
+  },
+  {
+   "line": 777,
+   "label": "Counter",
+   "handler": "() => startCounter(msg)"
+  },
+  {
+   "line": 782,
+   "label": "Counter",
+   "handler": "(composite)"
+  },
+  {
+   "line": 783,
+   "label": "Counter",
+   "handler": "(composite)"
+  },
+  {
+   "line": 787,
+   "label": "Counter",
+   "handler": "() => handleDecline(msg.id)"
+  },
+  {
+   "line": 792,
+   "label": "Decline",
+   "handler": "(composite)"
+  },
+  {
+   "line": 804,
+   "label": "(unlabeled)",
+   "handler": "() => setActiveChat(null)"
+  },
+  {
+   "line": 806,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 817,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 820,
+   "label": "(unlabeled)",
+   "handler": "purchaseChatPin"
+  },
+  {
+   "line": 823,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 825,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 828,
+   "label": "(unlabeled)",
+   "handler": "blockUser"
+  },
+  {
+   "line": 831,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 911,
+   "label": "Send Offer",
+   "handler": "(composite)"
+  },
+  {
+   "line": 915,
+   "label": "Send Offer",
+   "handler": "submitOffer"
+  },
+  {
+   "line": 920,
+   "label": "Send Offer",
+   "handler": "(composite)"
+  },
+  {
+   "line": 921,
+   "label": "Send Offer",
+   "handler": "(composite)"
+  },
+  {
+   "line": 924,
+   "label": "Send Offer",
+   "handler": "(composite)"
+  },
+  {
+   "line": 933,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 942,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 945,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 954,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 956,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 959,
+   "label": "(unlabeled)",
+   "handler": "onMicPress"
+  },
+  {
+   "line": 962,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 972,
+   "label": "(unlabeled)",
+   "handler": "sendMessage"
+  },
+  {
+   "line": 974,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 999,
+   "label": "(unlabeled)",
+   "handler": "() => setTab(t.key)"
+  },
+  {
+   "line": 1006,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1052,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1056,
+   "label": "(unlabeled)",
+   "handler": "() => setFilter(f.key)"
+  },
+  {
+   "line": 1064,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1082,
+   "label": "Group Chats",
+   "handler": "() => router.push('/communities')"
+  },
+  {
+   "line": 1086,
+   "label": "Group Chats",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1091,
+   "label": "See all",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1095,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/community/${c.id"
+  },
+  {
+   "line": 1108,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1116,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1128,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1193,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "(tabs)/create.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 404,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 405,
+   "label": "(unlabeled)",
+   "handler": "() => setStep(step - 1)"
+  },
+  {
+   "line": 412,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 414,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 415,
+   "label": "(unlabeled)",
+   "handler": "step === 6 ? handlePost : () => setStep(step + 1)"
+  },
+  {
+   "line": 435,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 444,
+   "label": "Create New Post",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 448,
+   "label": "Create New Post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 467,
+   "label": "🛍️",
+   "handler": "(composite)"
+  },
+  {
+   "line": 471,
+   "label": "Become a Seller",
+   "handler": "() => router.push('/become-seller')"
+  },
+  {
+   "line": 476,
+   "label": "Become a Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 501,
+   "label": "Create Post",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 505,
+   "label": "Create Post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 560,
+   "label": "Change",
+   "handler": "(composite)"
+  },
+  {
+   "line": 561,
+   "label": "Change",
+   "handler": "() => setSelectedImages([])"
+  },
+  {
+   "line": 568,
+   "label": "Change",
+   "handler": "(composite)"
+  },
+  {
+   "line": 594,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 595,
+   "label": "(unlabeled)",
+   "handler": "() => toggleImage(uri)"
+  },
+  {
+   "line": 601,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 605,
+   "label": "Add",
+   "handler": "(composite)"
+  },
+  {
+   "line": 607,
+   "label": "Add",
+   "handler": "pickFromGallery"
+  },
+  {
+   "line": 613,
+   "label": "Add",
+   "handler": "(composite)"
+  },
+  {
+   "line": 634,
+   "label": "No media selected",
+   "handler": "(composite)"
+  },
+  {
+   "line": 636,
+   "label": "No media selected",
+   "handler": "pickFromGallery"
+  },
+  {
+   "line": 641,
+   "label": "Choose from gallery",
+   "handler": "(composite)"
+  },
+  {
+   "line": 675,
+   "label": "Category",
+   "handler": "(composite)"
+  },
+  {
+   "line": 681,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 689,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 716,
+   "label": "Condition",
+   "handler": "(composite)"
+  },
+  {
+   "line": 721,
+   "label": "(unlabeled)",
+   "handler": "() => setCondition(active ? '' : c)"
+  },
+  {
+   "line": 726,
+   "label": "Description",
+   "handler": "(composite)"
+  },
+  {
+   "line": 797,
+   "label": "Negotiable",
+   "handler": "(composite)"
+  },
+  {
+   "line": 799,
+   "label": "Negotiable",
+   "handler": "() => setNegotiable(!negotiable)"
+  },
+  {
+   "line": 826,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 834,
+   "label": "Add variants",
+   "handler": "(composite)"
+  },
+  {
+   "line": 836,
+   "label": "Add variants",
+   "handler": "() => setShowVariants(!showVariants)"
+  },
+  {
+   "line": 851,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 866,
+   "label": "(unlabeled)",
+   "handler": "() => removeVariant(vi)"
+  },
+  {
+   "line": 868,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 900,
+   "label": "(unlabeled)",
+   "handler": "() => removeVariantValue(vi, vi2)"
+  },
+  {
+   "line": 902,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 907,
+   "label": "+ Value",
+   "handler": "(composite)"
+  },
+  {
+   "line": 908,
+   "label": "+ Value",
+   "handler": "() => addVariantValue(vi)"
+  },
+  {
+   "line": 913,
+   "label": "+ Value",
+   "handler": "(composite)"
+  },
+  {
+   "line": 919,
+   "label": "+ Value",
+   "handler": "(composite)"
+  },
+  {
+   "line": 920,
+   "label": "+ Value",
+   "handler": "addVariant"
+  },
+  {
+   "line": 925,
+   "label": "+ Add variant",
+   "handler": "(composite)"
+  },
+  {
+   "line": 941,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 944,
+   "label": "(unlabeled)",
+   "handler": "() => setDelivery(active ? null : opt.key)"
+  },
+  {
+   "line": 973,
+   "label": "Shipping fee (₹)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1005,
+   "label": "Selling area (city / locality)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1010,
+   "label": "(unlabeled)",
+   "handler": "() => setCity(active ? '' : c)"
+  },
+  {
+   "line": 1015,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1188,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1193,
+   "label": "(unlabeled)",
+   "handler": "() => setExtraChip(key, opt)"
+  },
+  {
+   "line": 1205,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1215,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1218,
+   "label": "(unlabeled)",
+   "handler": "() => setExtraToggle(key, !on)"
+  },
+  {
+   "line": 1244,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "(tabs)/creator.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 213,
+   "label": "Sellers only",
+   "handler": "(composite)"
+  },
+  {
+   "line": 216,
+   "label": "Sellers only",
+   "handler": "() => router.push('/become-seller')"
+  },
+  {
+   "line": 219,
+   "label": "Become a Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 244,
+   "label": "Allow camera in Settings",
+   "handler": "(composite)"
+  },
+  {
+   "line": 247,
+   "label": "Allow camera in Settings",
+   "handler": "() => Linking.openSettings()"
+  },
+  {
+   "line": 250,
+   "label": "Allow camera in Settings",
+   "handler": "(composite)"
+  },
+  {
+   "line": 253,
+   "label": "Allow camera in Settings",
+   "handler": "(composite)"
+  },
+  {
+   "line": 257,
+   "label": "Allow camera in Settings",
+   "handler": "(composite)"
+  },
+  {
+   "line": 265,
+   "label": "Start a Live room",
+   "handler": "(composite)"
+  },
+  {
+   "line": 267,
+   "label": "Start a Live room",
+   "handler": "(composite)"
+  },
+  {
+   "line": 270,
+   "label": "Start a Live room",
+   "handler": "() => router.push('/start-live')"
+  },
+  {
+   "line": 273,
+   "label": "Start a Live room",
+   "handler": "(composite)"
+  },
+  {
+   "line": 340,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 342,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 343,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 345,
+   "label": "(unlabeled)",
+   "handler": "() => setFlashOn((v) => !v)"
+  },
+  {
+   "line": 349,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 356,
+   "label": "(unlabeled)",
+   "handler": "openGalleryForCurrentMode"
+  },
+  {
+   "line": 362,
+   "label": "Go Live",
+   "handler": "(composite)"
+  },
+  {
+   "line": 366,
+   "label": "Go Live",
+   "handler": "capture"
+  },
+  {
+   "line": 369,
+   "label": "Go Live",
+   "handler": "(composite)"
+  },
+  {
+   "line": 371,
+   "label": "Go Live",
+   "handler": "capture"
+  },
+  {
+   "line": 373,
+   "label": "Go Live",
+   "handler": "(composite)"
+  },
+  {
+   "line": 380,
+   "label": "(unlabeled)",
+   "handler": "() => setFacing((f) => (f === 'back' ? 'front' : 'back'))"
+  },
+  {
+   "line": 382,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 391,
+   "label": "(unlabeled)",
+   "handler": "() => setMode(m.key)"
+  },
+  {
+   "line": 396,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "(tabs)/explore.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 233,
+   "label": "Clear filters",
+   "handler": "(composite)"
+  },
+  {
+   "line": 236,
+   "label": "Clear filters",
+   "handler": "clearAllFilters"
+  },
+  {
+   "line": 241,
+   "label": "Clear filters",
+   "handler": "(composite)"
+  },
+  {
+   "line": 266,
+   "label": "View Nearby Sellers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 269,
+   "label": "View Nearby Sellers",
+   "handler": "() => router.push('/map')"
+  },
+  {
+   "line": 275,
+   "label": "View Nearby Sellers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 289,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 293,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(f.route as never)"
+  },
+  {
+   "line": 299,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 313,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 315,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 320,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 323,
+   "label": "See All",
+   "handler": "(composite)"
+  },
+  {
+   "line": 324,
+   "label": "See All",
+   "handler": "() => router.push('/category')"
+  },
+  {
+   "line": 331,
+   "label": "See All",
+   "handler": "(composite)"
+  },
+  {
+   "line": 336,
+   "label": "See All",
+   "handler": "(composite)"
+  },
+  {
+   "line": 339,
+   "label": "Filters",
+   "handler": "() => setFilterVisible(true)"
+  },
+  {
+   "line": 345,
+   "label": "Filters",
+   "handler": "(composite)"
+  },
+  {
+   "line": 353,
+   "label": "(unlabeled)",
+   "handler": "() => clearFilter(chip.clearKey)"
+  },
+  {
+   "line": 355,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 369,
+   "label": "Trending Now",
+   "handler": "(composite)"
+  },
+  {
+   "line": 372,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${item.id"
+  },
+  {
+   "line": 398,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 406,
+   "label": "Filters",
+   "handler": "() => setFilterVisible(false)"
+  },
+  {
+   "line": 415,
+   "label": "Filters",
+   "handler": "() => setFilterVisible(false)"
+  },
+  {
+   "line": 417,
+   "label": "Filters",
+   "handler": "(composite)"
+  },
+  {
+   "line": 428,
+   "label": "PRICE RANGE",
+   "handler": "(composite)"
+  },
+  {
+   "line": 432,
+   "label": "(unlabeled)",
+   "handler": "() => setFilters((prev) => ({ ...prev, price: p.key "
+  },
+  {
+   "line": 437,
+   "label": "CONDITION",
+   "handler": "(composite)"
+  },
+  {
+   "line": 450,
+   "label": "CONDITION",
+   "handler": "(composite)"
+  },
+  {
+   "line": 454,
+   "label": "(unlabeled)",
+   "handler": "() => setFilters((prev) => ({ ...prev, condition: c === 'Any' ? 'any' : c "
+  },
+  {
+   "line": 459,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 490,
+   "label": "SORT BY",
+   "handler": "(composite)"
+  },
+  {
+   "line": 494,
+   "label": "(unlabeled)",
+   "handler": "() => setFilters((prev) => ({ ...prev, sort: s.key "
+  },
+  {
+   "line": 499,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 507,
+   "label": "Clear",
+   "handler": "(composite)"
+  },
+  {
+   "line": 510,
+   "label": "Clear",
+   "handler": "clearAllFilters"
+  },
+  {
+   "line": 515,
+   "label": "Clear",
+   "handler": "(composite)"
+  },
+  {
+   "line": 516,
+   "label": "Clear",
+   "handler": "(composite)"
+  },
+  {
+   "line": 519,
+   "label": "Clear",
+   "handler": "() => setFilterVisible(false)"
+  },
+  {
+   "line": 524,
+   "label": "Apply",
+   "handler": "(composite)"
+  }
+ ],
+ "(tabs)/feed.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 335,
+   "label": "Notifications",
+   "handler": "() => router.push('/notifications')"
+  },
+  {
+   "line": 337,
+   "label": "Notifications",
+   "handler": "(composite)"
+  },
+  {
+   "line": 338,
+   "label": "Notifications",
+   "handler": "() => router.push('/cart')"
+  },
+  {
+   "line": 340,
+   "label": "Notifications",
+   "handler": "(composite)"
+  },
+  {
+   "line": 363,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 366,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 400,
+   "label": "Your Story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 402,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 405,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/(tabs)/creator?mode=story')"
+  },
+  {
+   "line": 419,
+   "label": "Your Story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 423,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 427,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 467,
+   "label": "Shop by Category",
+   "handler": "(composite)"
+  },
+  {
+   "line": 485,
+   "label": "For You",
+   "handler": "(composite)"
+  },
+  {
+   "line": 488,
+   "label": "For You",
+   "handler": "() => router.push('/foryou')"
+  },
+  {
+   "line": 494,
+   "label": "For You",
+   "handler": "(composite)"
+  },
+  {
+   "line": 496,
+   "label": "For You",
+   "handler": "(composite)"
+  },
+  {
+   "line": 499,
+   "label": "For You",
+   "handler": "() => router.push(`/category/${tile.slug"
+  },
+  {
+   "line": 521,
+   "label": "All",
+   "handler": "(composite)"
+  },
+  {
+   "line": 523,
+   "label": "All",
+   "handler": "(composite)"
+  },
+  {
+   "line": 525,
+   "label": "All",
+   "handler": "() => router.push('/category')"
+  },
+  {
+   "line": 531,
+   "label": "All",
+   "handler": "(composite)"
+  },
+  {
+   "line": 544,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 546,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/seller/${hero.sellerUsername"
+  },
+  {
+   "line": 582,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 593,
+   "label": "TOP SELLERS",
+   "handler": "() => router.push('/explore')"
+  },
+  {
+   "line": 595,
+   "label": "TOP SELLERS",
+   "handler": "(composite)"
+  },
+  {
+   "line": 614,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/seller/${s.username"
+  },
+  {
+   "line": 642,
+   "label": "TOP SELLER",
+   "handler": "(composite)"
+  },
+  {
+   "line": 643,
+   "label": "Follow",
+   "handler": "(composite)"
+  },
+  {
+   "line": 646,
+   "label": "Follow",
+   "handler": "() => toggleFollow(s.username)"
+  },
+  {
+   "line": 649,
+   "label": "Follow",
+   "handler": "(composite)"
+  },
+  {
+   "line": 673,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 677,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${deal.id"
+  },
+  {
+   "line": 697,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 701,
+   "label": "(unlabeled)",
+   "handler": "() => toggleLike(deal.id)"
+  },
+  {
+   "line": 704,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 721,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 762,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 766,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/hashtag/${tag"
+  },
+  {
+   "line": 771,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 783,
+   "label": "Recently viewed",
+   "handler": "(composite)"
+  },
+  {
+   "line": 784,
+   "label": "Recently viewed",
+   "handler": "(composite)"
+  },
+  {
+   "line": 794,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 806,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 810,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${entry.postId"
+  },
+  {
+   "line": 821,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 828,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 838,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 840,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 853,
+   "label": "Nothing here — follow sellers to fill your feed",
+   "handler": "() => router.push('/explore')"
+  },
+  {
+   "line": 858,
+   "label": "Nothing here — follow sellers to fill your feed",
+   "handler": "(composite)"
+  }
+ ],
+ "(tabs)/profile.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 68,
+   "label": "susej",
+   "handler": "() => router.push(`/seller/${user?.username"
+  },
+  {
+   "line": 70,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 72,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/wallet')"
+  },
+  {
+   "line": 74,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 75,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/notifications')"
+  },
+  {
+   "line": 77,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 78,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/settings')"
+  },
+  {
+   "line": 80,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 102,
+   "label": "Followers",
+   "handler": "() => router.push('/followers?tab=followers')"
+  },
+  {
+   "line": 109,
+   "label": "Followers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 110,
+   "label": "Followers",
+   "handler": "() => router.push('/followers?tab=following')"
+  },
+  {
+   "line": 117,
+   "label": "Following",
+   "handler": "(composite)"
+  },
+  {
+   "line": 136,
+   "label": "Edit Profile",
+   "handler": "() => router.push('/edit-profile')"
+  },
+  {
+   "line": 140,
+   "label": "Edit Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 141,
+   "label": "Edit Profile",
+   "handler": "() => Share.share({ message: `Check out ${name"
+  },
+  {
+   "line": 145,
+   "label": "Edit Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 146,
+   "label": "Share Profile",
+   "handler": "() => router.push(user?.isSeller ? '/(tabs)/create' : '/become-seller')"
+  },
+  {
+   "line": 148,
+   "label": "Share Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 158,
+   "label": "My Store",
+   "handler": "(composite)"
+  },
+  {
+   "line": 161,
+   "label": "My Store",
+   "handler": "() => router.push('/seller-dashboard-hub')"
+  },
+  {
+   "line": 173,
+   "label": "My Store",
+   "handler": "(composite)"
+  },
+  {
+   "line": 180,
+   "label": "Apply to be a Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 183,
+   "label": "Apply to be a Seller",
+   "handler": "() => router.push('/become-seller')"
+  },
+  {
+   "line": 195,
+   "label": "Apply to be a Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 201,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 204,
+   "label": "Refer & Earn",
+   "handler": "() => router.push('/refer')"
+  },
+  {
+   "line": 218,
+   "label": "Refer & Earn",
+   "handler": "(composite)"
+  },
+  {
+   "line": 219,
+   "label": "Invite friends to susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 222,
+   "label": "Loyalty Points",
+   "handler": "() => router.push('/loyalty')"
+  },
+  {
+   "line": 236,
+   "label": "Loyalty Points",
+   "handler": "(composite)"
+  },
+  {
+   "line": 241,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 244,
+   "label": "Help & Support",
+   "handler": "() => router.push('/support')"
+  },
+  {
+   "line": 258,
+   "label": "Help & Support",
+   "handler": "(composite)"
+  },
+  {
+   "line": 263,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 266,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 283,
+   "label": "Switch account",
+   "handler": "(composite)"
+  }
+ ],
+ "address-book.tsx": [
+  {
+   "line": 6,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 139,
+   "label": "Address Book",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 141,
+   "label": "Address Book",
+   "handler": "(composite)"
+  },
+  {
+   "line": 145,
+   "label": "Address Book",
+   "handler": "openAdd"
+  },
+  {
+   "line": 148,
+   "label": "Address Book",
+   "handler": "(composite)"
+  },
+  {
+   "line": 165,
+   "label": "Couldn't load addresses",
+   "handler": "(composite)"
+  },
+  {
+   "line": 168,
+   "label": "Retry",
+   "handler": "(composite)"
+  },
+  {
+   "line": 176,
+   "label": "Retry",
+   "handler": "(composite)"
+  },
+  {
+   "line": 189,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 201,
+   "label": "(unlabeled)",
+   "handler": "() => selectAddress(item)"
+  },
+  {
+   "line": 227,
+   "label": "No saved addresses",
+   "handler": "(composite)"
+  },
+  {
+   "line": 250,
+   "label": "(unlabeled)",
+   "handler": "() => setModalOpen(false)"
+  },
+  {
+   "line": 252,
+   "label": "Add Address",
+   "handler": "(composite)"
+  },
+  {
+   "line": 261,
+   "label": "Add Address",
+   "handler": "() => setModalOpen(false)"
+  },
+  {
+   "line": 263,
+   "label": "Add Address",
+   "handler": "(composite)"
+  },
+  {
+   "line": 271,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 275,
+   "label": "(unlabeled)",
+   "handler": "() => setForm((f) => ({ ...f, type: t "
+  },
+  {
+   "line": 280,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 319,
+   "label": "Save Address",
+   "handler": "(composite)"
+  },
+  {
+   "line": 323,
+   "label": "Save Address",
+   "handler": "saveAddress"
+  },
+  {
+   "line": 328,
+   "label": "Save Address",
+   "handler": "(composite)"
+  }
+ ],
+ "admin/reports.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 90,
+   "label": "Reports",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 92,
+   "label": "Reports",
+   "handler": "(composite)"
+  },
+  {
+   "line": 99,
+   "label": "Reports",
+   "handler": "(composite)"
+  },
+  {
+   "line": 101,
+   "label": "Reports",
+   "handler": "() => router.push('/admin/verify')"
+  },
+  {
+   "line": 104,
+   "label": "Verification",
+   "handler": "(composite)"
+  },
+  {
+   "line": 173,
+   "label": "Remove post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 175,
+   "label": "Remove post",
+   "handler": "() => resolve(report.id)"
+  },
+  {
+   "line": 178,
+   "label": "Remove post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 179,
+   "label": "Remove post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 182,
+   "label": "Remove post",
+   "handler": "() => resolve(report.id)"
+  },
+  {
+   "line": 185,
+   "label": "Remove post",
+   "handler": "(composite)"
+  }
+ ],
+ "admin/verify.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 148,
+   "label": "Verification",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 150,
+   "label": "Verification",
+   "handler": "(composite)"
+  },
+  {
+   "line": 160,
+   "label": "Verification",
+   "handler": "(composite)"
+  },
+  {
+   "line": 162,
+   "label": "Verification",
+   "handler": "() => router.push('/admin/reports')"
+  },
+  {
+   "line": 165,
+   "label": "Verification",
+   "handler": "(composite)"
+  },
+  {
+   "line": 242,
+   "label": "Approve",
+   "handler": "(composite)"
+  },
+  {
+   "line": 244,
+   "label": "Approve",
+   "handler": "() => approve(seller.username)"
+  },
+  {
+   "line": 247,
+   "label": "Approve",
+   "handler": "(composite)"
+  },
+  {
+   "line": 248,
+   "label": "Approve",
+   "handler": "(composite)"
+  },
+  {
+   "line": 251,
+   "label": "Approve",
+   "handler": "() => reject(seller)"
+  },
+  {
+   "line": 254,
+   "label": "Approve",
+   "handler": "(composite)"
+  }
+ ],
+ "auction/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 193,
+   "label": "Auction",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 195,
+   "label": "Auction",
+   "handler": "(composite)"
+  },
+  {
+   "line": 218,
+   "label": "Auction not found",
+   "handler": "(composite)"
+  },
+  {
+   "line": 221,
+   "label": "Go back",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 226,
+   "label": "Go back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 338,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 341,
+   "label": "(unlabeled)",
+   "handler": "openBidInput"
+  },
+  {
+   "line": 346,
+   "label": "Place your bid",
+   "handler": "(composite)"
+  },
+  {
+   "line": 377,
+   "label": "Confirm",
+   "handler": "(composite)"
+  },
+  {
+   "line": 381,
+   "label": "Confirm",
+   "handler": "confirmBid"
+  },
+  {
+   "line": 386,
+   "label": "Confirm",
+   "handler": "(composite)"
+  },
+  {
+   "line": 387,
+   "label": "Confirm",
+   "handler": "(composite)"
+  },
+  {
+   "line": 390,
+   "label": "Confirm",
+   "handler": "() => setShowBidInput(false)"
+  },
+  {
+   "line": 393,
+   "label": "Bid history",
+   "handler": "(composite)"
+  }
+ ],
+ "auctions.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 163,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 168,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/auction/${a.id"
+  },
+  {
+   "line": 230,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 240,
+   "label": "Auctions",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 242,
+   "label": "Auctions",
+   "handler": "(composite)"
+  }
+ ],
+ "become-seller.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 383,
+   "label": "Become a Seller",
+   "handler": "() => (step > 1 ? setStep((step - 1) as Step) : router.back())"
+  },
+  {
+   "line": 385,
+   "label": "Become a Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 468,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 472,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 496,
+   "label": "By continuing you agree to our Seller Terms",
+   "handler": "(composite)"
+  },
+  {
+   "line": 540,
+   "label": "Shop Category (one category per shop)",
+   "handler": "() => setCategory(c)"
+  },
+  {
+   "line": 544,
+   "label": "What do you sell?",
+   "handler": "(composite)"
+  },
+  {
+   "line": 590,
+   "label": "Sell for less",
+   "handler": "() => setAgreeTerms(!agreeTerms)"
+  },
+  {
+   "line": 597,
+   "label": "← Back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 599,
+   "label": "← Back",
+   "handler": "() => setStep(1)"
+  },
+  {
+   "line": 603,
+   "label": "← Back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 631,
+   "label": "(unlabeled)",
+   "handler": "() => setIdType(t)"
+  },
+  {
+   "line": 635,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 658,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 661,
+   "label": "Document uploaded",
+   "handler": "pickIdDocument"
+  },
+  {
+   "line": 687,
+   "label": "Upload document",
+   "handler": "(composite)"
+  },
+  {
+   "line": 693,
+   "label": "Selfie with ID",
+   "handler": "takeSelfie"
+  },
+  {
+   "line": 715,
+   "label": "Take selfie",
+   "handler": "(composite)"
+  },
+  {
+   "line": 717,
+   "label": "Take selfie",
+   "handler": "() => setAgreeVerify(!agreeVerify)"
+  },
+  {
+   "line": 724,
+   "label": "← Back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 730,
+   "label": "← Back",
+   "handler": "() => setStep(2)"
+  },
+  {
+   "line": 734,
+   "label": "← Back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 753,
+   "label": "← Back",
+   "handler": "() => setStep(2)"
+  },
+  {
+   "line": 757,
+   "label": "← Back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 788,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 792,
+   "label": "(unlabeled)",
+   "handler": "() => item.route && router.push(item.route as any)"
+  },
+  {
+   "line": 808,
+   "label": "Go to My Store",
+   "handler": "(composite)"
+  },
+  {
+   "line": 813,
+   "label": "Go to My Store",
+   "handler": "() => router.replace('/seller-dashboard-hub')"
+  },
+  {
+   "line": 817,
+   "label": "Go to My Store",
+   "handler": "(composite)"
+  },
+  {
+   "line": 818,
+   "label": "Go to My Store",
+   "handler": "() => router.replace('/(tabs)/create')"
+  },
+  {
+   "line": 822,
+   "label": "Go to My Store",
+   "handler": "(composite)"
+  },
+  {
+   "line": 837,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 841,
+   "label": "(unlabeled)",
+   "handler": "handleNext"
+  },
+  {
+   "line": 846,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "blocked.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 90,
+   "label": "Blocked Users",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 92,
+   "label": "Blocked Users",
+   "handler": "(composite)"
+  },
+  {
+   "line": 141,
+   "label": "Unblock",
+   "handler": "(composite)"
+  },
+  {
+   "line": 144,
+   "label": "Unblock",
+   "handler": "() => unblock(user)"
+  },
+  {
+   "line": 149,
+   "label": "Unblock",
+   "handler": "(composite)"
+  }
+ ],
+ "book-service.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 123,
+   "label": "Book Service",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 125,
+   "label": "Book Service",
+   "handler": "(composite)"
+  },
+  {
+   "line": 150,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 153,
+   "label": "Select Date & Time",
+   "handler": "() => setSelectedPackage(pkg)"
+  },
+  {
+   "line": 157,
+   "label": "Select Date & Time",
+   "handler": "(composite)"
+  },
+  {
+   "line": 186,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 189,
+   "label": "(unlabeled)",
+   "handler": "() => setSelectedDate(day)"
+  },
+  {
+   "line": 219,
+   "label": "Available slots (next 14 days)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 231,
+   "label": "Available slots (next 14 days)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 234,
+   "label": "(unlabeled)",
+   "handler": "() => setSelectedTime(t)"
+  },
+  {
+   "line": 247,
+   "label": "Booking summary",
+   "handler": "(composite)"
+  },
+  {
+   "line": 265,
+   "label": "Reviews",
+   "handler": "(composite)"
+  },
+  {
+   "line": 268,
+   "label": "(unlabeled)",
+   "handler": "handleBook"
+  },
+  {
+   "line": 277,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "broadcast/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 149,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 151,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 189,
+   "label": "Join Channel",
+   "handler": "join"
+  },
+  {
+   "line": 191,
+   "label": "Join Channel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 224,
+   "label": "(unlabeled)",
+   "handler": "() => toggleLike(item.id)"
+  },
+  {
+   "line": 227,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 257,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 259,
+   "label": "(unlabeled)",
+   "handler": "handleSend"
+  },
+  {
+   "line": 262,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "broadcasts.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 76,
+   "label": "Broadcast Channels",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 78,
+   "label": "Broadcast Channels",
+   "handler": "(composite)"
+  },
+  {
+   "line": 113,
+   "label": "No broadcast channels yet. Check back soon.",
+   "handler": "(composite)"
+  },
+  {
+   "line": 124,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/broadcast/${item.id"
+  },
+  {
+   "line": 134,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 136,
+   "label": "(unlabeled)",
+   "handler": "() => toggleJoin(item.id)"
+  },
+  {
+   "line": 141,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 146,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "bundles.tsx": [
+  {
+   "line": 1,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 64,
+   "label": "Bundle Deals",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 66,
+   "label": "Bundle Deals",
+   "handler": "(composite)"
+  },
+  {
+   "line": 127,
+   "label": "Add bundle to cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 130,
+   "label": "Add bundle to cart",
+   "handler": "() => addBundle(bundle)"
+  },
+  {
+   "line": 135,
+   "label": "Add bundle to cart",
+   "handler": "(composite)"
+  }
+ ],
+ "call.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 83,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 86,
+   "label": "susej Call",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 89,
+   "label": "susej Call",
+   "handler": "(composite)"
+  },
+  {
+   "line": 150,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 153,
+   "label": "(unlabeled)",
+   "handler": "() => setMuted((v) => !v)"
+  },
+  {
+   "line": 158,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 164,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 167,
+   "label": "(unlabeled)",
+   "handler": "() => setCameraOff((v) => !v)"
+  },
+  {
+   "line": 172,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 178,
+   "label": "End",
+   "handler": "(composite)"
+  },
+  {
+   "line": 181,
+   "label": "End",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 184,
+   "label": "End",
+   "handler": "(composite)"
+  }
+ ],
+ "cart.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 152,
+   "label": "Cart",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 154,
+   "label": "Cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 192,
+   "label": "(unlabeled)",
+   "handler": "() => removeFromCart(item.listingId)"
+  },
+  {
+   "line": 194,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 213,
+   "label": "Save for later",
+   "handler": "() => saveForLater(item)"
+  },
+  {
+   "line": 220,
+   "label": "Save for later",
+   "handler": "(composite)"
+  },
+  {
+   "line": 224,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 227,
+   "label": "(unlabeled)",
+   "handler": "() => updateQuantity(item.listingId, item.quantity - 1)"
+  },
+  {
+   "line": 230,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 237,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 240,
+   "label": "(unlabeled)",
+   "handler": "() => updateQuantity(item.listingId, item.quantity + 1)"
+  },
+  {
+   "line": 243,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 262,
+   "label": "",
+   "handler": "(composite)"
+  },
+  {
+   "line": 265,
+   "label": "(unlabeled)",
+   "handler": "applyPromo"
+  },
+  {
+   "line": 270,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 279,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 281,
+   "label": "(unlabeled)",
+   "handler": "() => setSavedOpen((o) => !o)"
+  },
+  {
+   "line": 291,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 338,
+   "label": "Move to cart",
+   "handler": "() => moveToCart(item)"
+  },
+  {
+   "line": 342,
+   "label": "Move to cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 343,
+   "label": "Move to cart",
+   "handler": "() => removeSaved(item.listingId)"
+  },
+  {
+   "line": 347,
+   "label": "Move to cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 405,
+   "label": "Total",
+   "handler": "(composite)"
+  },
+  {
+   "line": 406,
+   "label": "Total",
+   "handler": "(composite)"
+  },
+  {
+   "line": 409,
+   "label": "Total",
+   "handler": "(composite)"
+  },
+  {
+   "line": 418,
+   "label": "Proceed to Checkout",
+   "handler": "(composite)"
+  }
+ ],
+ "categories-manager.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 93,
+   "label": "Categories & Sub-categories",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 95,
+   "label": "Categories & Sub-categories",
+   "handler": "(composite)"
+  },
+  {
+   "line": 111,
+   "label": "Main category",
+   "handler": "(composite)"
+  },
+  {
+   "line": 113,
+   "label": "(unlabeled)",
+   "handler": "() => handleMainChange(c.id)"
+  },
+  {
+   "line": 120,
+   "label": "Sub-categories",
+   "handler": "(composite)"
+  },
+  {
+   "line": 169,
+   "label": "Save",
+   "handler": "(composite)"
+  },
+  {
+   "line": 172,
+   "label": "Save",
+   "handler": "handleSave"
+  },
+  {
+   "line": 177,
+   "label": "Save",
+   "handler": "(composite)"
+  }
+ ],
+ "category/index.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 51,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 53,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 91,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 96,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/category/${slugFor(cat.label)"
+  },
+  {
+   "line": 115,
+   "label": "Trending Now",
+   "handler": "(composite)"
+  },
+  {
+   "line": 122,
+   "label": "Trending Now",
+   "handler": "() => router.push('/search')"
+  },
+  {
+   "line": 124,
+   "label": "Trending Now",
+   "handler": "(composite)"
+  },
+  {
+   "line": 133,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 138,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${post.id"
+  },
+  {
+   "line": 155,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "category/[slug].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 123,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 125,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 156,
+   "label": "Book a Service",
+   "handler": "(composite)"
+  },
+  {
+   "line": 159,
+   "label": "Book a Service",
+   "handler": "() => router.push('/book-service')"
+  },
+  {
+   "line": 164,
+   "label": "Book a Service",
+   "handler": "(composite)"
+  },
+  {
+   "line": 175,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 177,
+   "label": "(unlabeled)",
+   "handler": "() => setActiveCategory(item)"
+  },
+  {
+   "line": 182,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 208,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 211,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${item.id"
+  },
+  {
+   "line": 229,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "checkout.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 150,
+   "label": "Checkout",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 152,
+   "label": "Checkout",
+   "handler": "(composite)"
+  },
+  {
+   "line": 166,
+   "label": "Your cart is empty",
+   "handler": "(composite)"
+  },
+  {
+   "line": 169,
+   "label": "Add items to your cart before checking out",
+   "handler": "() => router.replace('/(tabs)/feed')"
+  },
+  {
+   "line": 172,
+   "label": "Browse Feed",
+   "handler": "(composite)"
+  },
+  {
+   "line": 182,
+   "label": "Checkout",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 184,
+   "label": "Checkout",
+   "handler": "(composite)"
+  },
+  {
+   "line": 193,
+   "label": "Checkout",
+   "handler": "(composite)"
+  },
+  {
+   "line": 205,
+   "label": "Delivery Address",
+   "handler": "() => router.push('/address-book')"
+  },
+  {
+   "line": 236,
+   "label": "Add a delivery address to continue",
+   "handler": "(composite)"
+  },
+  {
+   "line": 239,
+   "label": "Add a delivery address to continue",
+   "handler": "(composite)"
+  },
+  {
+   "line": 251,
+   "label": "Payment Method",
+   "handler": "() => router.push('/payment-methods')"
+  },
+  {
+   "line": 271,
+   "label": "Choose how you want to pay",
+   "handler": "(composite)"
+  },
+  {
+   "line": 303,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 307,
+   "label": "(unlabeled)",
+   "handler": "() => setEmiPlan(months)"
+  },
+  {
+   "line": 315,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 404,
+   "label": "Total",
+   "handler": "(composite)"
+  },
+  {
+   "line": 408,
+   "label": "Total",
+   "handler": "handlePlaceOrder"
+  },
+  {
+   "line": 417,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "communities.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 55,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 57,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 70,
+   "label": "Your Communities",
+   "handler": "(composite)"
+  },
+  {
+   "line": 73,
+   "label": "Your Communities",
+   "handler": "() => setShowAll((v) => !v)"
+  },
+  {
+   "line": 77,
+   "label": "Your Communities",
+   "handler": "(composite)"
+  },
+  {
+   "line": 89,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 93,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/community/${c.id"
+  },
+  {
+   "line": 107,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 113,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 117,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/community/${c.id"
+  },
+  {
+   "line": 130,
+   "label": "Discover Communities",
+   "handler": "(composite)"
+  },
+  {
+   "line": 142,
+   "label": "Discover Communities",
+   "handler": "(composite)"
+  },
+  {
+   "line": 144,
+   "label": "Discover Communities",
+   "handler": "() => setActiveCategory(cat)"
+  },
+  {
+   "line": 152,
+   "label": "No communities in this category yet",
+   "handler": "(composite)"
+  },
+  {
+   "line": 166,
+   "label": "No communities in this category yet",
+   "handler": "(composite)"
+  },
+  {
+   "line": 179,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/community/${dc.id"
+  },
+  {
+   "line": 202,
+   "label": "Join",
+   "handler": "(composite)"
+  },
+  {
+   "line": 204,
+   "label": "Join",
+   "handler": "() => join(dc.id)"
+  },
+  {
+   "line": 207,
+   "label": "Join",
+   "handler": "(composite)"
+  },
+  {
+   "line": 210,
+   "label": "Join",
+   "handler": "(composite)"
+  },
+  {
+   "line": 216,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 222,
+   "label": "Explore Broadcast Channels",
+   "handler": "() => router.push('/broadcasts')"
+  },
+  {
+   "line": 230,
+   "label": "Explore Broadcast Channels",
+   "handler": "(composite)"
+  },
+  {
+   "line": 247,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${item.id"
+  }
+ ],
+ "community/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 197,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 199,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 222,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 224,
+   "label": "(unlabeled)",
+   "handler": "() => (community?.joined ? leave(communityId) : join(communityId))"
+  },
+  {
+   "line": 232,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 236,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 239,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/community-members/${communityId"
+  },
+  {
+   "line": 246,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 304,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 312,
+   "label": "(unlabeled)",
+   "handler": "() => handleVote(p.id, i)"
+  },
+  {
+   "line": 341,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 414,
+   "label": "Create a poll",
+   "handler": "cancelPoll"
+  },
+  {
+   "line": 416,
+   "label": "Create a poll",
+   "handler": "(composite)"
+  },
+  {
+   "line": 441,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 444,
+   "label": "(unlabeled)",
+   "handler": "() => removePollOption(i)"
+  },
+  {
+   "line": 447,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 452,
+   "label": "Add option",
+   "handler": "(composite)"
+  },
+  {
+   "line": 454,
+   "label": "Add option",
+   "handler": "() => setPollOptions((prev) => [...prev, ''])"
+  },
+  {
+   "line": 460,
+   "label": "Add option",
+   "handler": "(composite)"
+  },
+  {
+   "line": 463,
+   "label": "Add option",
+   "handler": "(composite)"
+  },
+  {
+   "line": 466,
+   "label": "Cancel",
+   "handler": "cancelPoll"
+  },
+  {
+   "line": 471,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 472,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 475,
+   "label": "Cancel",
+   "handler": "sendPoll"
+  },
+  {
+   "line": 480,
+   "label": "Send poll",
+   "handler": "(composite)"
+  },
+  {
+   "line": 486,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 489,
+   "label": "(unlabeled)",
+   "handler": "() => setShowPollBuilder((v) => !v)"
+  },
+  {
+   "line": 492,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 504,
+   "label": "(unlabeled)",
+   "handler": "handleSend"
+  },
+  {
+   "line": 506,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "community-members/[id].tsx": [
+  {
+   "line": 1,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 61,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 63,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/seller/${m.username"
+  },
+  {
+   "line": 93,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 104,
+   "label": "Members",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 106,
+   "label": "Members",
+   "handler": "(composite)"
+  },
+  {
+   "line": 115,
+   "label": "Members",
+   "handler": "(composite)"
+  },
+  {
+   "line": 118,
+   "label": "Invite",
+   "handler": "handleInvite"
+  },
+  {
+   "line": 123,
+   "label": "Invite",
+   "handler": "(composite)"
+  }
+ ],
+ "compare.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 137,
+   "label": "Compare",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 139,
+   "label": "Compare",
+   "handler": "(composite)"
+  },
+  {
+   "line": 180,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${post.id"
+  },
+  {
+   "line": 190,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "create-community.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 41,
+   "label": "Create Community",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 43,
+   "label": "Create Community",
+   "handler": "(composite)"
+  },
+  {
+   "line": 78,
+   "label": "Category",
+   "handler": "(composite)"
+  },
+  {
+   "line": 81,
+   "label": "Category",
+   "handler": "() => setCategory(active ? '' : cat.label)"
+  },
+  {
+   "line": 86,
+   "label": "Description",
+   "handler": "(composite)"
+  },
+  {
+   "line": 118,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 122,
+   "label": "Create Community",
+   "handler": "handleCreate"
+  },
+  {
+   "line": 132,
+   "label": "Create Community",
+   "handler": "(composite)"
+  }
+ ],
+ "create-reel.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 72,
+   "label": "Reels are for sellers",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 74,
+   "label": "Reels are for sellers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 83,
+   "label": "Reels are for sellers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 84,
+   "label": "Reels are for sellers",
+   "handler": "() => router.push('/become-seller')"
+  },
+  {
+   "line": 91,
+   "label": "Become a Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 157,
+   "label": "Create Reel",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 159,
+   "label": "Create Reel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 163,
+   "label": "Create Reel",
+   "handler": "handlePublish"
+  },
+  {
+   "line": 170,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 202,
+   "label": "Choose video from gallery",
+   "handler": "(composite)"
+  },
+  {
+   "line": 206,
+   "label": "Choose video from gallery",
+   "handler": "pickFromGallery"
+  },
+  {
+   "line": 211,
+   "label": "Choose video from gallery",
+   "handler": "(composite)"
+  },
+  {
+   "line": 240,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 244,
+   "label": "Publish to Reels",
+   "handler": "handlePublish"
+  },
+  {
+   "line": 254,
+   "label": "Publish to Reels",
+   "handler": "(composite)"
+  }
+ ],
+ "create-story.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 84,
+   "label": "Stories are for sellers",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 86,
+   "label": "Stories are for sellers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 95,
+   "label": "Stories are for sellers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 96,
+   "label": "Stories are for sellers",
+   "handler": "() => router.push('/become-seller')"
+  },
+  {
+   "line": 103,
+   "label": "Become a Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 225,
+   "label": "Back to editing",
+   "handler": "(composite)"
+  },
+  {
+   "line": 226,
+   "label": "Back to editing",
+   "handler": "() => setStep('edit')"
+  },
+  {
+   "line": 231,
+   "label": "Back to editing",
+   "handler": "(composite)"
+  },
+  {
+   "line": 273,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 291,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 306,
+   "label": "Edit",
+   "handler": "(composite)"
+  },
+  {
+   "line": 309,
+   "label": "Edit",
+   "handler": "() => setStep('edit')"
+  },
+  {
+   "line": 313,
+   "label": "Edit",
+   "handler": "(composite)"
+  },
+  {
+   "line": 314,
+   "label": "Edit",
+   "handler": "(composite)"
+  },
+  {
+   "line": 317,
+   "label": "Edit",
+   "handler": "handlePost"
+  },
+  {
+   "line": 328,
+   "label": "Post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 338,
+   "label": "Create Story",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 340,
+   "label": "Create Story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 344,
+   "label": "Create Story",
+   "handler": "openPreview"
+  },
+  {
+   "line": 351,
+   "label": "Preview",
+   "handler": "(composite)"
+  },
+  {
+   "line": 373,
+   "label": "Choose image from gallery",
+   "handler": "(composite)"
+  },
+  {
+   "line": 377,
+   "label": "Choose image from gallery",
+   "handler": "pickFromGallery"
+  },
+  {
+   "line": 382,
+   "label": "Choose image from gallery",
+   "handler": "(composite)"
+  },
+  {
+   "line": 403,
+   "label": "Add text overlay",
+   "handler": "(composite)"
+  },
+  {
+   "line": 405,
+   "label": "Add text overlay",
+   "handler": "() => setShowTextForm((v) => !v)"
+  },
+  {
+   "line": 412,
+   "label": "Add text overlay",
+   "handler": "(composite)"
+  },
+  {
+   "line": 413,
+   "label": "Add text overlay",
+   "handler": "(composite)"
+  },
+  {
+   "line": 415,
+   "label": "Add text overlay",
+   "handler": "() => setShowProductPicker((v) => !v)"
+  },
+  {
+   "line": 422,
+   "label": "Attach a product",
+   "handler": "(composite)"
+  },
+  {
+   "line": 438,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 442,
+   "label": "(unlabeled)",
+   "handler": "() => setTextZone(z)"
+  },
+  {
+   "line": 447,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 449,
+   "label": "Add",
+   "handler": "(composite)"
+  },
+  {
+   "line": 452,
+   "label": "Add",
+   "handler": "addOverlay"
+  },
+  {
+   "line": 458,
+   "label": "Add",
+   "handler": "(composite)"
+  },
+  {
+   "line": 467,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 470,
+   "label": "(unlabeled)",
+   "handler": "() => setOverlays((cur) => cur.filter((_, j) => j !== i))"
+  },
+  {
+   "line": 478,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 494,
+   "label": "No active listings to attach.",
+   "handler": "(composite)"
+  },
+  {
+   "line": 498,
+   "label": "(unlabeled)",
+   "handler": "() => setAttachedProduct(active ? null : { id: p.id, title: p.description.slice("
+  },
+  {
+   "line": 510,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 522,
+   "label": "Remove attached product",
+   "handler": "() => setAttachedProduct(null)"
+  },
+  {
+   "line": 524,
+   "label": "Remove attached product",
+   "handler": "(composite)"
+  },
+  {
+   "line": 548,
+   "label": "Story length",
+   "handler": "(composite)"
+  },
+  {
+   "line": 552,
+   "label": "(unlabeled)",
+   "handler": "() => setDurationMs(d.ms)"
+  },
+  {
+   "line": 559,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 565,
+   "label": "Preview story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 569,
+   "label": "Preview story",
+   "handler": "openPreview"
+  },
+  {
+   "line": 575,
+   "label": "Preview story",
+   "handler": "(composite)"
+  }
+ ],
+ "dispute/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 105,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 107,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 126,
+   "label": "Dispute not found",
+   "handler": "(composite)"
+  },
+  {
+   "line": 129,
+   "label": "This dispute may have been removed.",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 134,
+   "label": "Go back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 250,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 253,
+   "label": "(unlabeled)",
+   "handler": "sendResponse"
+  },
+  {
+   "line": 256,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "disputes.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 151,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 155,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/dispute/${dispute.id"
+  },
+  {
+   "line": 178,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 186,
+   "label": "Disputes",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 188,
+   "label": "Disputes",
+   "handler": "(composite)"
+  },
+  {
+   "line": 202,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 205,
+   "label": "(unlabeled)",
+   "handler": "() => (showForm ? setShowForm(false) : openForm())"
+  },
+  {
+   "line": 210,
+   "label": "New dispute",
+   "handler": "(composite)"
+  },
+  {
+   "line": 237,
+   "label": "REASON",
+   "handler": "(composite)"
+  },
+  {
+   "line": 241,
+   "label": "(unlabeled)",
+   "handler": "() => setReason(r)"
+  },
+  {
+   "line": 246,
+   "label": "DESCRIPTION",
+   "handler": "(composite)"
+  },
+  {
+   "line": 262,
+   "label": "Submit dispute",
+   "handler": "(composite)"
+  },
+  {
+   "line": 266,
+   "label": "Submit dispute",
+   "handler": "createDispute"
+  },
+  {
+   "line": 271,
+   "label": "Submit dispute",
+   "handler": "(composite)"
+  }
+ ],
+ "edit-profile.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 150,
+   "label": "Edit Profile",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 152,
+   "label": "Edit Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 156,
+   "label": "Edit Profile",
+   "handler": "handleSave"
+  },
+  {
+   "line": 160,
+   "label": "Edit Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 173,
+   "label": "Change profile photo",
+   "handler": "pickAvatar"
+  },
+  {
+   "line": 177,
+   "label": "Change profile photo",
+   "handler": "(composite)"
+  },
+  {
+   "line": 240,
+   "label": "Category",
+   "handler": "(composite)"
+  },
+  {
+   "line": 242,
+   "label": "Category",
+   "handler": "() => { setCategory(cat); setShowCategoryPicker(false); "
+  },
+  {
+   "line": 249,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 253,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 254,
+   "label": "(unlabeled)",
+   "handler": "() => setShowCategoryPicker(true)"
+  },
+  {
+   "line": 260,
+   "label": "Shop Name",
+   "handler": "(composite)"
+  },
+  {
+   "line": 280,
+   "label": "Business Address",
+   "handler": "(composite)"
+  },
+  {
+   "line": 282,
+   "label": "Business Address",
+   "handler": "(composite)"
+  },
+  {
+   "line": 293,
+   "label": "Privacy",
+   "handler": "(composite)"
+  },
+  {
+   "line": 341,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 342,
+   "label": "(unlabeled)",
+   "handler": "handleDeactivate"
+  },
+  {
+   "line": 349,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 385,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 388,
+   "label": "Cancel",
+   "handler": "() => setShowAddressEditor(false)"
+  },
+  {
+   "line": 393,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 394,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 397,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 405,
+   "label": "Save",
+   "handler": "(composite)"
+  }
+ ],
+ "edit-shop.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 137,
+   "label": "Edit Shop Profile",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 139,
+   "label": "Edit Shop Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 143,
+   "label": "Edit Shop Profile",
+   "handler": "save"
+  },
+  {
+   "line": 147,
+   "label": "Edit Shop Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 153,
+   "label": "(unlabeled)",
+   "handler": "pickStorePhoto"
+  },
+  {
+   "line": 170,
+   "label": "Official Store Name",
+   "handler": "(composite)"
+  },
+  {
+   "line": 171,
+   "label": "Official Store Name",
+   "handler": "pickStorePhoto"
+  },
+  {
+   "line": 175,
+   "label": "About your store",
+   "handler": "(composite)"
+  },
+  {
+   "line": 198,
+   "label": "Use current location",
+   "handler": "() => router.push('/map')"
+  },
+  {
+   "line": 203,
+   "label": "Use current location",
+   "handler": "(composite)"
+  },
+  {
+   "line": 230,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 232,
+   "label": "(unlabeled)",
+   "handler": "() => setCategory(on ? '' : c.id)"
+  },
+  {
+   "line": 239,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 265,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 268,
+   "label": "Deactivate Shop",
+   "handler": "(composite)"
+  },
+  {
+   "line": 279,
+   "label": "Deactivate Shop",
+   "handler": "(composite)"
+  },
+  {
+   "line": 285,
+   "label": "Save Changes",
+   "handler": "save"
+  },
+  {
+   "line": 289,
+   "label": "Save Changes",
+   "handler": "(composite)"
+  }
+ ],
+ "followers.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 55,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 58,
+   "label": "(unlabeled)",
+   "handler": "() => setTab(value)"
+  },
+  {
+   "line": 66,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 76,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 78,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 97,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 99,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/seller/${item.username"
+  },
+  {
+   "line": 115,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 118,
+   "label": "(unlabeled)",
+   "handler": "() => toggleFollow(item.username)"
+  },
+  {
+   "line": 123,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 125,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 128,
+   "label": "(unlabeled)",
+   "handler": "() => toggleFollow(item.username)"
+  },
+  {
+   "line": 133,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 135,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "food-hub.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 129,
+   "label": "(unlabeled)",
+   "handler": "openItem"
+  },
+  {
+   "line": 134,
+   "label": "(unlabeled)",
+   "handler": "(e) => { e.stopPropagation(); if (item.postId) router.push(`/seller/${item.selle"
+  },
+  {
+   "line": 157,
+   "label": "(unlabeled)",
+   "handler": "handleMore"
+  },
+  {
+   "line": 159,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 160,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 182,
+   "label": "(unlabeled)",
+   "handler": "(e) => { e.stopPropagation(); toggleLike(); "
+  },
+  {
+   "line": 185,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 186,
+   "label": "(unlabeled)",
+   "handler": "(e) => { e.stopPropagation(); openItem(); "
+  },
+  {
+   "line": 189,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 190,
+   "label": "(unlabeled)",
+   "handler": "handleShare"
+  },
+  {
+   "line": 192,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 194,
+   "label": "(unlabeled)",
+   "handler": "(e) => { e.stopPropagation(); toggleBookmark({ productId: item.id, sellerName: i"
+  },
+  {
+   "line": 196,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 222,
+   "label": "Buy Now",
+   "handler": "(e) => { e.stopPropagation(); handleBuy(); "
+  },
+  {
+   "line": 224,
+   "label": "Buy Now",
+   "handler": "(composite)"
+  },
+  {
+   "line": 225,
+   "label": "Buy Now",
+   "handler": "(e) => { e.stopPropagation(); router.push(`/(tabs)/chat?seller=${item.sellerUser"
+  },
+  {
+   "line": 227,
+   "label": "Buy Now",
+   "handler": "(composite)"
+  },
+  {
+   "line": 230,
+   "label": "Buy Now",
+   "handler": "(composite)"
+  },
+  {
+   "line": 257,
+   "label": "(unlabeled)",
+   "handler": "onClose"
+  },
+  {
+   "line": 268,
+   "label": "(unlabeled)",
+   "handler": "() => setSelected(null)"
+  },
+  {
+   "line": 270,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 309,
+   "label": "View Cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 312,
+   "label": "View Cart",
+   "handler": "() => router.push('/cart')"
+  },
+  {
+   "line": 317,
+   "label": "View Cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 319,
+   "label": "View Cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 322,
+   "label": "View Cart",
+   "handler": "() => handleAdd(selected)"
+  },
+  {
+   "line": 327,
+   "label": "Add to Cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 357,
+   "label": "No items on this menu yet.",
+   "handler": "(composite)"
+  },
+  {
+   "line": 360,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 389,
+   "label": "In Cart",
+   "handler": "() => router.push('/cart')"
+  },
+  {
+   "line": 393,
+   "label": "In Cart",
+   "handler": "(composite)"
+  },
+  {
+   "line": 395,
+   "label": "In Cart",
+   "handler": "() => handleAdd(item)"
+  },
+  {
+   "line": 399,
+   "label": "Add",
+   "handler": "(composite)"
+  },
+  {
+   "line": 402,
+   "label": "Add",
+   "handler": "(composite)"
+  },
+  {
+   "line": 469,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 471,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 474,
+   "label": "susej",
+   "handler": "() => router.push('/notifications')"
+  },
+  {
+   "line": 476,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 477,
+   "label": "susej",
+   "handler": "() => router.push('/search')"
+  },
+  {
+   "line": 479,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 497,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 501,
+   "label": "(unlabeled)",
+   "handler": "() => openSeller(seller)"
+  },
+  {
+   "line": 515,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "foryou.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 151,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${post.id"
+  },
+  {
+   "line": 161,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 195,
+   "label": "For You",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 197,
+   "label": "For You",
+   "handler": "(composite)"
+  },
+  {
+   "line": 212,
+   "label": "You're new here — let's explore!",
+   "handler": "() => router.push('/category')"
+  },
+  {
+   "line": 214,
+   "label": "You're new here — let's explore!",
+   "handler": "(composite)"
+  },
+  {
+   "line": 215,
+   "label": "You're new here — let's explore!",
+   "handler": "() => router.push('/explore')"
+  },
+  {
+   "line": 217,
+   "label": "Browse categories",
+   "handler": "(composite)"
+  }
+ ],
+ "hashtag/[tag].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 50,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 52,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 75,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 77,
+   "label": "(unlabeled)",
+   "handler": "() => toggleHashtag(tag ?? '')"
+  },
+  {
+   "line": 82,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 87,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 90,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${item.id"
+  },
+  {
+   "line": 109,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "listings-manager.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 119,
+   "label": "My Listings",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 121,
+   "label": "My Listings",
+   "handler": "(composite)"
+  },
+  {
+   "line": 127,
+   "label": "My Listings",
+   "handler": "() => router.push('/(tabs)/create')"
+  },
+  {
+   "line": 132,
+   "label": "New",
+   "handler": "(composite)"
+  },
+  {
+   "line": 157,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 159,
+   "label": "(unlabeled)",
+   "handler": "() => setTab(t)"
+  },
+  {
+   "line": 179,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 189,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 191,
+   "label": "(unlabeled)",
+   "handler": "() => setCategory(c)"
+  },
+  {
+   "line": 202,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 226,
+   "label": "No listings here",
+   "handler": "(composite)"
+  },
+  {
+   "line": 229,
+   "label": "+ New Listing",
+   "handler": "() => router.push('/(tabs)/create')"
+  },
+  {
+   "line": 234,
+   "label": "+ New Listing",
+   "handler": "(composite)"
+  },
+  {
+   "line": 256,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${l.id"
+  },
+  {
+   "line": 305,
+   "label": "Add image",
+   "handler": "() => router.push('/(tabs)/create')"
+  },
+  {
+   "line": 307,
+   "label": "Add image",
+   "handler": "(composite)"
+  },
+  {
+   "line": 310,
+   "label": "Add image",
+   "handler": "(composite)"
+  },
+  {
+   "line": 314,
+   "label": "Add image",
+   "handler": "(composite)"
+  },
+  {
+   "line": 316,
+   "label": "Top Deal",
+   "handler": "() => toggleFeatured(l.id)"
+  },
+  {
+   "line": 322,
+   "label": "Top Deal",
+   "handler": "(composite)"
+  },
+  {
+   "line": 323,
+   "label": "Top Deal",
+   "handler": "(composite)"
+  },
+  {
+   "line": 326,
+   "label": "Top Deal",
+   "handler": "() => router.push(`/product/${l.id"
+  },
+  {
+   "line": 332,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 333,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 336,
+   "label": "View",
+   "handler": "() => toggleSold(l.id)"
+  },
+  {
+   "line": 346,
+   "label": "Delete",
+   "handler": "(composite)"
+  },
+  {
+   "line": 347,
+   "label": "Delete",
+   "handler": "(composite)"
+  },
+  {
+   "line": 350,
+   "label": "Delete",
+   "handler": "() => removeListing(l.id, title)"
+  },
+  {
+   "line": 356,
+   "label": "Delete",
+   "handler": "(composite)"
+  }
+ ],
+ "live/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 43,
+   "label": "Stream ended or no longer available",
+   "handler": "(composite)"
+  },
+  {
+   "line": 44,
+   "label": "Stream ended or no longer available",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 51,
+   "label": "Back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 58,
+   "label": "Back",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 62,
+   "label": "Back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 78,
+   "label": "View shop",
+   "handler": "(composite)"
+  },
+  {
+   "line": 79,
+   "label": "View shop",
+   "handler": "() => router.replace(`/seller/${room.hostUsername"
+  },
+  {
+   "line": 86,
+   "label": "View shop",
+   "handler": "(composite)"
+  }
+ ],
+ "live.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 68,
+   "label": "Live Shopping",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 70,
+   "label": "Live Shopping",
+   "handler": "(composite)"
+  },
+  {
+   "line": 74,
+   "label": "Live Shopping",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 76,
+   "label": "Live Shopping",
+   "handler": "(composite)"
+  },
+  {
+   "line": 94,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 99,
+   "label": "LIVE",
+   "handler": "() => !mine && router.push(`/seller/${s.hostUsername"
+  },
+  {
+   "line": 116,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 117,
+   "label": "(unlabeled)",
+   "handler": "() => endStream(s.id)"
+  },
+  {
+   "line": 125,
+   "label": "View shop",
+   "handler": "(composite)"
+  },
+  {
+   "line": 133,
+   "label": "View shop",
+   "handler": "(composite)"
+  }
+ ],
+ "login.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 148,
+   "label": "susej",
+   "handler": "() => (router.canGoBack() ? router.back() : router.replace('/'))"
+  },
+  {
+   "line": 150,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 169,
+   "label": "Sign in to continue to the marketplace.",
+   "handler": "(composite)"
+  },
+  {
+   "line": 173,
+   "label": "(unlabeled)",
+   "handler": "() => { setMode(m); setError(''); "
+  },
+  {
+   "line": 178,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 186,
+   "label": "(unlabeled)",
+   "handler": "() => setShowCountryPicker(true)"
+  },
+  {
+   "line": 193,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 211,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 214,
+   "label": "(unlabeled)",
+   "handler": "requestOtp"
+  },
+  {
+   "line": 220,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 223,
+   "label": "(unlabeled)",
+   "handler": "() => router.replace('/(onboarding)/auth')"
+  },
+  {
+   "line": 269,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 273,
+   "label": "(unlabeled)",
+   "handler": "handleVerify"
+  },
+  {
+   "line": 278,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 279,
+   "label": "(unlabeled)",
+   "handler": "requestOtp"
+  },
+  {
+   "line": 283,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 323,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 332,
+   "label": "(unlabeled)",
+   "handler": "handleEmailAuth"
+  },
+  {
+   "line": 337,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 340,
+   "label": "(unlabeled)",
+   "handler": "() => { setEmailRegister(!emailRegister); setError(''); "
+  },
+  {
+   "line": 350,
+   "label": "Select country",
+   "handler": "() => setShowCountryPicker(false)"
+  },
+  {
+   "line": 355,
+   "label": "Select country",
+   "handler": "() => { setCountryCode(item.code); setShowCountryPicker(false); "
+  },
+  {
+   "line": 359,
+   "label": "Select country",
+   "handler": "(composite)"
+  },
+  {
+   "line": 363,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "loyalty.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 212,
+   "label": "Loyalty Points",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 214,
+   "label": "Loyalty Points",
+   "handler": "(composite)"
+  },
+  {
+   "line": 291,
+   "label": "Rewards",
+   "handler": "(composite)"
+  },
+  {
+   "line": 294,
+   "label": "Rewards",
+   "handler": "() => setCouponsOpen(true)"
+  },
+  {
+   "line": 299,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 329,
+   "label": "Redeemed ✓",
+   "handler": "(composite)"
+  },
+  {
+   "line": 333,
+   "label": "Redeem",
+   "handler": "() => redeem(reward)"
+  },
+  {
+   "line": 338,
+   "label": "Redeem",
+   "handler": "(composite)"
+  },
+  {
+   "line": 388,
+   "label": "Apply this code at checkout — saved in My Coupons.",
+   "handler": "(composite)"
+  },
+  {
+   "line": 391,
+   "label": "Apply this code at checkout — saved in My Coupons.",
+   "handler": "() => setLastCoupon(null)"
+  },
+  {
+   "line": 396,
+   "label": "Done",
+   "handler": "(composite)"
+  },
+  {
+   "line": 404,
+   "label": "(unlabeled)",
+   "handler": "() => setCouponsOpen(false)"
+  },
+  {
+   "line": 413,
+   "label": "No coupons yet",
+   "handler": "() => setCouponsOpen(false)"
+  },
+  {
+   "line": 415,
+   "label": "No coupons yet",
+   "handler": "(composite)"
+  }
+ ],
+ "map.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 293,
+   "label": "Search nearby...",
+   "handler": "(composite)"
+  },
+  {
+   "line": 296,
+   "label": "Search nearby...",
+   "handler": "() => router.push('/search')"
+  },
+  {
+   "line": 303,
+   "label": "Search nearby...",
+   "handler": "(composite)"
+  },
+  {
+   "line": 309,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 312,
+   "label": "(unlabeled)",
+   "handler": "() => switchView(v)"
+  },
+  {
+   "line": 317,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 325,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 328,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 339,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 358,
+   "label": "View Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 360,
+   "label": "View Profile",
+   "handler": "() => router.push(`/seller/${s.username"
+  },
+  {
+   "line": 363,
+   "label": "View Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 364,
+   "label": "View Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 366,
+   "label": "View Profile",
+   "handler": "() => router.push('/(tabs)/chat')"
+  },
+  {
+   "line": 369,
+   "label": "View Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 394,
+   "label": "View Chat",
+   "handler": "(composite)"
+  },
+  {
+   "line": 396,
+   "label": "View Chat",
+   "handler": "() => router.push(`/community/${c.id"
+  },
+  {
+   "line": 399,
+   "label": "View Chat",
+   "handler": "(composite)"
+  },
+  {
+   "line": 400,
+   "label": "View Chat",
+   "handler": "(composite)"
+  },
+  {
+   "line": 402,
+   "label": "View Chat",
+   "handler": "() => toggleJoin(c.id)"
+  },
+  {
+   "line": 407,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 437,
+   "label": "Near You",
+   "handler": "(composite)"
+  },
+  {
+   "line": 439,
+   "label": "Near You",
+   "handler": "() => router.push('/search')"
+  },
+  {
+   "line": 442,
+   "label": "Explore",
+   "handler": "(composite)"
+  },
+  {
+   "line": 476,
+   "label": "(unlabeled)",
+   "handler": "() => setSelectedSeller(null)"
+  },
+  {
+   "line": 478,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 484,
+   "label": "View Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 486,
+   "label": "View Profile",
+   "handler": "() => router.push(`/seller/${selectedSeller.username"
+  },
+  {
+   "line": 489,
+   "label": "View Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 490,
+   "label": "View Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 492,
+   "label": "View Profile",
+   "handler": "() => router.push('/(tabs)/chat')"
+  },
+  {
+   "line": 496,
+   "label": "View Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 532,
+   "label": "View Chat",
+   "handler": "() => setSelectedCommunityId(null)"
+  },
+  {
+   "line": 534,
+   "label": "View Chat",
+   "handler": "(composite)"
+  },
+  {
+   "line": 537,
+   "label": "View Chat",
+   "handler": "(composite)"
+  },
+  {
+   "line": 539,
+   "label": "View Chat",
+   "handler": "() => router.push(`/community/${selectedCommunity.id"
+  },
+  {
+   "line": 542,
+   "label": "View Chat",
+   "handler": "(composite)"
+  },
+  {
+   "line": 543,
+   "label": "View Chat",
+   "handler": "(composite)"
+  },
+  {
+   "line": 545,
+   "label": "View Chat",
+   "handler": "() => toggleJoin(selectedCommunity.id)"
+  },
+  {
+   "line": 552,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 574,
+   "label": "susej",
+   "handler": "() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/feed'))"
+  },
+  {
+   "line": 576,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 578,
+   "label": "susej",
+   "handler": "() => router.push('/notifications')"
+  },
+  {
+   "line": 580,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 584,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 586,
+   "label": "(unlabeled)",
+   "handler": "recenter"
+  },
+  {
+   "line": 592,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 605,
+   "label": "Map unavailable — showing list",
+   "handler": "(composite)"
+  },
+  {
+   "line": 607,
+   "label": "Map unavailable — showing list",
+   "handler": "() => setMapState('loading')"
+  },
+  {
+   "line": 610,
+   "label": "Map unavailable — showing list",
+   "handler": "(composite)"
+  },
+  {
+   "line": 654,
+   "label": "Route",
+   "handler": "(composite)"
+  },
+  {
+   "line": 657,
+   "label": "Route",
+   "handler": "() => setRouteOn((v) => !v)"
+  },
+  {
+   "line": 662,
+   "label": "Route",
+   "handler": "(composite)"
+  },
+  {
+   "line": 665,
+   "label": "Recenter map",
+   "handler": "(composite)"
+  },
+  {
+   "line": 671,
+   "label": "Recenter map",
+   "handler": "recenter"
+  },
+  {
+   "line": 675,
+   "label": "Recenter map",
+   "handler": "(composite)"
+  }
+ ],
+ "notifications.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 160,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 172,
+   "label": "(unlabeled)",
+   "handler": "() => openNotification(item)"
+  },
+  {
+   "line": 193,
+   "label": "Reply",
+   "handler": "(composite)"
+  },
+  {
+   "line": 196,
+   "label": "Reply",
+   "handler": "() => router.push('/(tabs)/chat')"
+  },
+  {
+   "line": 201,
+   "label": "Reply",
+   "handler": "(composite)"
+  },
+  {
+   "line": 202,
+   "label": "Reply",
+   "handler": "(composite)"
+  },
+  {
+   "line": 205,
+   "label": "Reply",
+   "handler": "() => markAsRead(item.id)"
+  },
+  {
+   "line": 210,
+   "label": "Dismiss",
+   "handler": "(composite)"
+  },
+  {
+   "line": 215,
+   "label": "Dismiss",
+   "handler": "(composite)"
+  },
+  {
+   "line": 223,
+   "label": "Notifications",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 225,
+   "label": "Notifications",
+   "handler": "(composite)"
+  },
+  {
+   "line": 230,
+   "label": "Notifications",
+   "handler": "markAllAsRead"
+  },
+  {
+   "line": 234,
+   "label": "Notifications",
+   "handler": "(composite)"
+  },
+  {
+   "line": 235,
+   "label": "Mark all read",
+   "handler": "() => router.push('/settings')"
+  },
+  {
+   "line": 237,
+   "label": "Mark all read",
+   "handler": "(composite)"
+  },
+  {
+   "line": 250,
+   "label": "(unlabeled)",
+   "handler": "() => setActiveTab(tab)"
+  },
+  {
+   "line": 260,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "order/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 60,
+   "label": "Order Details",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 62,
+   "label": "Order Details",
+   "handler": "(composite)"
+  },
+  {
+   "line": 76,
+   "label": "Order not found",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 78,
+   "label": "Order not found",
+   "handler": "(composite)"
+  },
+  {
+   "line": 94,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 132,
+   "label": "Order Details",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 134,
+   "label": "Order Details",
+   "handler": "(composite)"
+  },
+  {
+   "line": 293,
+   "label": "Refund",
+   "handler": "(composite)"
+  },
+  {
+   "line": 296,
+   "label": "Refund",
+   "handler": "() => router.push(`/refund/${order!.id"
+  },
+  {
+   "line": 317,
+   "label": "Not happy with your order?",
+   "handler": "(composite)"
+  },
+  {
+   "line": 329,
+   "label": "Not happy with your order?",
+   "handler": "(composite)"
+  },
+  {
+   "line": 332,
+   "label": "(unlabeled)",
+   "handler": "() => { setShowRefundPicker((v) => !v); setRefundReason(null); "
+  },
+  {
+   "line": 337,
+   "label": "REASON",
+   "handler": "(composite)"
+  },
+  {
+   "line": 348,
+   "label": "REASON",
+   "handler": "(composite)"
+  },
+  {
+   "line": 352,
+   "label": "(unlabeled)",
+   "handler": "() => setRefundReason(r)"
+  },
+  {
+   "line": 357,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 361,
+   "label": "Confirm refund request",
+   "handler": "(composite)"
+  },
+  {
+   "line": 365,
+   "label": "Confirm refund request",
+   "handler": "submitRefund"
+  },
+  {
+   "line": 370,
+   "label": "Confirm refund request",
+   "handler": "(composite)"
+  },
+  {
+   "line": 378,
+   "label": "Cancel Order",
+   "handler": "(composite)"
+  },
+  {
+   "line": 381,
+   "label": "Cancel Order",
+   "handler": "confirmCancel"
+  },
+  {
+   "line": 386,
+   "label": "Cancel Order",
+   "handler": "(composite)"
+  },
+  {
+   "line": 391,
+   "label": "Cancel Order",
+   "handler": "(composite)"
+  },
+  {
+   "line": 394,
+   "label": "Track on Map",
+   "handler": "() => router.push(`/track-order?id=${order.id"
+  },
+  {
+   "line": 400,
+   "label": "Track on Map",
+   "handler": "(composite)"
+  },
+  {
+   "line": 402,
+   "label": "Track on Map",
+   "handler": "(composite)"
+  },
+  {
+   "line": 405,
+   "label": "Track on Map",
+   "handler": "() => router.push(`/rate-review?id=${order.id"
+  },
+  {
+   "line": 411,
+   "label": "Rate & Review",
+   "handler": "(composite)"
+  },
+  {
+   "line": 413,
+   "label": "Rate & Review",
+   "handler": "(composite)"
+  },
+  {
+   "line": 416,
+   "label": "Rate & Review",
+   "handler": "() => router.push(`/(tabs)/chat?seller=${order.sellerUsername"
+  },
+  {
+   "line": 422,
+   "label": "Contact Seller",
+   "handler": "(composite)"
+  }
+ ],
+ "orders.tsx": [
+  {
+   "line": 1,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 36,
+   "label": "Order History",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 38,
+   "label": "Order History",
+   "handler": "(composite)"
+  },
+  {
+   "line": 42,
+   "label": "Order History",
+   "handler": "() => router.push('/saved')"
+  },
+  {
+   "line": 46,
+   "label": "Order History",
+   "handler": "(composite)"
+  },
+  {
+   "line": 97,
+   "label": "Rate",
+   "handler": "() => router.push(`/rate-review?id=${item.id"
+  },
+  {
+   "line": 101,
+   "label": "Rate",
+   "handler": "(composite)"
+  },
+  {
+   "line": 103,
+   "label": "Rate",
+   "handler": "() => router.push(`/track-order?id=${item.id"
+  },
+  {
+   "line": 107,
+   "label": "View Details",
+   "handler": "(composite)"
+  },
+  {
+   "line": 119,
+   "label": "No orders yet",
+   "handler": "(composite)"
+  },
+  {
+   "line": 122,
+   "label": "No orders yet",
+   "handler": "() => router.push('/(tabs)/feed')"
+  },
+  {
+   "line": 127,
+   "label": "Browse Feed",
+   "handler": "(composite)"
+  }
+ ],
+ "password-security.tsx": [
+  {
+   "line": 7,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 154,
+   "label": "Password &amp; Security",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 156,
+   "label": "Password &amp; Security",
+   "handler": "(composite)"
+  },
+  {
+   "line": 187,
+   "label": "Save Password",
+   "handler": "(composite)"
+  },
+  {
+   "line": 191,
+   "label": "Save Password",
+   "handler": "savePassword"
+  },
+  {
+   "line": 196,
+   "label": "Save Password",
+   "handler": "(composite)"
+  },
+  {
+   "line": 265,
+   "label": "Not tracked yet",
+   "handler": "signOutOthers"
+  },
+  {
+   "line": 275,
+   "label": "Sessions",
+   "handler": "(composite)"
+  },
+  {
+   "line": 277,
+   "label": "Sign out below clears this device",
+   "handler": "signOutOthers"
+  },
+  {
+   "line": 284,
+   "label": "Sign out of others",
+   "handler": "(composite)"
+  },
+  {
+   "line": 285,
+   "label": "Sign out of others",
+   "handler": "(composite)"
+  },
+  {
+   "line": 303,
+   "label": "Download my data",
+   "handler": "downloadData"
+  },
+  {
+   "line": 313,
+   "label": "Download my data",
+   "handler": "(composite)"
+  },
+  {
+   "line": 315,
+   "label": "Export your posts, chats &amp; orders",
+   "handler": "deleteAccount"
+  },
+  {
+   "line": 325,
+   "label": "Delete account",
+   "handler": "(composite)"
+  }
+ ],
+ "payment-methods.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 97,
+   "label": "Payment Method",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 99,
+   "label": "Payment Method",
+   "handler": "(composite)"
+  },
+  {
+   "line": 117,
+   "label": "Couldn't load payment methods",
+   "handler": "(composite)"
+  },
+  {
+   "line": 120,
+   "label": "Couldn't load payment methods",
+   "handler": "() => router.replace('/payment-methods')"
+  },
+  {
+   "line": 123,
+   "label": "Retry",
+   "handler": "(composite)"
+  },
+  {
+   "line": 136,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 148,
+   "label": "(unlabeled)",
+   "handler": "() => selectMethod(item)"
+  },
+  {
+   "line": 169,
+   "label": "No payment methods",
+   "handler": "(composite)"
+  }
+ ],
+ "product/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 374,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 377,
+   "label": "Listing not found",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 380,
+   "label": "Listing not found",
+   "handler": "(composite)"
+  },
+  {
+   "line": 390,
+   "label": "Listing not found",
+   "handler": "(composite)"
+  },
+  {
+   "line": 393,
+   "label": "Browse the feed",
+   "handler": "() => router.replace('/(tabs)/feed')"
+  },
+  {
+   "line": 398,
+   "label": "Browse the feed",
+   "handler": "(composite)"
+  },
+  {
+   "line": 408,
+   "label": "Listing hidden",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 410,
+   "label": "Listing hidden",
+   "handler": "(composite)"
+  },
+  {
+   "line": 418,
+   "label": "Listing hidden",
+   "handler": "() => router.replace('/(tabs)/feed')"
+  },
+  {
+   "line": 420,
+   "label": "Listing hidden",
+   "handler": "(composite)"
+  },
+  {
+   "line": 430,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 432,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 445,
+   "label": "susej",
+   "handler": "handleShare"
+  },
+  {
+   "line": 447,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 454,
+   "label": "susej",
+   "handler": "() => router.push('/cart')"
+  },
+  {
+   "line": 456,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 540,
+   "label": "OFF",
+   "handler": "(composite)"
+  },
+  {
+   "line": 543,
+   "label": "(unlabeled)",
+   "handler": "handleToggleSave"
+  },
+  {
+   "line": 546,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 547,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 550,
+   "label": "(unlabeled)",
+   "handler": "handleShare"
+  },
+  {
+   "line": 553,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 594,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 596,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/seller/${sellerUsername"
+  },
+  {
+   "line": 617,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 618,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 621,
+   "label": "(unlabeled)",
+   "handler": "() => toggleFollow(sellerUsername)"
+  },
+  {
+   "line": 626,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 680,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 684,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 695,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 715,
+   "label": "Arriving in 30–40 min",
+   "handler": "handleReport"
+  },
+  {
+   "line": 719,
+   "label": "Report listing",
+   "handler": "(composite)"
+  },
+  {
+   "line": 730,
+   "label": "DESCRIPTION",
+   "handler": "(composite)"
+  },
+  {
+   "line": 732,
+   "label": "Comments",
+   "handler": "openComments"
+  },
+  {
+   "line": 749,
+   "label": "View all",
+   "handler": "(composite)"
+  },
+  {
+   "line": 756,
+   "label": "Similar Items",
+   "handler": "() => router.push(`/category/${post?.category?.toLowerCase().replace(/\\s+/g, '-'"
+  },
+  {
+   "line": 760,
+   "label": "Similar Items",
+   "handler": "(composite)"
+  },
+  {
+   "line": 768,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 772,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${item.id"
+  },
+  {
+   "line": 776,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 779,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 794,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 804,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 817,
+   "label": "Recently viewed",
+   "handler": "() => router.push(`/product/${rp.id"
+  },
+  {
+   "line": 827,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 850,
+   "label": "(unlabeled)",
+   "handler": "handlePrimaryAction"
+  },
+  {
+   "line": 854,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 855,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 858,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 867,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 874,
+   "label": "(unlabeled)",
+   "handler": "() => setApplyVisible(false)"
+  },
+  {
+   "line": 883,
+   "label": "FULL NAME",
+   "handler": "() => setApplyVisible(false)"
+  },
+  {
+   "line": 885,
+   "label": "FULL NAME",
+   "handler": "(composite)"
+  },
+  {
+   "line": 923,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 926,
+   "label": "(unlabeled)",
+   "handler": "handleSubmitApplication"
+  },
+  {
+   "line": 931,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 940,
+   "label": "Enquire",
+   "handler": "() => setEnquireVisible(false)"
+  },
+  {
+   "line": 949,
+   "label": "Enquire",
+   "handler": "() => setEnquireVisible(false)"
+  },
+  {
+   "line": 951,
+   "label": "Enquire",
+   "handler": "(composite)"
+  },
+  {
+   "line": 973,
+   "label": "PREFERRED DAY",
+   "handler": "(composite)"
+  },
+  {
+   "line": 977,
+   "label": "(unlabeled)",
+   "handler": "() => setEnquireDay(active ? '' : d)"
+  },
+  {
+   "line": 982,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 988,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 991,
+   "label": "(unlabeled)",
+   "handler": "handleSubmitEnquiry"
+  },
+  {
+   "line": 996,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1005,
+   "label": "Get Quote",
+   "handler": "() => setQuoteVisible(false)"
+  },
+  {
+   "line": 1014,
+   "label": "Get Quote",
+   "handler": "() => setQuoteVisible(false)"
+  },
+  {
+   "line": 1016,
+   "label": "Get Quote",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1043,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1046,
+   "label": "(unlabeled)",
+   "handler": "handleSubmitQuote"
+  },
+  {
+   "line": 1051,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "promotions.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 168,
+   "label": "Promotions & Ads",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 170,
+   "label": "Promotions & Ads",
+   "handler": "(composite)"
+  },
+  {
+   "line": 235,
+   "label": "End early",
+   "handler": "() => endPromotion(p.id)"
+  },
+  {
+   "line": 239,
+   "label": "End early",
+   "handler": "(composite)"
+  },
+  {
+   "line": 262,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 266,
+   "label": "(unlabeled)",
+   "handler": "() => setSelectedPost(p)"
+  },
+  {
+   "line": 271,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 284,
+   "label": "(unlabeled)",
+   "handler": "() => { setSelectedKind(kind); if (pkgs.length > 0 && !pkgs.some(p => p.id === s"
+  },
+  {
+   "line": 296,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 302,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 306,
+   "label": "(unlabeled)",
+   "handler": "() => setSelectedPkg(p.id)"
+  },
+  {
+   "line": 322,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 333,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 337,
+   "label": "(unlabeled)",
+   "handler": "pay"
+  },
+  {
+   "line": 342,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "qr/[username].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 105,
+   "label": "Shop Card",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 107,
+   "label": "Shop Card",
+   "handler": "(composite)"
+  },
+  {
+   "line": 126,
+   "label": "No seller selected",
+   "handler": "(composite)"
+  },
+  {
+   "line": 129,
+   "label": "Go back",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 134,
+   "label": "Go back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 169,
+   "label": "Shop share card — invite people to find your shop",
+   "handler": "(composite)"
+  },
+  {
+   "line": 172,
+   "label": "Shop share card — invite people to find your shop",
+   "handler": "onShare"
+  },
+  {
+   "line": 177,
+   "label": "Share",
+   "handler": "(composite)"
+  }
+ ],
+ "rate-review.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 29,
+   "label": "Write Review",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 31,
+   "label": "Write Review",
+   "handler": "(composite)"
+  },
+  {
+   "line": 40,
+   "label": "Write Review",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 42,
+   "label": "Order not found",
+   "handler": "(composite)"
+  },
+  {
+   "line": 102,
+   "label": "Posted anonymously",
+   "handler": "(composite)"
+  },
+  {
+   "line": 105,
+   "label": "Done",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 108,
+   "label": "Done",
+   "handler": "(composite)"
+  },
+  {
+   "line": 117,
+   "label": "Write Review",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 119,
+   "label": "Write Review",
+   "handler": "(composite)"
+  },
+  {
+   "line": 146,
+   "label": "Tap a star to rate",
+   "handler": "() => setRating(star)"
+  },
+  {
+   "line": 148,
+   "label": "Tap a star to rate",
+   "handler": "(composite)"
+  },
+  {
+   "line": 179,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 182,
+   "label": "(unlabeled)",
+   "handler": "submit"
+  },
+  {
+   "line": 191,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "reels.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 163,
+   "label": "(unlabeled)",
+   "handler": "handleDoubleTapLike"
+  },
+  {
+   "line": 173,
+   "label": "@you",
+   "handler": "(composite)"
+  },
+  {
+   "line": 175,
+   "label": "@you",
+   "handler": "() => router.push('/(tabs)/profile')"
+  },
+  {
+   "line": 180,
+   "label": "@you",
+   "handler": "(composite)"
+  },
+  {
+   "line": 191,
+   "label": "Share",
+   "handler": "toggleLike"
+  },
+  {
+   "line": 196,
+   "label": "Share",
+   "handler": "(composite)"
+  },
+  {
+   "line": 198,
+   "label": "Share",
+   "handler": "handleShare"
+  },
+  {
+   "line": 201,
+   "label": "Share",
+   "handler": "(composite)"
+  },
+  {
+   "line": 280,
+   "label": "No reels yet",
+   "handler": "(composite)"
+  },
+  {
+   "line": 283,
+   "label": "Create a reel",
+   "handler": "() => router.push('/(tabs)/creator?mode=reel')"
+  },
+  {
+   "line": 289,
+   "label": "Create a reel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 307,
+   "label": "Reels",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 309,
+   "label": "Reels",
+   "handler": "(composite)"
+  },
+  {
+   "line": 315,
+   "label": "Reels",
+   "handler": "() => router.push('/(tabs)/creator?mode=reel')"
+  },
+  {
+   "line": 317,
+   "label": "Reels",
+   "handler": "(composite)"
+  },
+  {
+   "line": 319,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 321,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "refer.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 162,
+   "label": "Refer & Earn",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 164,
+   "label": "Refer & Earn",
+   "handler": "(composite)"
+  },
+  {
+   "line": 215,
+   "label": "Shared",
+   "handler": "handleShareCode"
+  },
+  {
+   "line": 220,
+   "label": "Share",
+   "handler": "(composite)"
+  },
+  {
+   "line": 230,
+   "label": "WhatsApp",
+   "handler": "() => handleShare('whatsapp')"
+  },
+  {
+   "line": 235,
+   "label": "WhatsApp",
+   "handler": "(composite)"
+  },
+  {
+   "line": 236,
+   "label": "WhatsApp",
+   "handler": "() => handleShare('generic')"
+  },
+  {
+   "line": 241,
+   "label": "Share",
+   "handler": "(composite)"
+  }
+ ],
+ "refund/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 84,
+   "label": "Refund Details",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 86,
+   "label": "Refund Details",
+   "handler": "(composite)"
+  },
+  {
+   "line": 105,
+   "label": "Refund not found",
+   "handler": "(composite)"
+  },
+  {
+   "line": 108,
+   "label": "This refund may have been removed.",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 113,
+   "label": "Go back",
+   "handler": "(composite)"
+  },
+  {
+   "line": 222,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 225,
+   "label": "(unlabeled)",
+   "handler": "sendResponse"
+  },
+  {
+   "line": 228,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "refunds.tsx": [
+  {
+   "line": 1,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 49,
+   "label": "Refunds",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 51,
+   "label": "Refunds",
+   "handler": "(composite)"
+  },
+  {
+   "line": 68,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 71,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/refund/${item.id"
+  },
+  {
+   "line": 102,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 114,
+   "label": "No refunds yet",
+   "handler": "(composite)"
+  },
+  {
+   "line": 117,
+   "label": "Refunds you request will show up here.",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 122,
+   "label": "Go back",
+   "handler": "(composite)"
+  }
+ ],
+ "saved-searches.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 103,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 105,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/search?q=${encodeURIComponent(item.query)"
+  },
+  {
+   "line": 118,
+   "label": "Alerting on price drops",
+   "handler": "() => removeSearch(item.id)"
+  },
+  {
+   "line": 120,
+   "label": "Alerting on price drops",
+   "handler": "(composite)"
+  },
+  {
+   "line": 121,
+   "label": "Alerting on price drops",
+   "handler": "(composite)"
+  },
+  {
+   "line": 150,
+   "label": "Saved Searches",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 152,
+   "label": "Saved Searches",
+   "handler": "(composite)"
+  },
+  {
+   "line": 156,
+   "label": "Saved Searches",
+   "handler": "(composite)"
+  },
+  {
+   "line": 159,
+   "label": "Saved Searches",
+   "handler": "(composite)"
+  },
+  {
+   "line": 168,
+   "label": "New",
+   "handler": "(composite)"
+  },
+  {
+   "line": 211,
+   "label": "Save search",
+   "handler": "(composite)"
+  },
+  {
+   "line": 215,
+   "label": "Save search",
+   "handler": "addSearch"
+  },
+  {
+   "line": 220,
+   "label": "Save search",
+   "handler": "(composite)"
+  },
+  {
+   "line": 248,
+   "label": "No saved searches yet",
+   "handler": "(composite)"
+  },
+  {
+   "line": 251,
+   "label": "New search",
+   "handler": "() => setShowForm(true)"
+  },
+  {
+   "line": 256,
+   "label": "New search",
+   "handler": "(composite)"
+  }
+ ],
+ "saved.tsx": [
+  {
+   "line": 6,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 135,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 138,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${p.productId"
+  },
+  {
+   "line": 145,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 152,
+   "label": "Saved",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 154,
+   "label": "Saved",
+   "handler": "(composite)"
+  },
+  {
+   "line": 158,
+   "label": "Saved",
+   "handler": "openNewModal"
+  },
+  {
+   "line": 162,
+   "label": "Saved",
+   "handler": "(composite)"
+  },
+  {
+   "line": 177,
+   "label": "Collections",
+   "handler": "(composite)"
+  },
+  {
+   "line": 180,
+   "label": "Collections",
+   "handler": "() => setTab('collections')"
+  },
+  {
+   "line": 190,
+   "label": "Collections",
+   "handler": "(composite)"
+  },
+  {
+   "line": 191,
+   "label": "All Items",
+   "handler": "(composite)"
+  },
+  {
+   "line": 194,
+   "label": "All Items",
+   "handler": "() => setTab('items')"
+  },
+  {
+   "line": 204,
+   "label": "All Items",
+   "handler": "(composite)"
+  },
+  {
+   "line": 226,
+   "label": "No collections yet",
+   "handler": "openNewModal"
+  },
+  {
+   "line": 230,
+   "label": "Create a collection",
+   "handler": "(composite)"
+  },
+  {
+   "line": 236,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 248,
+   "label": "(unlabeled)",
+   "handler": "() => openCollection(item)"
+  },
+  {
+   "line": 260,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 295,
+   "label": "(unlabeled)",
+   "handler": "closeCollection"
+  },
+  {
+   "line": 297,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 339,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 342,
+   "label": "(unlabeled)",
+   "handler": "() => { setNewModalVisible(false); setRenameTarget(null); "
+  },
+  {
+   "line": 360,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 363,
+   "label": "Cancel",
+   "handler": "() => { setNewModalVisible(false); setRenameTarget(null); "
+  },
+  {
+   "line": 368,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 369,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 372,
+   "label": "Cancel",
+   "handler": "confirmSave"
+  },
+  {
+   "line": 377,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "search.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 185,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 188,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${item.id"
+  },
+  {
+   "line": 197,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 201,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 203,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/seller/${item.sellerUsername"
+  },
+  {
+   "line": 224,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 228,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 230,
+   "label": "View",
+   "handler": "() => router.push(`/community/${item.id"
+  },
+  {
+   "line": 244,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 248,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 250,
+   "label": "View",
+   "handler": "() => router.push(`/hashtag/${item.tag.slice(1)"
+  },
+  {
+   "line": 260,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 273,
+   "label": "Try a different search term",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 275,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 288,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 292,
+   "label": "(unlabeled)",
+   "handler": "saveCurrentSearch"
+  },
+  {
+   "line": 295,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 296,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 299,
+   "label": "Recent Searches",
+   "handler": "() => router.push('/saved-searches')"
+  },
+  {
+   "line": 302,
+   "label": "Recent Searches",
+   "handler": "(composite)"
+  },
+  {
+   "line": 310,
+   "label": "Recent Searches",
+   "handler": "clearRecentSearches"
+  },
+  {
+   "line": 312,
+   "label": "Recent Searches",
+   "handler": "(composite)"
+  },
+  {
+   "line": 319,
+   "label": "Clear",
+   "handler": "() => setQuery(item)"
+  },
+  {
+   "line": 324,
+   "label": "No recent searches",
+   "handler": "(composite)"
+  },
+  {
+   "line": 327,
+   "label": "Saved searches & price alerts",
+   "handler": "(composite)"
+  },
+  {
+   "line": 329,
+   "label": "Saved searches & price alerts",
+   "handler": "() => router.push('/saved-searches')"
+  },
+  {
+   "line": 336,
+   "label": "Saved searches & price alerts",
+   "handler": "(composite)"
+  },
+  {
+   "line": 344,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 347,
+   "label": "(unlabeled)",
+   "handler": "() => setTab(t.key)"
+  },
+  {
+   "line": 352,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "seller/[username].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 103,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 121,
+   "label": "(unlabeled)",
+   "handler": "() => onPress?.(item.id)"
+  },
+  {
+   "line": 150,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 153,
+   "label": "(unlabeled)",
+   "handler": "() => onAction?.(item.id)"
+  },
+  {
+   "line": 158,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 161,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 667,
+   "label": "Verified Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 676,
+   "label": "(unlabeled)",
+   "handler": "toggleFollow"
+  },
+  {
+   "line": 681,
+   "label": "Message",
+   "handler": "(composite)"
+  },
+  {
+   "line": 682,
+   "label": "Message",
+   "handler": "(composite)"
+  },
+  {
+   "line": 685,
+   "label": "Message",
+   "handler": "() => chatWithSeller()"
+  },
+  {
+   "line": 690,
+   "label": "Message",
+   "handler": "(composite)"
+  },
+  {
+   "line": 698,
+   "label": "(unlabeled)",
+   "handler": "() => setActiveTab(tab)"
+  },
+  {
+   "line": 705,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 785,
+   "label": "No listings match this filter",
+   "handler": "(id) => handleCta('Enquire', id)"
+  },
+  {
+   "line": 817,
+   "label": "No products match this filter",
+   "handler": "(id) => handleCta('Get Quote', id)"
+  },
+  {
+   "line": 860,
+   "label": "No products match this filter",
+   "handler": "(id) => router.push(`/product/${id"
+  },
+  {
+   "line": 903,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 905,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 909,
+   "label": "susej",
+   "handler": "() => router.push(`/qr/${username"
+  },
+  {
+   "line": 916,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 917,
+   "label": "(unlabeled)",
+   "handler": "handleMore"
+  },
+  {
+   "line": 919,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1031,
+   "label": "stickyLabel",
+   "handler": "() => handleCta(stickyLabel)"
+  },
+  {
+   "line": 1117,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 1119,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1123,
+   "label": "susej",
+   "handler": "() => username && router.push(`/qr/${username"
+  },
+  {
+   "line": 1130,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1131,
+   "label": "(unlabeled)",
+   "handler": "handleMore"
+  },
+  {
+   "line": 1133,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1182,
+   "label": "Joined susej to buy, sell and connect locally.",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1189,
+   "label": "(unlabeled)",
+   "handler": "toggleFollow"
+  },
+  {
+   "line": 1194,
+   "label": "Message",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1195,
+   "label": "Message",
+   "handler": "(composite)"
+  },
+  {
+   "line": 1198,
+   "label": "Message",
+   "handler": "() => username && router.push({ pathname: '/(tabs)/chat', params: { to: username"
+  },
+  {
+   "line": 1203,
+   "label": "Message",
+   "handler": "(composite)"
+  }
+ ],
+ "seller-dashboard-hub.tsx": [
+  {
+   "line": 1,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 188,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 190,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 196,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/edit-shop')"
+  },
+  {
+   "line": 198,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 220,
+   "label": "Change banner",
+   "handler": "(composite)"
+  },
+  {
+   "line": 223,
+   "label": "Change banner",
+   "handler": "() => router.push('/storefront-editor')"
+  },
+  {
+   "line": 228,
+   "label": "Change banner",
+   "handler": "(composite)"
+  },
+  {
+   "line": 256,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 259,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/edit-shop')"
+  },
+  {
+   "line": 262,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 275,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 281,
+   "label": "(unlabeled)",
+   "handler": "() => s.route && router.push(s.route as never)"
+  },
+  {
+   "line": 297,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 306,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 309,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/seller-orders')"
+  },
+  {
+   "line": 320,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 325,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 328,
+   "label": "Promote & Grow",
+   "handler": "() => router.push('/promotions')"
+  },
+  {
+   "line": 344,
+   "label": "GROW YOUR SHOP",
+   "handler": "(composite)"
+  },
+  {
+   "line": 357,
+   "label": "GROW YOUR SHOP",
+   "handler": "(composite)"
+  },
+  {
+   "line": 360,
+   "label": "Feed Spotlight",
+   "handler": "() => router.push('/promotions')"
+  },
+  {
+   "line": 381,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 384,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 387,
+   "label": "Pinned Chat",
+   "handler": "() => router.push('/(tabs)/chat' as never)"
+  },
+  {
+   "line": 408,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 497,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 499,
+   "label": "(unlabeled)",
+   "handler": "() => pickTheme(t.id)"
+  },
+  {
+   "line": 518,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 565,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 569,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(item.route as any)"
+  },
+  {
+   "line": 575,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 592,
+   "label": "Manage all",
+   "handler": "() => router.push('/listings-manager')"
+  },
+  {
+   "line": 597,
+   "label": "Manage all",
+   "handler": "(composite)"
+  },
+  {
+   "line": 621,
+   "label": "(unlabeled)",
+   "handler": "() => toggleSold(p.id)"
+  },
+  {
+   "line": 623,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 624,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${p.id"
+  },
+  {
+   "line": 626,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 627,
+   "label": "(unlabeled)",
+   "handler": "() => removeListing(p.id)"
+  },
+  {
+   "line": 629,
+   "label": "No listings yet — create your first post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 638,
+   "label": "No listings yet — create your first post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 641,
+   "label": "No listings yet — create your first post",
+   "handler": "() => router.push('/(tabs)/create')"
+  },
+  {
+   "line": 646,
+   "label": "Create Post",
+   "handler": "(composite)"
+  },
+  {
+   "line": 654,
+   "label": "Edit Shop Profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 657,
+   "label": "Edit Shop Profile",
+   "handler": "() => router.push('/edit-shop')"
+  },
+  {
+   "line": 662,
+   "label": "Edit Shop Profile",
+   "handler": "(composite)"
+  }
+ ],
+ "seller-dashboard.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 150,
+   "label": "susej",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 152,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 154,
+   "label": "susej",
+   "handler": "() => router.push('/settings')"
+  },
+  {
+   "line": 156,
+   "label": "susej",
+   "handler": "(composite)"
+  },
+  {
+   "line": 191,
+   "label": "Verification not approved",
+   "handler": "(composite)"
+  },
+  {
+   "line": 193,
+   "label": "REJECTED",
+   "handler": "() => router.push('/become-seller')"
+  },
+  {
+   "line": 196,
+   "label": "Re-submit",
+   "handler": "(composite)"
+  },
+  {
+   "line": 207,
+   "label": "Verified Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 209,
+   "label": "Verified Seller",
+   "handler": "() => router.push('/storefront-editor')"
+  },
+  {
+   "line": 212,
+   "label": "Verified Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 228,
+   "label": "Verified badge",
+   "handler": "(composite)"
+  },
+  {
+   "line": 230,
+   "label": "Verified badge",
+   "handler": "() => router.push('/become-seller')"
+  },
+  {
+   "line": 233,
+   "label": "Verified badge",
+   "handler": "(composite)"
+  },
+  {
+   "line": 307,
+   "label": "My Listings",
+   "handler": "(composite)"
+  },
+  {
+   "line": 309,
+   "label": "My Listings",
+   "handler": "() => router.push('/(tabs)/create')"
+  },
+  {
+   "line": 312,
+   "label": "No listings yet — create your first post.",
+   "handler": "(composite)"
+  },
+  {
+   "line": 323,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 326,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${item.id"
+  },
+  {
+   "line": 366,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 371,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 373,
+   "label": "View",
+   "handler": "() => router.push(`/product/${item.id"
+  },
+  {
+   "line": 377,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 378,
+   "label": "View",
+   "handler": "(composite)"
+  },
+  {
+   "line": 380,
+   "label": "View",
+   "handler": "() => toggleSold(item.id)"
+  },
+  {
+   "line": 393,
+   "label": "Delete",
+   "handler": "(composite)"
+  },
+  {
+   "line": 394,
+   "label": "Delete",
+   "handler": "(composite)"
+  },
+  {
+   "line": 396,
+   "label": "Delete",
+   "handler": "() => confirmDelete(item)"
+  },
+  {
+   "line": 400,
+   "label": "Delete",
+   "handler": "(composite)"
+  },
+  {
+   "line": 416,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 419,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/seller-orders')"
+  },
+  {
+   "line": 439,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 445,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 448,
+   "label": "(unlabeled)",
+   "handler": "() => router.push('/(tabs)/create')"
+  },
+  {
+   "line": 451,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "seller-orders.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 151,
+   "label": "Orders",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 153,
+   "label": "Orders",
+   "handler": "(composite)"
+  },
+  {
+   "line": 157,
+   "label": "Orders",
+   "handler": "() => Alert.alert('Orders', 'Use the status filters and order cards below to man"
+  },
+  {
+   "line": 159,
+   "label": "Orders",
+   "handler": "(composite)"
+  },
+  {
+   "line": 164,
+   "label": "›",
+   "handler": "(composite)"
+  },
+  {
+   "line": 174,
+   "label": "›",
+   "handler": "(composite)"
+  },
+  {
+   "line": 181,
+   "label": "(unlabeled)",
+   "handler": "() => setTab(t)"
+  },
+  {
+   "line": 185,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 264,
+   "label": "Approve refund",
+   "handler": "() => respondToRefund(o, true)"
+  },
+  {
+   "line": 268,
+   "label": "Approve refund",
+   "handler": "(composite)"
+  },
+  {
+   "line": 269,
+   "label": "Approve refund",
+   "handler": "() => respondToRefund(o, false)"
+  },
+  {
+   "line": 273,
+   "label": "Approve refund",
+   "handler": "(composite)"
+  },
+  {
+   "line": 276,
+   "label": "Reject",
+   "handler": "action.run"
+  },
+  {
+   "line": 280,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 288,
+   "label": "Message Buyer",
+   "handler": "() => router.push('/(tabs)/chat')"
+  },
+  {
+   "line": 292,
+   "label": "Message Buyer",
+   "handler": "(composite)"
+  }
+ ],
+ "settings.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 151,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 153,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 216,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 218,
+   "label": "(unlabeled)",
+   "handler": "() => updateSetting('privateAccount', !settings.privateAccount)"
+  },
+  {
+   "line": 237,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 244,
+   "label": "(unlabeled)",
+   "handler": "() => item.route && router.push(item.route)"
+  },
+  {
+   "line": 259,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 302,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 304,
+   "label": "(unlabeled)",
+   "handler": "() => changeTheme(themeMode === 'dark' ? 'light' : 'dark')"
+  },
+  {
+   "line": 323,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 345,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 348,
+   "label": "(unlabeled)",
+   "handler": "() => changeLocale(pill.code)"
+  },
+  {
+   "line": 368,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 377,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 380,
+   "label": "(unlabeled)",
+   "handler": "() => { logout(); router.replace('/login'); "
+  },
+  {
+   "line": 385,
+   "label": "susej v1.0.0 (build 57)",
+   "handler": "(composite)"
+  }
+ ],
+ "start-auction.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 80,
+   "label": "Start Auction",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 82,
+   "label": "Start Auction",
+   "handler": "(composite)"
+  },
+  {
+   "line": 125,
+   "label": "Auction duration",
+   "handler": "(composite)"
+  },
+  {
+   "line": 129,
+   "label": "(unlabeled)",
+   "handler": "() => setDuration(d.ms)"
+  },
+  {
+   "line": 135,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 153,
+   "label": "(unlabeled)",
+   "handler": "() => setImageKey(p.id)"
+  },
+  {
+   "line": 159,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 182,
+   "label": "Start Auction",
+   "handler": "(composite)"
+  },
+  {
+   "line": 185,
+   "label": "Start Auction",
+   "handler": "submit"
+  },
+  {
+   "line": 190,
+   "label": "Start Auction",
+   "handler": "(composite)"
+  }
+ ],
+ "start-live.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 26,
+   "label": "Live is for sellers",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 28,
+   "label": "Live is for sellers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 37,
+   "label": "Live is for sellers",
+   "handler": "(composite)"
+  },
+  {
+   "line": 38,
+   "label": "Live is for sellers",
+   "handler": "() => router.push('/become-seller')"
+  },
+  {
+   "line": 45,
+   "label": "Become a Seller",
+   "handler": "(composite)"
+  },
+  {
+   "line": 68,
+   "label": "Go Live",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 70,
+   "label": "Go Live",
+   "handler": "(composite)"
+  },
+  {
+   "line": 131,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 132,
+   "label": "(unlabeled)",
+   "handler": "goLive"
+  },
+  {
+   "line": 148,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "storefront-editor.tsx": [
+  {
+   "line": 6,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 108,
+   "label": "Cover image",
+   "handler": "() => onPick(i)"
+  },
+  {
+   "line": 115,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 383,
+   "label": "Banner &amp; Deals Editor",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 385,
+   "label": "Banner &amp; Deals Editor",
+   "handler": "(composite)"
+  },
+  {
+   "line": 397,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 401,
+   "label": "(unlabeled)",
+   "handler": "() => setTab(p.key)"
+  },
+  {
+   "line": 406,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 422,
+   "label": "Banner size",
+   "handler": "(composite)"
+  },
+  {
+   "line": 431,
+   "label": "Banner size",
+   "handler": "(composite)"
+  },
+  {
+   "line": 435,
+   "label": "(unlabeled)",
+   "handler": "() => setDraft({ ...draft, size: s.key "
+  },
+  {
+   "line": 440,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 458,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 460,
+   "label": "(unlabeled)",
+   "handler": "pickBannerImage"
+  },
+  {
+   "line": 466,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 471,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 473,
+   "label": "Cancel",
+   "handler": "cancelEdit"
+  },
+  {
+   "line": 478,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 479,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 481,
+   "label": "Cancel",
+   "handler": "commitDraft"
+  },
+  {
+   "line": 486,
+   "label": "Done",
+   "handler": "(composite)"
+  },
+  {
+   "line": 535,
+   "label": "(unlabeled)",
+   "handler": "() => openBannerEdit(b)"
+  },
+  {
+   "line": 537,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 538,
+   "label": "(unlabeled)",
+   "handler": "() => deleteBanner(b.id)"
+  },
+  {
+   "line": 540,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 548,
+   "label": "Add banner",
+   "handler": "(composite)"
+  },
+  {
+   "line": 551,
+   "label": "Add banner",
+   "handler": "addBanner"
+  },
+  {
+   "line": 557,
+   "label": "Add banner",
+   "handler": "(composite)"
+  },
+  {
+   "line": 575,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 577,
+   "label": "Cancel",
+   "handler": "cancelEdit"
+  },
+  {
+   "line": 582,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 583,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 585,
+   "label": "Cancel",
+   "handler": "commitDraft"
+  },
+  {
+   "line": 590,
+   "label": "Done",
+   "handler": "(composite)"
+  },
+  {
+   "line": 636,
+   "label": "(unlabeled)",
+   "handler": "() => openDealEdit(d)"
+  },
+  {
+   "line": 638,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 639,
+   "label": "(unlabeled)",
+   "handler": "() => deleteDeal(d.id)"
+  },
+  {
+   "line": 641,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 649,
+   "label": "Add deal",
+   "handler": "(composite)"
+  },
+  {
+   "line": 652,
+   "label": "Add deal",
+   "handler": "addDeal"
+  },
+  {
+   "line": 658,
+   "label": "Add deal",
+   "handler": "(composite)"
+  },
+  {
+   "line": 665,
+   "label": "Save changes",
+   "handler": "handleSave"
+  },
+  {
+   "line": 669,
+   "label": "Save changes",
+   "handler": "(composite)"
+  }
+ ],
+ "story/[username].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 228,
+   "label": "Close story viewer",
+   "handler": "(composite)"
+  },
+  {
+   "line": 229,
+   "label": "Close story viewer",
+   "handler": "closeViewer"
+  },
+  {
+   "line": 237,
+   "label": "Close story viewer",
+   "handler": "(composite)"
+  },
+  {
+   "line": 256,
+   "label": "(unlabeled)",
+   "handler": "goPrev"
+  },
+  {
+   "line": 257,
+   "label": "(unlabeled)",
+   "handler": "goNext"
+  },
+  {
+   "line": 272,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 274,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 335,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 337,
+   "label": "(unlabeled)",
+   "handler": "() => setReaction((cur) => (cur === r.id ? null : r.id))"
+  },
+  {
+   "line": 351,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 376,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 377,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/product/${currentProduct.id"
+  },
+  {
+   "line": 397,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 406,
+   "label": "View profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 408,
+   "label": "View profile",
+   "handler": "() => router.push(`/seller/${activeUsername"
+  },
+  {
+   "line": 413,
+   "label": "View profile",
+   "handler": "(composite)"
+  },
+  {
+   "line": 419,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 422,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 435,
+   "label": "Like story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 436,
+   "label": "Like story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 439,
+   "label": "Like story",
+   "handler": "() => setReaction((cur) => (cur === 'heart' ? null : 'heart'))"
+  },
+  {
+   "line": 444,
+   "label": "Like story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 445,
+   "label": "Like story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 448,
+   "label": "Share story",
+   "handler": "(composite)"
+  },
+  {
+   "line": 455,
+   "label": "Share story",
+   "handler": "(composite)"
+  }
+ ],
+ "support/[id].tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 94,
+   "label": "Ticket",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 96,
+   "label": "Ticket",
+   "handler": "(composite)"
+  },
+  {
+   "line": 116,
+   "label": "(unlabeled)",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 118,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 203,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 206,
+   "label": "(unlabeled)",
+   "handler": "sendReply"
+  },
+  {
+   "line": 210,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  }
+ ],
+ "support.tsx": [
+  {
+   "line": 5,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 163,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 166,
+   "label": "(unlabeled)",
+   "handler": "() => router.push(`/support/${item.id"
+  },
+  {
+   "line": 200,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 211,
+   "label": "Help & Support",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 213,
+   "label": "Help & Support",
+   "handler": "(composite)"
+  },
+  {
+   "line": 218,
+   "label": "Help & Support",
+   "handler": "(composite)"
+  },
+  {
+   "line": 222,
+   "label": "Help & Support",
+   "handler": "(composite)"
+  },
+  {
+   "line": 247,
+   "label": "Raise a ticket",
+   "handler": "(composite)"
+  },
+  {
+   "line": 250,
+   "label": "Raise a ticket",
+   "handler": "() => setFormOpen(true)"
+  },
+  {
+   "line": 255,
+   "label": "Raise a ticket",
+   "handler": "(composite)"
+  },
+  {
+   "line": 284,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 288,
+   "label": "(unlabeled)",
+   "handler": "() => setCategory(c)"
+  },
+  {
+   "line": 293,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 298,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 302,
+   "label": "(unlabeled)",
+   "handler": "() => setPriority(p)"
+  },
+  {
+   "line": 307,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 320,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 323,
+   "label": "Cancel",
+   "handler": "() => setFormOpen(false)"
+  },
+  {
+   "line": 328,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 329,
+   "label": "Cancel",
+   "handler": "(composite)"
+  },
+  {
+   "line": 332,
+   "label": "Cancel",
+   "handler": "submitTicket"
+  },
+  {
+   "line": 337,
+   "label": "Submit ticket",
+   "handler": "(composite)"
+  }
+ ],
+ "track-order.tsx": [
+  {
+   "line": 1,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 105,
+   "label": "Track Order",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 107,
+   "label": "Track Order",
+   "handler": "(composite)"
+  },
+  {
+   "line": 116,
+   "label": "Track Order",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 118,
+   "label": "Order not found",
+   "handler": "(composite)"
+  },
+  {
+   "line": 162,
+   "label": "Track Order",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 164,
+   "label": "Track Order",
+   "handler": "(composite)"
+  },
+  {
+   "line": 166,
+   "label": "Track Order",
+   "handler": "handleShare"
+  },
+  {
+   "line": 168,
+   "label": "Track Order",
+   "handler": "(composite)"
+  },
+  {
+   "line": 199,
+   "label": "Delivery partner on the way",
+   "handler": "(composite)"
+  },
+  {
+   "line": 201,
+   "label": "Delivery partner on the way",
+   "handler": "() => scrollRef.current?.scrollTo({ y: mapY, animated: true "
+  },
+  {
+   "line": 205,
+   "label": "Route Map",
+   "handler": "(composite)"
+  },
+  {
+   "line": 313,
+   "label": "Delivered",
+   "handler": "(composite)"
+  },
+  {
+   "line": 315,
+   "label": "Delivered",
+   "handler": "() => router.push(`/rate-review?id=${order.id"
+  },
+  {
+   "line": 318,
+   "label": "Rate & Review",
+   "handler": "(composite)"
+  },
+  {
+   "line": 321,
+   "label": "Rate & Review",
+   "handler": "(composite)"
+  },
+  {
+   "line": 323,
+   "label": "Rate & Review",
+   "handler": "() => router.push(`/refund/${order.id"
+  },
+  {
+   "line": 326,
+   "label": "Return",
+   "handler": "(composite)"
+  },
+  {
+   "line": 327,
+   "label": "Return",
+   "handler": "(composite)"
+  },
+  {
+   "line": 329,
+   "label": "Return",
+   "handler": "() => Alert.alert('Need help?', 'Our support team is available 9 AM - 9 PM. You "
+  },
+  {
+   "line": 332,
+   "label": "Return",
+   "handler": "(composite)"
+  },
+  {
+   "line": 341,
+   "label": "Order Cancelled",
+   "handler": "(composite)"
+  },
+  {
+   "line": 343,
+   "label": "Order Cancelled",
+   "handler": "() => Alert.alert('Need help?', 'Our support team is available 9 AM - 9 PM. You "
+  },
+  {
+   "line": 346,
+   "label": "Contact support",
+   "handler": "(composite)"
+  }
+ ],
+ "wallet.tsx": [
+  {
+   "line": 2,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 327,
+   "label": "Wallet",
+   "handler": "() => router.back()"
+  },
+  {
+   "line": 329,
+   "label": "Wallet",
+   "handler": "(composite)"
+  },
+  {
+   "line": 359,
+   "label": "susej Wallet",
+   "handler": "(composite)"
+  },
+  {
+   "line": 362,
+   "label": "Add Money",
+   "handler": "() => setShowAdd(true)"
+  },
+  {
+   "line": 367,
+   "label": "Add Money",
+   "handler": "(composite)"
+  },
+  {
+   "line": 389,
+   "label": "Withdraw to bank",
+   "handler": "(composite)"
+  },
+  {
+   "line": 393,
+   "label": "Withdraw to bank",
+   "handler": "() => setShowPayout(true)"
+  },
+  {
+   "line": 398,
+   "label": "Withdraw to bank",
+   "handler": "(composite)"
+  },
+  {
+   "line": 463,
+   "label": "Add Money",
+   "handler": "() => setShowAdd(false)"
+  },
+  {
+   "line": 472,
+   "label": "Add Money",
+   "handler": "() => setShowAdd(false)"
+  },
+  {
+   "line": 474,
+   "label": "Add Money",
+   "handler": "(composite)"
+  },
+  {
+   "line": 481,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 485,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 493,
+   "label": "(unlabeled)",
+   "handler": "(composite)"
+  },
+  {
+   "line": 511,
+   "label": "Confirm",
+   "handler": "(composite)"
+  },
+  {
+   "line": 514,
+   "label": "Confirm",
+   "handler": "confirmAdd"
+  },
+  {
+   "line": 519,
+   "label": "Confirm",
+   "handler": "(composite)"
+  },
+  {
+   "line": 529,
+   "label": "Withdraw to bank",
+   "handler": "() => setShowPayout(false)"
+  },
+  {
+   "line": 538,
+   "label": "Withdraw to bank",
+   "handler": "() => setShowPayout(false)"
+  },
+  {
+   "line": 540,
+   "label": "Withdraw to bank",
+   "handler": "(composite)"
+  },
+  {
+   "line": 562,
+   "label": "Request payout",
+   "handler": "(composite)"
+  },
+  {
+   "line": 566,
+   "label": "Request payout",
+   "handler": "submitPayout"
+  },
+  {
+   "line": 571,
+   "label": "Request payout",
+   "handler": "(composite)"
+  }
+ ]
+}

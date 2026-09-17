@@ -32,7 +32,9 @@ export default function DashboardPage() {
     counts: Record<string, number>;
     revenue: { gross: number; refundsOut: number; net: number };
     revenueByMonth: { month: string; revenue: number }[];
+    revenueTrendComplete?: boolean;
     growthByMonth: { month: string; users: number; sellers: number }[];
+    growthTrendComplete?: boolean;
     topCategories: { name: string; value: number }[];
     recentOrders: { id: string; buyerName: string; amount: number; status: string; createdAt: string }[];
     recentAudit: { id: string; details: string; adminName: string; timestamp: string }[];
@@ -75,11 +77,11 @@ export default function DashboardPage() {
     return {
       totalUsers: num("totalUsers"),
       newUsersToday: num("newUsersToday"),
-      onlineUsers: num("onlineUsers"),
+      newUsers7d: num("newUsers7d"),
       verifiedSellers: num("verifiedSellers"),
       pendingSellerRequests: num("pendingSellerRequests"),
       totalProducts: num("totalProducts"),
-      pendingProducts: num("pendingProducts"),
+      hiddenProducts: num("hiddenProducts"),
       communities: num("communities"),
       ordersToday: num("ordersToday"),
       revenue: Number(summary?.revenue.gross ?? 0),
@@ -146,6 +148,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <RevenueChart data={revenueData} />
+            {summary && summary.revenueTrendComplete === false && (
+              <p className="mt-2 text-[12px] text-[#71717A]">Trend covers the last 5,000 delivered orders.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -187,6 +192,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <GrowthChart data={growthData} />
+            {summary && summary.growthTrendComplete === false && (
+              <p className="mt-2 text-[12px] text-[#71717A]">Trend covers the 5,000 most recent users.</p>
+            )}
           </CardContent>
         </Card>
 

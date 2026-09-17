@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 try:
@@ -23,6 +23,7 @@ try:
         create_refresh_token,
         decode_token,
     )
+    from .main import _check_rate_limit
 except ImportError:
     from auth_db import (
         authenticate_user,
@@ -38,6 +39,7 @@ except ImportError:
         create_refresh_token,
         decode_token,
     )
+    from main import _check_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -101,6 +103,19 @@ def _validate_password_strength(password: str) -> bool:
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest) -> AuthResponse:
+    # Validate full_name
+    full_name = payload.full_name.strip()
+    if not full_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Full name is required.",
+        )
+    if len(full_name) < 2 or len(full_name) > 80:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Full name must be 2-80 characters.",
+        )
+
     normalized_username = payload.username.strip().lower()
     normalized_email = payload.email.strip().lower()
     if not USERNAME_RE.match(normalized_username):
@@ -114,6 +129,11 @@ def register(payload: RegisterRequest) -> AuthResponse:
             detail="Enter a valid email address.",
         )
 
+    if not payload.password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password is required.",
+        )
     if not _validate_password_strength(payload.password):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -122,7 +142,7 @@ def register(payload: RegisterRequest) -> AuthResponse:
 
     try:
         user = create_user(
-            full_name=payload.full_name,
+            full_name=full_name,
             username=normalized_username,
             email=normalized_email,
             password=payload.password,
@@ -135,12 +155,26 @@ def register(payload: RegisterRequest) -> AuthResponse:
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: LoginRequest) -> AuthResponse:
+def login(request: Request, payload: LoginRequest) -> AuthResponse:
+    # Rate limit: max 5 attempts per 5-minute window per IP
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(f"login:{client_ip}", max_attempts=5, window_seconds=300):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please try again in 5 minutes.",
+        )
+
     normalized_email = payload.email.strip().lower()
     if not EMAIL_RE.match(normalized_email):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Enter a valid email address.",
+        )
+
+    if not payload.password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password is required.",
         )
 
     user = authenticate_user(normalized_email, payload.password)

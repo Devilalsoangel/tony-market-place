@@ -82,15 +82,24 @@ export async function activatePromotion(checkoutRef: string, providerPaymentId?:
   const prisma = await getPrisma();
   if (!prisma) return { ok: false as const, error: "database_unavailable", demo: true };
 
-  const purchase = await prisma.promotionPurchase.findUnique({ where: { checkoutRef } });
-  if (!purchase) return { ok: false as const, error: "not_found" };
-  if (purchase.status !== "pending_payment") {
-    return { ok: true as const, purchase: serializePurchase(purchase), alreadyProcessed: true };
-  }
-
+  // Atomic claim: flip pending_payment→active in ONE updateMany. Concurrent
+  // confirms (double-tap Pay / timeout retry) serialize on the row lock —
+  // exactly one wins the claim; losers fall through to alreadyProcessed.
+  // Previously both reads saw pending_payment and both created rail rows
+  // (one payment → two placements).
   const now = new Date();
-  const endsAt = new Date(now.getTime() + purchase.durationDays * 24 * 60 * 60 * 1000);
-  const position = await nextPosition(prisma, purchase.kind);
+  const claimed = await prisma.$transaction(async (tx: any) => {
+    const upd = await tx.promotionPurchase.updateMany({
+      where: { checkoutRef, status: "pending_payment" },
+      data: { providerPaymentId: providerPaymentId ?? null, status: ACTIVE_STATUS, startsAt: now },
+    });
+    if (upd.count !== 1) return null;
+    const purchase = await tx.promotionPurchase.findUnique({ where: { checkoutRef } });
+    if (!purchase) throw new Error("claim lost");
+    const endsAt = new Date(now.getTime() + purchase.durationDays * 24 * 60 * 60 * 1000);
+    const position = await nextPosition(tx, purchase.kind);
+    // Route every db call below through the claiming tx.
+    const prisma = tx;
 
   const data: Record<string, unknown> = {
     sellerId: purchase.sellerId,
@@ -102,18 +111,46 @@ export async function activatePromotion(checkoutRef: string, providerPaymentId?:
     createdAt: now,
   };
   const purchaseData: Record<string, unknown> = {
-    providerPaymentId: providerPaymentId ?? null,
-    status: ACTIVE_STATUS,
     position,
-    startsAt: now,
     endsAt,
   };
 
   if (purchase.kind === "topSeller") {
-    const seller = await prisma.seller.findUnique({ where: { id: purchase.sellerId } });
-    data.totalSales = seller?.totalSales ?? 0;
-    data.rating = seller?.rating ?? 0;
-    data.reviewCount = seller?.reviewCount ?? 0;
+    // Live snapshot by USERNAME (orders + reviews are keyed by sellerUsername).
+    // The old code looked up Seller.id with the username and always missed
+    // (totalSales 0 / rating 0), and Seller.totalSales is never incremented by
+    // any order path — so the home "X sales" never reconciled. Snapshot real
+    // delivered-order units + review aggregate here; /api/v1/home re-resolves
+    // live at serve time so the number keeps reconciling after purchase.
+    let totalSales = 0;
+    let rating = 0;
+    let reviewCount = 0;
+    try {
+      const [delivered, agg] = await Promise.all([
+        prisma.order.findMany({
+          where: { sellerUsername: purchase.sellerId, status: "delivered" },
+          select: { itemsList: true },
+        }),
+        prisma.review.aggregate({
+          where: { sellerUsername: purchase.sellerId },
+          _avg: { rating: true },
+          _count: { id: true },
+        }),
+      ]);
+      for (const o of delivered) {
+        const items = Array.isArray((o as { itemsList?: unknown }).itemsList)
+          ? ((o as { itemsList: { qty?: unknown; quantity?: unknown }[] }).itemsList)
+          : [];
+        for (const it of items) totalSales += Math.max(1, Math.round(Number(it?.qty ?? it?.quantity ?? 1)));
+      }
+      rating = agg._avg.rating ? Math.round(agg._avg.rating * 10) / 10 : 0;
+      reviewCount = agg._count.id;
+    } catch {
+      // Snapshot best-effort — serve-time live resolve is the real truth.
+    }
+    data.totalSales = totalSales;
+    data.rating = rating;
+    data.reviewCount = reviewCount;
     await prisma.topSeller.create({ data: data as never });
   }
 
@@ -178,12 +215,19 @@ export async function activatePromotion(checkoutRef: string, providerPaymentId?:
     });
   }
 
-  const updated = await prisma.promotionPurchase.update({
-    where: { id: purchase.id },
-    data: purchaseData,
+    const updated = await tx.promotionPurchase.update({
+      where: { id: purchase.id },
+      data: purchaseData,
+    });
+    return updated;
   });
 
-  return { ok: true as const, purchase: serializePurchase(updated) };
+  if (!claimed) {
+    const purchase = await prisma.promotionPurchase.findUnique({ where: { checkoutRef } });
+    if (!purchase) return { ok: false as const, error: "not_found" };
+    return { ok: true as const, purchase: serializePurchase(purchase), alreadyProcessed: true };
+  }
+  return { ok: true as const, purchase: serializePurchase(claimed) };
 }
 
 export async function deactivateOnRefund(checkoutRef: string) {
@@ -271,6 +315,29 @@ export async function sweepExpiredPromotions() {
   for (const p of expired) {
     await hideSlot(prisma, p.kind, p.position);
     await prisma.promotionPurchase.update({ where: { id: p.id }, data: { status: "expired", isPinned: false } });
+  }
+
+  // Orphan expiry: featured/spotlight rows carry their own endDate strings
+  // and may have NO backing purchase (legacy/manual rows). A past endDate
+  // must unpin them even when no purchase row exists to trigger hideSlot.
+  const nowMs = now.getTime();
+  try {
+    const [feat, spots] = await Promise.all([
+      prisma.featuredPost.findMany({ where: { status: ACTIVE_STATUS }, select: { id: true, endDate: true } }),
+      prisma.spotlight.findMany({ where: { status: ACTIVE_STATUS }, select: { id: true, endDate: true } }),
+    ]);
+    const pastIds = (rows: { id: string; endDate: string }[]) =>
+      rows.filter((r) => r.endDate && !Number.isNaN(Date.parse(r.endDate)) && Date.parse(r.endDate) <= nowMs).map((r) => r.id);
+    const featPast = pastIds(feat as { id: string; endDate: string }[]);
+    const spotPast = pastIds(spots as { id: string; endDate: string }[]);
+    if (featPast.length) {
+      await prisma.featuredPost.updateMany({ where: { id: { in: featPast } }, data: { status: "expired", isPinned: false } });
+    }
+    if (spotPast.length) {
+      await prisma.spotlight.updateMany({ where: { id: { in: spotPast } }, data: { status: "expired", isPinned: false } });
+    }
+  } catch {
+    // best effort — serve-time filter below still hides them from buyers
   }
 
   return { ok: true as const, expired: expired.length };

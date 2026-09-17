@@ -38,6 +38,12 @@ interface DataTableProps<TData> {
   exportColumns?: { key: string; label: string }[];
   onRowClick?: (row: TData) => void;
   onBulkDelete?: (selectedRows: TData[]) => Promise<void> | void;
+  /**
+   * Server-side total for this resource (useDbResource `total`). The API caps
+   * `take` at 100 — when total exceeds the loaded window the caption says so
+   * instead of silently truncating money queues past row 100.
+   */
+  totalCount?: number | null;
 }
 
 export function DataTable<TData>({
@@ -54,6 +60,7 @@ export function DataTable<TData>({
   exportColumns,
   onRowClick,
   onBulkDelete,
+  totalCount,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -259,6 +266,9 @@ export function DataTable<TData>({
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-500">
             Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+            {typeof totalCount === "number" && totalCount > data.length
+              ? ` · showing ${data.length} of ${totalCount} — refine search for more`
+              : ""}
           </p>
           <div className="flex items-center gap-2">
             <Button

@@ -81,7 +81,7 @@ function FeedContent() {
   };
   // Industry-standard cart affordance: item-count badge on the bag icon (feed header). The
   // count mirrors CartContext so the badge stays truthful across every surface.
-  const { cart: cartItems } = useCart();
+  const { cartCount } = useCart();
   const feedLoaded = (usePosts() as unknown as { loaded?: boolean }).loaded ?? false;
   // Industry-standard pull-to-refresh: refetch server feed + reconcile cache; spinner
   // runs only while the request is live — failure just stops the spinner (honest state).
@@ -112,6 +112,18 @@ function FeedContent() {
   // Paid promotion campaigns from the SERVER (source of truth for placements).
   // The local PromotionContext mirrors only the seller's own purchases.
   const [serverPromos, setServerPromos] = useState<any[]>([]);
+  // Home-API spotlight (paid position-1 pin, promo engine writes it). Merged
+  // with promotion-campaign spotlight ids below so the paid slot renders even
+  // when the promotions feed lags the home sweep.
+  const [homeSpotlightPostId, setHomeSpotlightPostId] = useState<string | null>(null);
+  // Admin rail visibility ("Show on home page" toggles). Missing = ON.
+  const [homeSections, setHomeSections] = useState<Record<string, boolean> | null>(null);
+  const sectionOn = (k: string) => homeSections?.[k] !== false;
+  // Featured-post rail (paid placements from /api/v1/home). Pinned rows float
+  // to the spotlight; the rest interleave as boosted posts — every paid row
+  // renders while its rail is ON, none renders while OFF.
+  const [homeFeaturedPinned, setHomeFeaturedPinned] = useState<string[]>([]);
+  const [homeFeaturedBoosted, setHomeFeaturedBoosted] = useState<string[]>([]);
 
   // Reload the user's own uploaded story whenever the feed regains focus
   // (so a story posted from /create-story shows up in the tray immediately)
@@ -124,7 +136,29 @@ function FeedContent() {
       });
       serverApi.getHome().then(async (res) => {
         if (!active) return;
-        const list = res.ok && res.data?.marketingBanners?.length ? res.data.marketingBanners : [];
+        const sections = res.ok ? (res.data?.sections ?? null) : null;
+        if (active) setHomeSections(sections);
+        const secOn = (k: string) => (sections as Record<string, boolean> | null)?.[k] !== false;
+        if (res.ok && secOn('spotlight')) setHomeSpotlightPostId(res.data?.spotlight?.postId ?? null);
+        else if (active) setHomeSpotlightPostId(null);
+        // Featured rail merges into the paid boost sets (pinned floats top).
+        if (res.ok && secOn('featured-posts') && res.data?.featuredPosts?.length) {
+          const pinned: string[] = [];
+          const boosted: string[] = [];
+          for (const f of res.data.featuredPosts) {
+            if (!f?.postId) continue;
+            if (f.isPinned) pinned.push(f.postId);
+            else boosted.push(f.postId);
+          }
+          if (active) {
+            setHomeFeaturedPinned(pinned);
+            setHomeFeaturedBoosted(boosted);
+          }
+        } else if (active) {
+          setHomeFeaturedPinned([]);
+          setHomeFeaturedBoosted([]);
+        }
+        const list = res.ok && secOn('storefront-banners') && res.data?.marketingBanners?.length ? res.data.marketingBanners : [];
         // Only banners with a REAL uploaded image can be a hero — a text-only
         // row would render an empty box.
         const first = list.find((b) => b.imageUrl) || null;
@@ -226,21 +260,47 @@ function FeedContent() {
     [serverPromos]
   );
   const boostedIds = useMemo(
-    () => new Set(activePromos.filter((p) => p.kind === 'featuredPost' && p.postId).map((p) => p.postId as string)),
-    [activePromos]
+    () => {
+      if (!sectionOn('featured-posts')) return new Set<string>();
+      const ids = new Set(activePromos.filter((p) => p.kind === 'featuredPost' && p.postId).map((p) => p.postId as string));
+      for (const id of homeFeaturedBoosted) ids.add(id);
+      return ids;
+    },
+    [activePromos, homeFeaturedBoosted, homeSections]
   );
   const hotDealIds = useMemo(
-    () => new Set(activePromos.filter((p) => p.kind === 'hotDeal' && p.postId).map((p) => p.postId as string)),
-    [activePromos]
+    () => {
+      if (!sectionOn('hot-deals')) return new Set<string>();
+      return new Set(activePromos.filter((p) => p.kind === 'hotDeal' && p.postId).map((p) => p.postId as string));
+    },
+    [activePromos, homeSections]
   );
   // Feed Spotlight (OLX Pin-to-Top): paid posts float to the VERY top of the feed.
   const spotlightIds = useMemo(
-    () => new Set(activePromos.filter((p) => p.kind === 'spotlight' && p.postId).map((p) => p.postId as string)),
-    [activePromos]
+    () => {
+      const ids = new Set<string>();
+      if (sectionOn('spotlight')) {
+        for (const p of activePromos) {
+          if (p.kind === 'spotlight' && p.postId) ids.add(p.postId as string);
+        }
+        if (homeSpotlightPostId) ids.add(homeSpotlightPostId);
+      }
+      // Pinned featured rows float top too — but under their own rail flag.
+      if (sectionOn('featured-posts')) {
+        for (const id of homeFeaturedPinned) ids.add(id);
+      }
+      return ids;
+    },
+    [activePromos, homeSpotlightPostId, homeFeaturedPinned, homeSections]
   );
   const promotedSellers = useMemo(
-    () => new Set(activePromos.filter((p) => p.kind === 'topSeller').map((p) => p.sellerId ?? p.sellerUsername)),
-    [activePromos]
+    () => {
+      // Kill-switch honored like every other home rail: OFF hides the
+      // TOP SELLER chips too.
+      if (!sectionOn('top-sellers')) return new Set<string>();
+      return new Set(activePromos.filter((p) => p.kind === 'topSeller').map((p) => p.sellerId ?? p.sellerUsername));
+    },
+    [activePromos, homeSections]
   );
 
   // PAID Hot Deal campaigns ONLY (kind=hotDeal with a real post). Organic MRP
@@ -354,7 +414,7 @@ function FeedContent() {
           <TouchableOpacity onPress={() => router.push('/cart')} hitSlop={{ top: 10, bottom: 10, left:  10, right:  10 }} accessibilityLabel="Shopping cart" accessibilityRole="button">
             <View style={{ position: 'relative' }}>
               <BagIcon size={22} color={colors.primary} />
-              {cartItems.length > 0 && (
+              {cartCount > 0 && (
                 <View
                   style={{
                     position: 'absolute',
@@ -370,7 +430,7 @@ function FeedContent() {
                   }}
                 >
                   <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: '700', lineHeight: 14 }}>
-                    {cartItems.length > 99 ? '99+' : cartItems.length}
+                    {cartCount > 99 ? '99+' : cartCount}
                   </Text>
                 </View>
               )}
@@ -757,7 +817,10 @@ function FeedContent() {
                         className="absolute bottom-4 right-3 w-8 h-8 rounded-figma-full items-center justify-center"
                         style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => toggleLike(deal.id)}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          toggleLike(deal.id);
+                        }}
                       >
                         <HeartIcon
                           size={15}

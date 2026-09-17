@@ -45,7 +45,7 @@ model User {
   status        String   @default("active")
   joinedAt      DateTime @default(now())
   verified      Boolean  @default(false)
-  phone         String?
+  phone         String?  @unique
   username      String?  @unique
   bio           String?
   location      String?
@@ -60,7 +60,6 @@ model User {
   updatedAt     DateTime @default(now()) @updatedAt
   sessions      AppSession[]
 
-  @@index([phone])
   @@index([verification])
   @@index([status])
   @@index([joinedAt])
@@ -166,7 +165,7 @@ model Order {
   items            Int
   itemsList        Json
   shippingCarrier  String
-  trackingNumber   String
+  trackingNumber   String   @unique
   estimatedDelivery String
   actualDelivery   String
   shippingAddress  String
@@ -246,6 +245,10 @@ model LedgerEntry {
   status    String
   orderId   String
   createdAt DateTime
+
+  // Mirror-guard join key (every count-guard reads orderId + type + status).
+  @@index([orderId])
+  @@index([orderId, type, status])
 }
 
 model GatewayLog {
@@ -755,6 +758,10 @@ model Dispute {
   outcome    String?
   note       String?
   resolvedAt DateTime?
+
+  // Money-guard join key (payout freeze reads orderId in [...] every payout).
+  @@index([orderId])
+  @@index([status])
 }
 
 model Auction {
@@ -781,6 +788,10 @@ model Refund {
   status      String
   requestedAt DateTime
   respondedAt DateTime?
+
+  // Money-guard join key (claw/refund title guards read per tracking).
+  @@index([orderRef])
+  @@index([status])
 }
 
 model Withdrawal {
@@ -791,6 +802,10 @@ model Withdrawal {
   status      String
   requestedAt DateTime
   respondedAt DateTime?
+
+  // Payout-guard join key (lifetimeNet + idempotency reads per seller).
+  @@index([userName])
+  @@index([status])
 }
 
 model CommissionSetting {
@@ -820,6 +835,9 @@ model AppSession {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   expiresAt DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Follow {
@@ -895,6 +913,10 @@ model WalletTransaction {
   amount    Float
   ts        DateTime @default(now())
 
+  // Idempotency: ledger titles double as idempotency keys (one movement per
+  // user+title). Concurrent retries that both pass the count-guard collide
+  // here — the loser gets P2002 and returns the winner (no double-credit).
+  @@unique([username, title])
   @@index([username])
   @@index([ts])
 }

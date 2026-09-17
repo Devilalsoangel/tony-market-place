@@ -32,6 +32,18 @@ const makeColumns = (
   column.accessor("id", { header: "Request", cell: (info) => <span className="font-mono text-[13px] font-medium text-[#18181B]">{info.getValue()}</span> }),
   column.accessor("userName", { header: "Seller", cell: (info) => <span className="font-medium">{info.getValue()}</span> }),
   column.accessor("method", { header: "Account", cell: (info) => <span className="text-[#71717A]">{info.getValue()}</span> }),
+  column.accessor("destination", {
+    header: "Destination",
+    cell: (info) => {
+      const v = String(info.getValue() ?? "");
+      const legacy = /not recorded|no verified account/.test(v);
+      return (
+        <span className={legacy ? "text-[#B45309]" : "font-mono text-[13px] text-[#18181B]"}>
+          {v || "—"}
+        </span>
+      );
+    },
+  }),
   column.accessor("amount", { header: "Amount", cell: (info) => <span className="font-medium tabular-nums">{formatCurrency(info.getValue())}</span> }),
   column.accessor("status", {
     header: "Status",
@@ -77,7 +89,7 @@ const makeColumns = (
 ];
 
 export default function WithdrawalsPage() {
-  const { data: withdrawals, refresh } = useDbResource<WithdrawalRequest>("withdrawals", { take: 500 });
+  const { data: withdrawals, total: withdrawalsTotal, refresh } = useDbResource<WithdrawalRequest>("withdrawals", { take: 100 });
   const [items, setItems] = useState<WithdrawalRequest[] | null>(withdrawals);
   const [confirm, setConfirm] = useState<{ w: WithdrawalRequest; decision: "approve" | "reject" | "complete" } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -145,10 +157,10 @@ export default function WithdrawalsPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Total requested" value={formatCurrency((items ?? []).reduce((s, w) => s + w.amount, 0))} />
+        <StatTile label={`Total requested${typeof withdrawalsTotal === "number" && withdrawalsTotal > (withdrawals ?? []).length ? " (first 100)" : ""}`} value={formatCurrency((items ?? []).reduce((s, w) => s + w.amount, 0))} />
         <StatTile label="Requested" value={pending.length} tone="amber" />
         <StatTile label="Approved, pending pay" value={approved.length} tone="purple" />
-        <StatTile label="Paid out" value={formatCurrency(paidOut)} tone="green" />
+        <StatTile label={`Paid out${typeof withdrawalsTotal === "number" && withdrawalsTotal > (withdrawals ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(paidOut)} tone="green" />
       </div>
 
       {error && (
@@ -169,6 +181,7 @@ export default function WithdrawalsPage() {
               handleComplete
             )}
             data={items ?? []}
+            totalCount={withdrawalsTotal ?? (items ?? []).length}
             searchable
             searchKey="userName"
             filename="withdrawals"
@@ -176,6 +189,7 @@ export default function WithdrawalsPage() {
               { key: "id", label: "Request" },
               { key: "userName", label: "Seller" },
               { key: "method", label: "Account" },
+              { key: "destination", label: "Destination" },
               { key: "amount", label: "Amount" },
               { key: "status", label: "Status" },
               { key: "requestedAt", label: "Requested" },

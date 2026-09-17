@@ -1,0 +1,10 @@
+1. user row: e2e-user-mtslmcsr e2e_seller_mtslmcsr
+2. app session created (token ...8xAWELh5)
+3. deployed POST /api/data/sellers -> 401 {"error":"Unauthorized"}
+4. DB: seller row NOT found (POST did not persist)
+5. cleanup done (set E2E_KEEP=1 to keep rows)
+1. user row: e2e-user-mtsm8gz0 e2e_seller_mtsm8gyz
+2. app session created (token ...Qu-SieQ9)
+3. deployed POST /api/data/sellers -> 401 {"error":"Unauthorized"}
+4. DB: seller row NOT found (POST did not persist)
+5. cleanup done (set E2E_KEEP=1 to keep rows)

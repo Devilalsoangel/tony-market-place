@@ -104,6 +104,7 @@ export default function ProductDetailsScreen() {
           setServerPost({
             type: (p.type as import('../../contexts/PostContext').Post['type']) ?? 'product',
             id: String(p.id),
+            title: String(p.title ?? '').trim() || String(p.description ?? '').split('\n')[0].slice(0, 200) || 'New listing',
             description: String(p.description ?? p.title ?? 'Untitled'),
             price: Number(p.price ?? 0),
             mrp: p.mrp != null && Number(p.mrp) > Number(p.price ?? 0) ? Number(p.mrp) : undefined,
@@ -230,7 +231,9 @@ export default function ProductDetailsScreen() {
   }, [postId, user?.username]);
 
   const post = posts.find((p) => p.id === postId) ?? serverPost;
-  const title = post ? post.description.split('\n')[0] : '';
+  // Server title wins (create/edit persist it); legacy first-line fallback
+  // only when no title travelled with the post.
+  const title = post ? (post.title?.trim() || post.description.split('\n')[0]) : '';
   const sellerName = post ? post.sellerName : '';
   const sellerUsername = post ? post.sellerUsername : '';
   // Seller proof line: only surface likes when there is something real to show
@@ -274,7 +277,9 @@ export default function ProductDetailsScreen() {
 
   const saved = isBookmarked(postId);
   const mrp = post?.mrp && post.mrp > price ? post.mrp : null;
-  const offPct = mrp ? Math.round(((mrp - price) / mrp) * 100) : null;
+  // Discount recomputed from the SELECTED variant price below (offPctEff) —
+  // the base-derived figure here is a fallback until variants resolve.
+  const offPctBase = mrp ? Math.round(((mrp - price) / mrp) * 100) : null;
   const stockLeft = post?.stockLeft;
 
   // Real post media first, deterministic seeded fallback last — never fake per-item images.
@@ -307,14 +312,14 @@ export default function ProductDetailsScreen() {
     Share.share({ message: `${title} — ${formatPrice(effectivePrice)} on susej` }).catch(() => {});
   };
 
-  // Multi-photo gallery: real post media first; a per-item seed keeps
-  // imageless listings stable without canned figma assets.
+  // Multi-photo gallery: real post media only. Imageless listings render an
+  // honest placeholder tile — never a stock/fake photo as product imagery.
   const gallery =
     post?.images && post.images.length > 0
       ? post.images.map((uri) => ({ uri }))
       : post?.image
         ? [{ uri: post.image }]
-        : [{ uri: `https://picsum.photos/seed/${postId || 'item'}/800/1000` }];
+        : [];
   const showCarousel = gallery.length > 1;
 
   // Variant selection → adjusted price
@@ -326,6 +331,9 @@ export default function ProductDetailsScreen() {
       return sum + (match?.priceDelta ?? 0);
     }, 0) ?? 0;
   const effectivePrice = price + selectedDelta;
+  // Per-SKU discount (Amazon parity): a +₹ premium variant is less off MRP
+  // than the base — the badge and strikethrough must use effectivePrice.
+  const offPct = mrp ? Math.round(((mrp - effectivePrice) / mrp) * 100) : offPctBase;
 
   const comments = post?.commentList ?? [];
 
@@ -360,6 +368,18 @@ export default function ProductDetailsScreen() {
         });
         if (oosVariant) {
           Alert.alert('Out of stock', `“${variantSelections[oosVariant.name]}” is out of stock. Please choose another option.`);
+          return;
+        }
+        // Tracked options REQUIRE a pick: the server rejects unlabeled lines
+        // on stock-tracked variant listings (it can neither check nor
+        // decrement an unpicked option) — surface "choose options" HERE, not
+        // as a failed order.
+        const trackedVariants = (post.variants ?? []).some((v) =>
+          Array.isArray(v?.values) && v.values.some((x) => typeof x?.stock === 'number')
+        );
+        const pickedCount = Object.values(variantSelections).filter((s) => !!s).length;
+        if (trackedVariants && pickedCount === 0 && (post.variants ?? []).some((v) => (v?.values ?? []).length > 0)) {
+          Alert.alert('Choose options', 'This listing has options (size, color, …) — pick one before adding to cart.');
           return;
         }
         // Single-seller cart: explain instead of silently landing on an
@@ -640,7 +660,13 @@ export default function ProductDetailsScreen() {
             ) : (
               <Image source={gallery[0]} className="w-full h-full" resizeMode="cover" />
             )
-          ) : null}
+          ) : (
+            <View className="w-full h-full items-center justify-center" accessibilityLabel="No product photo provided">
+              <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 13, lineHeight: 18 }}>
+                No photo provided by seller
+              </Text>
+            </View>
+          )}
           {/* Amazon-style circular discount badge on the image */}
           {offPct ? (
             <View
@@ -796,10 +822,10 @@ export default function ProductDetailsScreen() {
                   {post?.deliveryMode === 'pickup'
                     ? 'Arrange pickup with the seller'
                     : post?.deliveryMode === 'shipping'
-                      ? (typeof post.shippingFee === 'number' ? `Shipping ${formatPrice(post.shippingFee)}` : 'Shipping calculated at checkout')
+                      ? 'Seller ships this item · delivery fee at checkout'
                       : post?.deliveryMode === 'local'
-                        ? 'Local delivery · calculated at checkout'
-                        : 'Delivery calculated at checkout'}
+                        ? 'Local delivery · fee at checkout'
+                        : 'Delivery fee at checkout'}
                 </Text>
               </View>
             </View>

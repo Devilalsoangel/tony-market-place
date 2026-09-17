@@ -230,3 +230,11 @@ export function PencilIcon({ size = 15, color = '#FFFFFF' }: IconProps) {
     </Svg>
   );
 }
+
+export function EyeIcon({ size = 16, color = '#464555' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 5C5.5 5 1.5 12 1.5 12C1.5 12 5.5 19 12 19C18.5 19 22.5 12 22.5 12C22.5 12 18.5 5 12 5ZM12 16.5C9.5 16.5 7.5 14.5 7.5 12C7.5 9.5 9.5 7.5 12 7.5C14.5 7.5 16.5 9.5 16.5 12C16.5 14.5 14.5 16.5 12 16.5ZM12 9.5C10.6 9.5 9.5 10.6 9.5 12C9.5 13.4 10.6 14.5 12 14.5C13.4 14.5 14.5 13.4 14.5 12C14.5 10.6 13.4 9.5 12 9.5Z" fill={color} />
+    </Svg>
+  );
+}

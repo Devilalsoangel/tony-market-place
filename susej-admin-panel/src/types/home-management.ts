@@ -69,9 +69,10 @@ export type StorefrontBanner = {
 
 export type HomeSection = {
   id: string;
-  // 'featured-posts' (post marketing) was REMOVED — banners are the only hero
-  // source and they come from the seller dashboard (Marketing Banners).
-  name: 'top-sellers' | 'hot-deals' | 'storefront-banners';
+  // Visibility rows for all 5 served rails. 'featured-posts' + 'spotlight' are
+  // visibility-only (paid placements from the promo engine — the desk can hide
+  // a wrong/fraudulent placement but manages items in Promotions, not here).
+  name: 'top-sellers' | 'hot-deals' | 'storefront-banners' | 'featured-posts' | 'spotlight';
   title: string;
   isEnabled: boolean;
   position: number;

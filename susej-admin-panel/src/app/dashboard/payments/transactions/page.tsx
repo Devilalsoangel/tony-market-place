@@ -44,7 +44,10 @@ const columns = [
 ];
 
 export default function TransactionsPage() {
-  const { data: txns } = useDbResource<Transaction>("transactions");
+  // Settled wallet movements only (the API projects WalletTransaction rows):
+  // queued money (requested payouts/refunds, pending COD) lives in its own
+  // queue, not here — the subtitle says so instead of implying full cash.
+  const { data: txns, total: txnsTotal } = useDbResource<Transaction>("transactions", { take: 100 });
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -66,7 +69,7 @@ export default function TransactionsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-[-0.01em] text-[#18181B]">Transactions</h1>
-        <p className="mt-0.5 text-[13px] text-[#71717A]">All payment transactions across the marketplace.</p>
+        <p className="mt-0.5 text-[13px] text-[#71717A]">Settled wallet movements. Queued money (requested payouts, open refunds, pending COD) lives in its own queue.</p>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
@@ -112,6 +115,7 @@ export default function TransactionsPage() {
           <DataTable
             columns={columns}
             data={filtered}
+            totalCount={typeFilter === "all" && statusFilter === "all" ? (txnsTotal ?? filtered.length) : null}
             searchable
             searchKey="userName"
             filename="transactions"

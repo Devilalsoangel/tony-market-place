@@ -46,7 +46,11 @@ export type DbResource =
   | "reels"
   | "sessions"
   | "sellers"
+  | "seller-documents"
+  | "seller-audit-log"
   | "shipments"
+  | "spotlights"
+  | "storefront-banners"
   | "stories"
   | "tickets"
   | "top-sellers"
@@ -57,6 +61,8 @@ export type DbResource =
 export type DbResourceOptions = {
   q?: string;
   status?: string;
+  /** Single-row mode (?id=): detail pages fetch the exact row, never the table. */
+  id?: string;
   take?: number;
   skip?: number;
   page?: number;
@@ -79,10 +85,18 @@ export function useDbResource<T>(resource: DbResource, opts?: DbResourceOptions)
 
   const buildUrl = useCallback(() => {
     const o = optsRef.current;
-    if (!o || (!o.q && !o.status && !o.take && !o.skip && !o.page && !o.orderBy)) return `/api/data/${resourceRef.current}`;
+    // Scale guard (single choke point): a desk that passes NO pagination opts
+    // used to pull the FULL table (server only bounds when take/skip/q/status
+    // is present). Default take=100 — the server clamps to 100 max anyway, so
+    // this changes nothing under 100 rows and bounds everything above it.
+    // Detail pages use { id } (single-row mode, unaffected).
+    if (!o || (!o.q && !o.status && !o.id && !o.take && !o.skip && !o.page && !o.orderBy)) {
+      return `/api/data/${resourceRef.current}?take=100`;
+    }
     const p = new URLSearchParams();
     if (o.q) p.set("q", o.q);
     if (o.status) p.set("status", o.status);
+    if (o.id) p.set("id", o.id);
     if (o.take) p.set("take", String(o.take));
     if (o.skip) p.set("skip", String(o.skip));
     if (o.page) p.set("page", String(o.page));

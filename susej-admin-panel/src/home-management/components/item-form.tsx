@@ -22,6 +22,8 @@ const ID_PREFIX: Record<SectionKind, string> = {
   "top-sellers": "ts",
   "hot-deals": "hd",
   "storefront-banners": "sb",
+  "featured-posts": "fp",
+  "spotlight": "sl",
 };
 
 const newId = (prefix: string) => `${prefix}-${Date.now()}`;
@@ -40,12 +42,17 @@ const STATUS_OPTIONS: Record<SectionKind, { label: string; value: string }[]> = 
     { label: "Active", value: "active" },
     { label: "Inactive", value: "inactive" },
   ],
+  // Visibility-only paid rails have no item form (unreachable) — stubs only.
+  "featured-posts": [{ label: "Active", value: "active" }],
+  "spotlight": [{ label: "Active", value: "active" }],
 };
 
 const REQUIRED_FIELDS: Record<SectionKind, string[]> = {
   "top-sellers": ["sellerName"],
   "hot-deals": ["productName"],
   "storefront-banners": ["title", "sellerUsername"],
+  "featured-posts": [],
+  "spotlight": [],
 };
 
 function Field({
@@ -104,7 +111,9 @@ export function ItemFormPage({
       ? state.topSellers
       : kind === "hot-deals"
         ? state.hotDeals
-        : state.storefrontBanners;
+        : kind === "storefront-banners"
+          ? state.storefrontBanners
+          : [];
 
   const editingItem = editingId ? items.find((i) => i.id === editingId) : undefined;
 
@@ -153,6 +162,9 @@ export function ItemFormPage({
           imageUrl: "",
           status: "active",
         };
+      default:
+        // Visibility-only paid rails have no item form (unreachable).
+        return { position, status: "active" };
     }
   };
 

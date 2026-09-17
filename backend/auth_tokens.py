@@ -9,7 +9,18 @@ import secrets
 import time
 from typing import Any, Dict
 
-SECRET_KEY = os.getenv("UNIHUB_TOKEN_SECRET", "change-this-in-production")
+SECRET_KEY = os.getenv("UNIHUB_TOKEN_SECRET")
+if not SECRET_KEY:
+    # Dev-safe fallback: an ephemeral per-boot secret (never a hardcoded value).
+    # Tokens signed with it are invalidated on every restart. Production must
+    # set UNIHUB_TOKEN_SECRET.
+    SECRET_KEY = secrets.token_urlsafe(48)
+    print(
+        "[auth_tokens] WARNING: UNIHUB_TOKEN_SECRET is not set. Using an "
+        "ephemeral random secret for this boot; all tokens invalidate on "
+        "restart. Set UNIHUB_TOKEN_SECRET in production.",
+        flush=True,
+    )
 ACCESS_TOKEN_TTL_SECONDS = 60 * 30
 REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
 
@@ -24,14 +35,20 @@ def _b64url_decode(value: str) -> bytes:
 
 
 def _sign(signing_input: str) -> str:
-    digest = hmac.new(SECRET_KEY.encode("utf-8"), signing_input.encode("utf-8"), hashlib.sha256).digest()
+    digest = hmac.new(
+        SECRET_KEY.encode("utf-8"), signing_input.encode("utf-8"), hashlib.sha256
+    ).digest()
     return _b64url_encode(digest)
 
 
 def _encode(payload: Dict[str, Any]) -> str:
     header = {"alg": "HS256", "typ": "JWT"}
-    header_part = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-    payload_part = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    header_part = _b64url_encode(
+        json.dumps(header, separators=(",", ":")).encode("utf-8")
+    )
+    payload_part = _b64url_encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    )
     signing_input = f"{header_part}.{payload_part}"
     signature = _sign(signing_input)
     return f"{signing_input}.{signature}"

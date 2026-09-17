@@ -1,0 +1,113 @@
+[1] Going to dashboard...
+Seller links found: [
+  {
+    "text": "Seller Verification",
+    "href": "https://susej-admin-panel.vercel.app/dashboard/sellers"
+  }
+]
+Navigating to: https://susej-admin-panel.vercel.app/dashboard/sellers
+URL: https://susej-admin-panel.vercel.app/dashboard/sellers
+{
+  "url": "https://susej-admin-panel.vercel.app/dashboard/sellers",
+  "title": "Admin Panel",
+  "bodyText": "S\nSUSEJ\n\nOVERVIEW\n\nDashboard\nHome Management\nCOMMERCE\nProducts\nCategories\nOrders\nAuctions\nBundles\nFood Hub\nBookings & Services\nOffers & Coupons\nShipping\nPEOPLE\nUsers\nSeller Verification\nBlocked & Banned\nAddress Book\nSOCIAL & CONTENT\nFINANCE\nPayments\nPromotions & Ads\nCommission & Fees\nWallet\nRefunds\nDisputes\nLoyalty & Referrals\nPayment Methods\nOPERATIONS & SUPPORT\nANALYTICS\nSYSTEM\nLogout\nAdmin Panel\nSearch\n⌘K\nAR\nSeller Verification\nSellers\n\nReview and verify seller applications\n\nAll Sellers\nPending Queue\nVerified\nRejected\nAll Sellers (1)\nColumns\nCSV\nExcel\n\t\nBusiness\n\t\nKYC\n\t\nGST\n\t\nProducts\n\t\nJoined\n\n\n\t\n\nRiya Threadz\n\nRiya Sharma\n\n\t\nPending\t\nPending\t0\tSep 6, 2026\n© 2026 SUSEJ. All rights reserved.\nPrivacy Policy\nTerms of Service",
+  "buttons": [
+    {
+      "text": "Commerce",
+      "disabled": false
+    },
+    {
+      "text": "People",
+      "disabled": false
+    },
+    {
+      "text": "Social & Content",
+      "disabled": false
+    },
+    {
+      "text": "Finance",
+      "disabled": false
+    },
+    {
+      "text": "Operations & Support",
+      "disabled": false
+    },
+    {
+      "text": "Analytics",
+      "disabled": false
+    },
+    {
+      "text": "System",
+      "disabled": false
+    },
+    {
+      "text": "Logout",
+      "disabled": false
+    },
+    {
+      "text": "Search⌘K",
+      "disabled": false
+    },
+    {
+      "text": "AR",
+      "disabled": false
+    },
+    {
+      "text": "All Sellers",
+      "disabled": false
+    },
+    {
+      "text": "Pending Queue",
+      "disabled": false
+    },
+    {
+      "text": "Verified",
+      "disabled": false
+    },
+    {
+      "text": "Rejected",
+      "disabled": false
+    },
+    {
+      "text": "Columns",
+      "disabled": false
+    },
+    {
+      "text": "CSV",
+      "disabled": false
+    },
+    {
+      "text": "Excel",
+      "disabled": false
+    },
+    {
+      "text": "Business",
+      "disabled": false
+    },
+    {
+      "text": "KYC",
+      "disabled": false
+    },
+    {
+      "text": "GST",
+      "disabled": false
+    },
+    {
+      "text": "Products",
+      "disabled": false
+    },
+    {
+      "text": "Joined",
+      "disabled": false
+    }
+  ],
+  "tables": [
+    [
+      " | Business | KYC | GST | Products | Joined",
+      " | Riya ThreadzRiya Sharma | pending | pending | 0 | Sep 6, 2026"
+    ]
+  ],
+  "docLinks": [],
+  "hasFileInputs": 0
+}
+Screenshot saved

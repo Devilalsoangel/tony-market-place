@@ -1,0 +1,10 @@
+Current URL: https://susej-admin-panel.vercel.app/login/2fa?from=%2Fdashboard
+Inputs found: 6
+  input type=text name=null id=null placeholder=null maxlength=1
+  input type=text name=null id=null placeholder=null maxlength=1
+  input type=text name=null id=null placeholder=null maxlength=1
+  input type=text name=null id=null placeholder=null maxlength=1
+  input type=text name=null id=null placeholder=null maxlength=1
+  input type=text name=null id=null placeholder=null maxlength=1
+Found input, filling...
+Clicking Verify...

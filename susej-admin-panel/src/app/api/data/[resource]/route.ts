@@ -74,7 +74,11 @@ const PRIMARY_KEY: Record<string, string> = {
 type Role = "super_admin" | "manager" | "moderator" | "finance" | "support" | "app";
 
 const READ_ONLY_RESOURCES = new Set(["audit-logs"]);
-const MODERATOR_RESOURCES = new Set(["communities", "reviews", "tickets"]);
+// Moderators own the safety queues: community/review/ticket desks plus the
+// report queues they triage and the blocked list their mute/block actions
+// write to. Without these, the moderation screens 403 for the role that owns
+// them (chat moderation mute/block included).
+const MODERATOR_RESOURCES = new Set(["communities", "reviews", "tickets", "reported-messages", "reported-products", "reported-comments", "reported-users", "blocked", "posts", "hashtags", "notification-templates", "notification-history"]);
 // Finance desk: money decisions only (payout/refund queues + their money
 // tables). Explicit — never inherited from the moderator set.
 const FINANCE_RESOURCES = new Set(["withdrawals", "refunds", "transactions", "ledger", "orders"]);
@@ -150,18 +154,47 @@ function normalizeRole(raw: string): Role {
   return "moderator";
 }
 
+// Finance read scope (least-privilege): money queues + their tables, the
+// payee directory (sellers), and read-only money context (commission rates,
+// summary aggregates). NEVER admins/audit-logs/users/moderation queues — a
+// payout clerk has no need for credentials, audit trails, or report contents.
+const FINANCE_READ_RESOURCES = new Set([...FINANCE_RESOURCES, "commission", "sellers", "summary"]);
 function readAllowed(resource: string, role: Role): boolean {
   if (role === "app") return false; // the app never reads admin data
-  if (role === "super_admin" || role === "manager") return true;
-  if (role === "finance") return true; // desk needs cross-table reads to rule
+  if (role === "super_admin") return true;
+  // Manager reads everything EXCEPT the admin-credential + audit-trail
+  // stores (mirrors proxy.ts managerBlockedPrefixes — page ACL and API ACL
+  // share one matrix; blocking the page while leaving the API open is
+  // theater that fails pen-test). app-settings joins the deny set: the System
+  // page is manager-blocked, and promoPrices/rolePermissions/secrets-adjacent
+  // config must not leak through the API door.
+  if (role === "manager") return resource !== "admins" && resource !== "audit-logs" && resource !== "app-settings";
+  if (role === "finance") return FINANCE_READ_RESOURCES.has(resource);
   return MODERATOR_RESOURCES.has(resource);
 }
 
 function writeAllowed(resource: string, role: Role): boolean {
   if (role === "app") return APP_SYNC_RESOURCES.has(resource);
   if (role === "super_admin") return !READ_ONLY_RESOURCES.has(resource);
-  if (role === "manager") return !READ_ONLY_RESOURCES.has(resource) && resource !== "admins";
-  if (role === "finance") return FINANCE_RESOURCES.has(resource);
+  // Manager deny-list (F5): sessions tokens (= app-impersonation via Bearer),
+  // app-settings (secrets/pricing), and the immutable money books
+  // (transactions/ledger/commission display rows with no legs). Decision
+  // queues (orders/disputes/refunds/withdrawals) stay writable — maker-checker
+  // governs execution, not the resource gate.
+  if (role === "manager") {
+    if (READ_ONLY_RESOURCES.has(resource)) return false;
+    if (resource === "admins" || resource === "audit-logs") return false;
+    if (resource === "sessions" || resource === "app-settings") return false;
+    if (resource === "transactions" || resource === "ledger" || resource === "commission") return false;
+    return true;
+  }
+  // Finance executes decisions (withdrawals/refunds/orders queues) — it never
+  // hand-writes the immutable books (ledger/transactions are append-only via
+  // the settlement machines; a hand-minted leg breaks wallet↔ledger parity).
+  if (role === "finance") {
+    if (resource === "ledger" || resource === "transactions") return false;
+    return FINANCE_RESOURCES.has(resource);
+  }
   // Moderators + every other staff role: community scope only, and NEVER
   // money tables (explicit deny beats any future set additions).
   if (MONEY_RESOURCES.has(resource)) return false;
@@ -228,6 +261,22 @@ function serialize(value: unknown, resource?: string): unknown {
     // Strip sensitive fields for admins AND users resources.
     // passwordHash must NEVER be exposed — it enables offline brute-force attacks.
     if (resource === "admins" || resource === "users") return stripSensitive(out);
+    // Session tokens are credential material (Bearer susej_* impersonates the
+    // user on every /api/app/* route) — opaque, HttpOnly, never listable.
+    // Support uses short-lived impersonation grants, not token dumps.
+    if (resource === "sessions") {
+      delete out.token;
+      return out;
+    }
+    // API keys / SMTP passwords are write-only secrets: list APIs return
+    // metadata + last4 only; the full value exists only at creation.
+    if (resource === "app-settings" && typeof out.key === "string" && typeof out.value === "string") {
+      if (/api[_-]?key|secret|password|token|smtp/i.test(String(out.key))) {
+        const v = String(out.value);
+        out.value = v.length <= 4 ? "••••" : `••••${v.slice(-4)}`;
+      }
+      return out;
+    }
     return out;
   }
   return value;
@@ -404,7 +453,10 @@ function sanitizeOrderForApp(raw: Record<string, unknown>, appUser: Record<strin
   // server-controlled via /api/app/orders.
   // sellerUsername is EXCLUDED: order-to-seller binding is server-authoritative
   // (resolved from the listing owner in /api/app/orders), not settable here.
-  const ALLOWED = new Set(["items", "itemsList", "shippingAddress", "address", "label", "type", "name", "phone", "street", "city", "sellerName", "paymentMethod", "trackingNumber", "orderNumber"]);
+  // trackingNumber/orderNumber/sellerName are EXCLUDED too: attacker-picked
+  // tracking collides idempotency titles across distinct orders, and display
+  // names are server-resolved (mirror rows must never spoof the admin queue).
+  const ALLOWED = new Set(["items", "itemsList", "shippingAddress", "address", "label", "type", "name", "phone", "street", "city", "paymentMethod"]);
   const out: Record<string, unknown> = {};
   for (const k of ALLOWED) if (raw[k] !== undefined) out[k] = raw[k];
   const buyerName = String(appUser.name ?? appUser.username ?? "").trim();
@@ -510,6 +562,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? url.searchParams.get("search") ?? "").trim();
   const statusFilter = url.searchParams.get("status")?.trim() ?? "";
+  // Single-row fetch for detail pages (?id=): exact row, no table scan.
+  // Detail desks must use this — full-table loads false-negative past 100 rows.
+  const idFilter = url.searchParams.get("id")?.trim() ?? "";
   const takeRaw = url.searchParams.get("take") ?? url.searchParams.get("limit") ?? url.searchParams.get("pageSize") ?? "";
   const skipRaw = url.searchParams.get("skip") ?? url.searchParams.get("offset") ?? "";
   const pageRaw = url.searchParams.get("page") ?? "";
@@ -544,9 +599,53 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (prisma) {
     try {
       await lazySweep();
+      // Transactions: the legacy `Transaction` table is an empty pre-launch
+      // model (0 rows) — the REAL money movements live in WalletTransaction
+      // (every debit/credit the engine writes). Serve those, projected onto
+      // the Transaction shape the finance surfaces render. Derivation is
+      // explicit: type from title taxonomy, method always wallet (true —
+      // these are wallet ledger rows), status success (settled movements;
+      // pending states live in the withdrawals/refunds queues).
+      if (resource === "transactions") {
+        const wTake = take || 500;
+        const [wt, wTotal] = await Promise.all([
+          prisma.walletTransaction.findMany({ orderBy: { ts: "desc" }, take: wTake, skip }),
+          prisma.walletTransaction.count(),
+        ]);
+        const toType = (title: string): string => {
+          const t = String(title ?? "");
+          if (/^withdrawal to (bank|upi)/i.test(t)) return "withdrawal";
+          if (/^order cancelled - refund/i.test(t)) return "refund";
+          if (/^order earnings/i.test(t) || /clawback/i.test(t)) return "settlement";
+          return "payment";
+        };
+        const wRows = (wt as Record<string, unknown>[]).map((w) => ({
+          id: String(w.id ?? ""),
+          userName: String(w.username ?? ""),
+          type: toType(String(w.title ?? "")),
+          amount: Number(w.amount ?? 0),
+          method: "wallet",
+          gateway: "internal",
+          reference: String(w.detail ?? ""),
+          status: "success",
+          createdAt: w.ts instanceof Date ? w.ts.toISOString() : String(w.ts ?? ""),
+        }));
+        if (hasPagination) return NextResponse.json({ rows: wRows, total: wTotal, skip, take: take || wRows.length });
+        return NextResponse.json({ rows: wRows });
+      }
       // Merge EXTENDED include/select with pagination where/orderBy
       const base = (EXTENDED[resource] ?? {}) as Record<string, unknown>;
       const findArgs: Record<string, unknown> = { ...base };
+      if (idFilter) {
+        // Single-row mode: primary-key lookup + EXTENDED shape, total: 1/0.
+        // findFirst (not findUnique) so non-unique key configs can't 500.
+        const one = await prisma[PRISMA_MODELS[resource]].findFirst({
+          ...((base as Record<string, unknown>) ?? {}),
+          where: { [PRIMARY_KEY[resource] ?? "id"]: idFilter },
+        });
+        const rowsOut = one ? (serialize([one], resource) as Record<string, unknown>[]) : [];
+        return NextResponse.json({ rows: rowsOut, total: rowsOut.length });
+      }
       if (Object.keys(where).length) findArgs.where = where;
       if (orderBy) findArgs.orderBy = orderBy;
       else if (!hasPagination && (base as any).orderBy === undefined) {
@@ -560,6 +659,99 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ? await prisma[PRISMA_MODELS[resource]].findMany(findArgs)
         : await prisma[PRISMA_MODELS[resource]].findMany(EXTENDED[resource] ?? {});
       let rowsOut = serialize(list, resource) as Record<string, unknown>[];
+      // Withdrawals: destination resolution (read-time join, no schema
+      // change). New rows carry `· to <destination>` in their
+      // walletTransaction detail (written atomically at payout). Legacy bank
+      // rows resolve to the KYC-verified Seller.bankAccount on file; legacy
+      // UPI rows predate destination capture and say so honestly instead of
+      // inventing a VPA. The finance clerk always knows WHERE money goes.
+      if (resource === "withdrawals" && rowsOut.length) {
+        try {
+          const names = [...new Set(rowsOut.map((r) => String((r as any).userName ?? "")).filter(Boolean))];
+          const txs = names.length
+            ? ((await prisma.walletTransaction.findMany({
+                where: { username: { in: names } },
+                orderBy: { ts: "desc" },
+                take: 500,
+                select: { username: true, detail: true },
+              })) as Array<{ username?: unknown; detail?: unknown }>)
+            : [];
+          const byUser = new Map<string, Array<{ detail: string }>>();
+          for (const t of txs) {
+            const u = String(t.username ?? "");
+            if (!u) continue;
+            const arr = byUser.get(u) ?? [];
+            arr.push({ detail: String(t.detail ?? "") });
+            byUser.set(u, arr);
+          }
+          // Batched KYC join (was N+1: 2 queries per row): one users pull +
+          // one stable-id sellers pull + one legacy contact pull, joined in
+          // memory. Stable app_<username> rows win (contact changes must not
+          // orphan payouts — same rule as the payout route itself).
+          const users = names.length
+            ? ((await prisma.user.findMany({
+                where: { username: { in: names } },
+                select: { username: true, email: true, phone: true },
+              }).catch(() => [])) as Array<{ username: string; email?: unknown; phone?: unknown }>)
+            : [];
+          const userByName = new Map(users.map((u) => [String(u.username), u]));
+          const stableIds = names.map((n) => `app_${n}`);
+          const stableRows = names.length
+            ? ((await prisma.seller.findMany({
+                where: { id: { in: stableIds } },
+                select: { id: true, bankAccount: true },
+              }).catch(() => [])) as Array<{ id: string; bankAccount?: unknown }>)
+            : [];
+          const stableByName = new Map<string, string>();
+          for (const s of stableRows) {
+            const acct = String(s?.bankAccount ?? "").replace(/\D/g, "");
+            if (acct) stableByName.set(String(s.id).replace(/^app_/, ""), acct);
+          }
+          const emails = users.map((u) => String(u.email ?? "")).filter(Boolean);
+          const phones = users.map((u) => String(u.phone ?? "")).filter(Boolean);
+          const legacyOrs: Array<Record<string, unknown>> = [
+            ...emails.map((e) => ({ email: e })),
+            ...phones.map((p) => ({ phone: p })),
+          ];
+          const legacyRows = legacyOrs.length
+            ? ((await prisma.seller.findMany({
+                where: { OR: legacyOrs },
+                select: { email: true, phone: true, bankAccount: true },
+              }).catch(() => [])) as Array<{ email?: unknown; phone?: unknown; bankAccount?: unknown }>)
+            : [];
+          const legacyAcctFor = (userName: string): string => {
+            const u = userByName.get(userName);
+            if (!u) return "";
+            const email = String(u.email ?? "");
+            const phone = String(u.phone ?? "");
+            const hit =
+              legacyRows.find((s) => email && String(s.email ?? "") === email) ??
+              legacyRows.find((s) => phone && String(s.phone ?? "") === phone);
+            return String(hit?.bankAccount ?? "").replace(/\D/g, "");
+          };
+          rowsOut = rowsOut.map((r) => {
+            const id = String((r as any).id ?? "");
+            const method = String((r as any).method ?? "");
+            const userName = String((r as any).userName ?? "");
+            let destination = "";
+            const mine = byUser.get(userName) ?? [];
+            const hit = mine.find((t) => t.detail.includes(`Payout request ${id}`));
+            const m = hit ? hit.detail.match(/· to (.+)$/) : null;
+            if (m) destination = m[1].trim();
+            if (!destination && method === "bank" && userName) {
+              const acct = stableByName.get(userName) || legacyAcctFor(userName);
+              if (acct) destination = `KYC account ••••${acct.slice(-4)}`;
+            }
+            if (!destination) {
+              destination =
+                method === "upi"
+                  ? "not recorded — confirm VPA with seller before paying"
+                  : "no verified account on file";
+            }
+            return { ...r, destination };
+          });
+        } catch {}
+      }
       // Categories: productCount is COMPUTED from real Product rows — the stored
       // column is legacy seed residue and must never be echoed (it held fake numbers).
       if (resource === "categories") {
@@ -650,6 +842,11 @@ function validateResourcePayload(resource: string, data: Record<string, unknown>
     categories: new Set(["active", "hidden", "deleted"]),
     // Unified payout state machine (see PATCH transition guard below).
     withdrawals: new Set(["requested", "approved", "rejected", "completed"]),
+    coupons: new Set(["active", "disabled", "expired", "deleted"]),
+    // Disputes: open → under_review → resolved is the only forward path (the
+    // one-way resolved guard below refuses re-resolve; arbitrary strings would
+    // reopen the cross-outcome double-pay hole).
+    disputes: new Set(["open", "under_review", "resolved", "closed", "rejected"]),
   };
   if (typeof data.status === "string" && statusAllow[resource] && !statusAllow[resource].has(String(data.status))) {
     return `Invalid status '${data.status}' for ${resource}`;
@@ -662,6 +859,58 @@ function validateResourcePayload(resource: string, data: Record<string, unknown>
   if (data.amount !== undefined) {
     const n = Number(data.amount);
     if (!Number.isFinite(n) || n < 0) return "amount must be a non-negative number";
+  }
+  // Coupon money validation (server-side, Shopify/Amazon rule): percent
+  // clamped 1–90 (settlement fail-closes above 100), fixed > 0, usageLimit
+  // >= 1 (a 0-limit row is dead on arrival — intelligence-guard violation),
+  // type allow-listed to the settlement vocab. The desk form mirrors these.
+  if (resource === "coupons") {
+    const allowedTypes = new Set(["percent", "percentage", "flat", "fixed", "free_delivery"]);
+    if (data.type !== undefined && !allowedTypes.has(String(data.type))) {
+      return `Invalid coupon type '${data.type}' — use percent, flat, fixed, or free_delivery`;
+    }
+    if (data.value !== undefined) {
+      const v = Number(data.value);
+      if (!Number.isFinite(v) || v <= 0) return "Coupon value must be greater than 0";
+      const t = data.type !== undefined ? String(data.type) : undefined;
+      if ((t === "percent" || t === "percentage") && v > 90) {
+        return "Percentage coupons are capped at 90%";
+      }
+    }
+    if (data.usageLimit !== undefined) {
+      const u = Number(data.usageLimit);
+      if (!Number.isInteger(u) || u < 1) return "usageLimit must be an integer >= 1";
+    }
+    if (data.usedCount !== undefined) {
+      const u = Number(data.usedCount);
+      if (!Number.isInteger(u) || u < 0) return "usedCount must be an integer >= 0";
+    }
+  }
+  // Commission money validation (server-side, UI clamp bypass close): rates
+  // are percents 0–30 (normalizeCommissionRate caps 100% — a 999 rate would
+  // zero every seller payout; negatives zero the platform). Overrides carry
+  // the same bounds with no duplicate categories.
+  if (resource === "commission") {
+    if (data.commissionRate !== undefined) {
+      const r = Number(data.commissionRate);
+      if (!Number.isFinite(r) || r < 0 || r > 30) return "commissionRate must be a percent between 0 and 30";
+    }
+    if (data.payoutFee !== undefined) {
+      const f = Number(data.payoutFee);
+      if (!Number.isFinite(f) || f < 0 || f > 1000) return "payoutFee must be between 0 and 1000";
+    }
+    if (data.categoryOverrides !== undefined) {
+      if (!Array.isArray(data.categoryOverrides)) return "categoryOverrides must be an array";
+      const seen = new Set<string>();
+      for (const o of data.categoryOverrides as Array<{ category?: unknown; rate?: unknown }>) {
+        const c = String(o?.category ?? "").trim().toLowerCase();
+        const r = Number(o?.rate);
+        if (!c) return "categoryOverrides entries need a category";
+        if (seen.has(c)) return `Duplicate category override '${o?.category}'`;
+        seen.add(c);
+        if (!Number.isFinite(r) || r <= 0 || r > 30) return `Override rate for '${o?.category}' must be a percent between 0 and 30`;
+      }
+    }
   }
   return null;
 }
@@ -684,38 +933,85 @@ async function transitionRefund(
   opts: { actor: string; superAdmin: boolean }
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const fail = (error: string, status: number) => ({ ok: false as const, error, status });
-  const row = await prisma.refund.findUnique({ where: { id: String(refundId) } });
-  if (!row) return fail("Refund not found", 404);
-  const rawCurrent = String(row.status ?? "requested");
-  const okTransition =
-    (rawCurrent === "requested" && ["approved", "rejected", "refunded"].includes(nextStatus)) ||
-    (rawCurrent === "approved" && ["refunded", "rejected"].includes(nextStatus));
-  if (!okTransition) {
+  // Read-only validations run outside the money tx (no locks held during
+  // maker-checker reads). The money path below re-reads everything AFTER
+  // acquiring the order lock, so concurrent executions serialize properly.
+  const row0 = await prisma.refund.findUnique({ where: { id: String(refundId) } });
+  if (!row0) return fail("Refund not found", 404);
+  const rawCurrent0 = String(row0.status ?? "requested");
+  const okTransition0 =
+    (rawCurrent0 === "requested" && ["approved", "rejected", "refunded"].includes(nextStatus)) ||
+    (rawCurrent0 === "approved" && ["refunded", "rejected"].includes(nextStatus));
+  if (!okTransition0) {
     return fail(
-      `Invalid refund transition '${rawCurrent}' -> '${nextStatus}'. Allowed: requested→approved/rejected/refunded, approved→refunded/rejected.`,
+      `Invalid refund transition '${rawCurrent0}' -> '${nextStatus}'. Allowed: requested→approved/rejected/refunded, approved→refunded/rejected.`,
       409
     );
   }
-  if (rawCurrent === "requested" && nextStatus === "refunded" && !opts.superAdmin) {
+  if (rawCurrent0 === "requested" && nextStatus === "refunded" && !opts.superAdmin) {
     return fail("Mark approved first — only a Super Admin may refund in one step.", 409);
   }
   if (nextStatus === "refunded") {
-    const block = await makerCheck(prisma, "refunds", String(row.id), opts.actor);
+    const block = await makerCheck(prisma, "refunds", String(row0.id), opts.actor);
     if (block) return fail(block, 409);
   }
-  if (nextStatus === "approved" || nextStatus === "refunded") {
-    try {
+  // Non-money terminal states settle nothing — plain update, no lock needed.
+  if (nextStatus !== "approved" && nextStatus !== "refunded") {
+    await prisma.refund.update({
+      where: { id: String(row0.id) },
+      data: { status: nextStatus, respondedAt: new Date().toISOString() },
+    });
+    return { ok: true };
+  }
+  // Money path: ONE interactive tx + order-row lock. Concurrent executions
+  // (same-path double-submit, cross-path cancel-vs-approve-vs-dispute) block
+  // on the lock until the first COMMITS, then their count-guards observe the
+  // first execution's titles and settle nothing twice.
+  try {
+    return await prisma.$transaction(async (tx: any) => {
+      const row = await tx.refund.findUnique({ where: { id: String(refundId) } });
+      if (!row) return fail("Refund not found", 404);
+      const rawCurrent = String(row.status ?? "requested");
+      const okTransition =
+        (rawCurrent === "requested" && ["approved", "refunded"].includes(nextStatus)) ||
+        (rawCurrent === "approved" && ["refunded"].includes(nextStatus));
+      if (!okTransition) {
+        return fail(
+          `Invalid refund transition '${rawCurrent}' -> '${nextStatus}'. Already decided by a concurrent execution.`,
+          409
+        );
+      }
       const tracking = String(row.orderRef ?? "").trim();
       if (tracking) {
-        const order = await prisma.order.findFirst({ where: { trackingNumber: tracking } });
+        const order = await tx.order.findFirst({ where: { trackingNumber: tracking } });
         if (order) {
+          // Serialization point: every money execution for this order —
+          // desk refund/approve, staff cancel/deliver, dispute ruling,
+          // shipment deliver — locks this row first (same helper text).
+          await tx.$queryRawUnsafe(`SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`, order.id);
+          // Route every db call below through the locked tx (shadow): the
+          // guard-reads and leg-writes serialize as one unit, so a concurrent
+          // execution blocks until this COMMITS and then observes its titles.
+          const prisma = tx;
           const method = String(order.paymentMethod ?? "");
           const isCod = /cash|cod/i.test(method);
           const paysWallet = method.toLowerCase() === "wallet";
           const refundTitle = `Order refund · ${tracking}`;
           const clawTitle = `Order refund clawback · ${tracking}`;
+          // Cross-path guard (API-H1): cancel/app/dispute refunds for the same
+          // order already settled — never pay twice on the desk path.
           const alreadyRefunded = await prisma.walletTransaction.count({
-            where: { username: order.buyerUsername, title: refundTitle },
+            where: {
+              username: order.buyerUsername,
+              title: {
+                in: [
+                  refundTitle,
+                  `Order cancelled - refund · ${tracking}`,
+                  `Dispute refund · ${tracking}`,
+                  `Dispute split refund · ${tracking}`,
+                ],
+              },
+            },
           });
           if (paysWallet && !alreadyRefunded && order.buyerUsername && order.amount > 0) {
             const buyer = await prisma.user.findUnique({ where: { username: order.buyerUsername } }).catch(() => null);
@@ -724,49 +1020,108 @@ async function transitionRefund(
               await prisma.walletTransaction.create({
                 data: { username: order.buyerUsername, title: refundTitle, detail: `Refund approved for order ${tracking}`, amount: order.amount },
               });
-              await prisma.ledgerEntry.createMany({
-                data: [{ partyName: order.buyerName, partyRole: "buyer", direction: "in", type: "reversal", amount: order.amount, method, status: "success", orderId: order.id, createdAt: new Date() }],
-              }).catch(() => {});
+              // Loud + count-guarded (never swallowed, never doubled): a
+              // mirror failure 503s with status unchanged, and the title
+              // guards above make the retry safe.
+              const mirrored = await prisma.ledgerEntry.count({
+                where: { orderId: order.id, type: "reversal", direction: "in", status: "success" },
+              });
+              if (!mirrored) {
+                await prisma.ledgerEntry.createMany({
+                  data: [{ partyName: order.buyerName, partyRole: "buyer", direction: "in", type: "reversal", amount: order.amount, method, status: "success", orderId: order.id, createdAt: new Date() }],
+                });
+              }
             }
           }
           const wasCredited = await prisma.walletTransaction.count({
             where: { username: order.sellerUsername, title: `Order earnings · ${tracking}` },
           });
           const alreadyClawed = await prisma.walletTransaction.count({
-            where: { username: order.sellerUsername, title: clawTitle },
+            where: {
+              username: order.sellerUsername,
+              title: {
+                in: [
+                  clawTitle,
+                  `Order cancelled clawback · ${tracking}`,
+                  `Dispute refund clawback · ${tracking}`,
+                  `Dispute split clawback · ${tracking}`,
+                ],
+              },
+            },
           });
-          if (!isCod && wasCredited && !alreadyClawed && order.sellerUsername) {
+          // Seller claw runs for wallet AND COD (post-delivery both were
+          // credited — evidence-guarded by wasCredited, so pre-delivery rows
+          // safely no-op).
+          if (wasCredited && !alreadyClawed && order.sellerUsername) {
             const rate = await resolveCommissionRate(prisma);
             let basis = Number(order.amount);
             // Coupon-aware settlement basis (prefers per-line netPrice).
             const settledBasis = settlementGoodsBasis(order.itemsList);
             if (Number.isFinite(settledBasis)) basis = settledBasis;
-            const net = Math.max(0, Math.round(basis * (1 - rate)));
+            // Category-aware: claw EXACTLY what placement credited — persisted
+            // per-line legs first, global rate only for legacy rows (M1: the
+            // old global-rate math over/under-clawed override-category orders).
+            const legFee = settledFeeFromLegs(order.itemsList);
+            const net = legFee !== null
+              ? Math.max(0, Math.round(basis) - legFee)
+              : Math.max(0, Math.round(basis * (1 - rate)));
             const seller = net > 0 ? await prisma.user.findUnique({ where: { username: order.sellerUsername } }).catch(() => null) : null;
             if (seller) {
               await prisma.user.update({ where: { id: seller.id }, data: { walletBalance: { decrement: net } } });
               await prisma.walletTransaction.create({
                 data: { username: order.sellerUsername, title: clawTitle, detail: `Earnings reversal for refunded order ${tracking}`, amount: -net },
               });
-              await prisma.ledgerEntry.createMany({
-                data: [{ partyName: order.sellerUsername, partyRole: "seller", direction: "out", type: "reversal", amount: net, method, status: "success", orderId: order.id, createdAt: new Date() }],
-              }).catch(() => {});
+              const clawMirrored = await prisma.ledgerEntry.count({
+                where: { orderId: order.id, type: "reversal", direction: "out", status: "success" },
+              });
+              if (!clawMirrored) {
+                await prisma.ledgerEntry.createMany({
+                  data: [{ partyName: order.sellerUsername, partyRole: "seller", direction: "out", type: "reversal", amount: net, method, status: "success", orderId: order.id, createdAt: new Date() }],
+                });
+              }
             }
           }
-          if (paysWallet) {
-            await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "refunded" } }).catch(() => {});
+          // ANY executed desk refund marks the order refunded — wallet or COD
+          // (matches the app approve path; otherwise COD stays withdrawable).
+          await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "refunded" } });
+          // Platform legs: placement booked fee-in + shipping-in; the desk
+          // path stranded both (cancel/app-approve mirror them). Count-guarded
+          // so books balance on every path, not just cancel.
+          {
+            const dRate = await resolveCommissionRate(prisma);
+            const dLegFee = settledFeeFromLegs(order.itemsList);
+            const dSettled = settlementGoodsBasis(order.itemsList);
+            const dBasis = Number.isFinite(dSettled) ? (dSettled as number) : Number(order.amount ?? 0);
+            const dFeeOut = dLegFee !== null && dLegFee > 0 ? Math.round(dLegFee) : Math.max(0, Math.round(dBasis * dRate));
+            if (dFeeOut > 0) {
+              const dFeeReversed = await prisma.ledgerEntry.count({ where: { orderId: order.id, type: "fee", direction: "out" } });
+              if (!dFeeReversed) {
+                await prisma.ledgerEntry.createMany({
+                  data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "fee", amount: dFeeOut, method, status: "success", orderId: order.id, createdAt: new Date() }],
+                });
+              }
+            }
+            const dShipOut = Math.max(0, Math.round(Number(order.amount ?? 0)) - Math.round(dBasis));
+            if (dShipOut > 0) {
+              const dShipReversed = await prisma.ledgerEntry.count({ where: { orderId: order.id, type: "shipping", direction: "out" } });
+              if (!dShipReversed) {
+                await prisma.ledgerEntry.createMany({
+                  data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: dShipOut, method, status: "success", orderId: order.id, createdAt: new Date() }],
+                });
+              }
+            }
           }
         }
       }
-    } catch {
-      return fail("Refund settlement failed — status not changed", 503);
-    }
+      await prisma.refund.update({
+        where: { id: String(row.id) },
+        data: { status: nextStatus, respondedAt: new Date().toISOString() },
+      });
+      return { ok: true };
+    });
+  } catch {
+    return fail("Refund settlement failed — status not changed", 503);
   }
-  await prisma.refund.update({
-    where: { id: String(row.id) },
-    data: { status: nextStatus, respondedAt: new Date().toISOString() },
-  });
-  return { ok: true };
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ resource: string }> }) {
@@ -779,12 +1134,57 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!PRISMA_MODELS[resource]) return NextResponse.json({ error: "Unknown resource" }, { status: 404 });
   if (!writeAllowed(resource, role)) return forbidden();
 
-  const { id, data } = await request.json();
+  const { id, data, reason } = (await request.json()) as { id: string; data: Record<string, unknown>; reason?: unknown };
   if (!id || typeof data !== "object" || data === null) {
     return NextResponse.json({ error: "id and data are required" }, { status: 400 });
   }
+  // Paid-rail content is engine-owned: manager/finance may flip status (the
+  // fraud kill-switch) but never rewrite paid content (price/name/priority).
+  // Super_admin break-glass only, audited.
+  {
+    const PAID_RAILS = new Set(["top-sellers", "hot-deals", "featured-posts", "spotlights"]);
+    if (PAID_RAILS.has(resource) && (role === "manager" || role === "finance" || role === "moderator")) {
+      const keys = Object.keys(data);
+      if (!keys.length || keys.some((k) => k !== "status")) {
+        return NextResponse.json({ error: "Paid rails are engine-owned — staff can hide/show rows, not rewrite them." }, { status: 403 });
+      }
+    }
+  }
   const validationErr = validateResourcePayload(resource, data as Record<string, unknown>);
   if (validationErr) return NextResponse.json({ error: validationErr }, { status: 400 });
+  // Settlement-owned money fields are NEVER hand-editable: display edits that
+  // move no ledger legs make GMV/commission/payout tiles lie. Amounts move
+  // only inside their machines (order cancel/deliver/refund, payout
+  // request/approve/complete, promotion purchase/refund).
+  const moneyOwned: Record<string, string[]> = {
+    // orders.itemsList drives every settlement basis (goods + per-line fee
+    // legs) — hand-editing it re-prices history behind the ledger's back.
+    orders: ["amount", "itemsList"],
+    withdrawals: ["amount"],
+    refunds: ["amount"],
+    promotions: ["amountPaid"],
+  };
+  const ownedFields = moneyOwned[resource] ?? [];
+  const blockedHit = ownedFields.find((f) => (data as Record<string, unknown>)[f] !== undefined);
+  if (blockedHit) {
+    return NextResponse.json(
+      { error: `'${blockedHit}' on ${resource} is settlement-owned and cannot be hand-edited — use the approve/refund/payout actions so ledger legs move with the display.` },
+      { status: 400 }
+    );
+  }
+  // Loyalty points are spendable value: direct PATCH must carry the same
+  // justification the desk UI requires, or unattributed minting/deduction
+  // bypasses the audit trail (direct-API calls skipped the client gate).
+  if (resource === "loyalty") {
+    const touchesValue =
+      (data as Record<string, unknown>).points !== undefined || (data as Record<string, unknown>).tier !== undefined;
+    if (touchesValue && typeof reason !== "string") {
+      return NextResponse.json({ error: "A reason is required to adjust loyalty points." }, { status: 400 });
+    }
+    if (touchesValue && !(reason as string).trim()) {
+      return NextResponse.json({ error: "A reason is required to adjust loyalty points." }, { status: 400 });
+    }
+  }
   if (resource === "admins" && session.sub === id) {
     return forbidden("You cannot modify your own account.");
   }
@@ -884,6 +1284,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       : appScopedData ?? data;
   if (payload instanceof NextResponse) return payload;
   let cleanPayload: Record<string, unknown> = normalizeRelationArrays(payload as Record<string, unknown>);
+  // PK armor (hostile-audit 7b): the row key comes from body.id, never from
+  // data — Prisma rejects @id writes, so a client-echoed id 503'd every save.
+  delete (cleanPayload as Record<string, unknown>).id;
   if (resource === "users") {
     const blockedUserFields = new Set(["walletBalance", "loyaltyPoints", "passwordHash"]);
     for (const k of Object.keys(cleanPayload)) if (blockedUserFields.has(k)) delete (cleanPayload as any)[k];
@@ -916,6 +1319,199 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       try {
         before = await prisma[PRISMA_MODELS[resource]].findUnique({ where: { [PRIMARY_KEY[resource] ?? "id"]: id } });
       } catch {}
+      // Coupon cap on the EFFECTIVE type (F10): the field validator only sees
+      // the payload, so `PATCH {value:95}` on a percent row (or flipping
+      // `type` onto a value-95 flat row) skipped the 90% clamp and minted
+      // near-free coupons. Resolve type = payload ?? stored row.
+      if (resource === "coupons" && before) {
+        const d = data as Record<string, unknown>;
+        if (d.value !== undefined || d.type !== undefined) {
+          const effType = String(d.type ?? (before as { type?: unknown }).type ?? "");
+          const effValue = d.value !== undefined ? Number(d.value) : Number((before as { value?: unknown }).value ?? 0);
+          if ((effType === "percent" || effType === "percentage") && Number.isFinite(effValue) && effValue > 90) {
+            return NextResponse.json({ error: "Percentage coupons are capped at 90%" }, { status: 400 });
+          }
+        }
+      }
+      // Loyalty tier must match the points band (desk computes it; direct API
+      // used to mint Platinum-on-0-points). Bands mirror the desk exactly.
+      if (resource === "loyalty" && before && (data as Record<string, unknown>).tier !== undefined) {
+        const d = data as Record<string, unknown>;
+        const effPoints = d.points !== undefined ? Number(d.points) : Number((before as { points?: unknown }).points ?? 0);
+        const band = !Number.isFinite(effPoints) || effPoints < 0 ? null
+          : effPoints >= 5000 ? "Platinum" : effPoints >= 1500 ? "Gold" : effPoints >= 500 ? "Silver" : "Bronze";
+        if (!band || String(d.tier) !== band) {
+          return NextResponse.json({ error: `Tier must match the points band (${effPoints} pts = ${band ?? "invalid"})` }, { status: 400 });
+        }
+      }
+      // Top-seller PATCH: same ghost/duplicate rail guards as POST (F13).
+      // Accepts Seller.id (`app_<username>`) or username, like POST.
+      if (resource === "top-sellers" && role !== "app" && (data as Record<string, unknown>).sellerId !== undefined) {
+        const rawSellerId = String((data as Record<string, unknown>).sellerId ?? "").trim();
+        const sellerId = rawSellerId.startsWith("app_") ? rawSellerId.slice(4) : rawSellerId;
+        if (!sellerId) return NextResponse.json({ error: "sellerId is required" }, { status: 400 });
+        const sellerUser = await prisma.user.findUnique({ where: { username: sellerId } }).catch(() => null);
+        if (!sellerUser || !(sellerUser as { isSeller?: boolean }).isSeller) {
+          return NextResponse.json({ error: "sellerId must be an approved seller account." }, { status: 400 });
+        }
+        const dupe = await prisma.topSeller.findFirst({ where: { sellerId } }).catch(() => null);
+        if (dupe && String((dupe as { id?: unknown }).id ?? "") !== String(id)) {
+          return NextResponse.json({ error: "Seller is already on the top-sellers rail." }, { status: 409 });
+        }
+        (data as Record<string, unknown>).sellerId = sellerId;
+        (cleanPayload as Record<string, unknown>).sellerId = sellerId;
+        const resolvedName =
+          (sellerUser as { businessName?: string; name?: string }).businessName ||
+          (sellerUser as { name?: string }).name ||
+          sellerId;
+        (data as Record<string, unknown>).sellerName = resolvedName;
+        (cleanPayload as Record<string, unknown>).sellerName = resolvedName;
+      }
+      // Hot-deal PATCH: same ghost guard as POST (dupe/cap enforced at serve
+      // take:3 + POST; PATCH re-points must still resolve to a real row).
+      if (resource === "hot-deals" && role !== "app" && (data as Record<string, unknown>).productId !== undefined) {
+        const productId = String((data as Record<string, unknown>).productId ?? "").trim();
+        if (!productId) return NextResponse.json({ error: "productId is required" }, { status: 400 });
+        const stripped = productId.startsWith("lst_") ? productId.slice(4) : productId;
+        const [postHit, productHit] = await Promise.all([
+          prisma.post.findUnique({ where: { id: stripped } }).catch(() => null),
+          prisma.product.findUnique({ where: { id: productId } }).catch(() => null),
+        ]);
+        if (!postHit && !productHit) {
+          return NextResponse.json({ error: "productId must be a real listing or product." }, { status: 400 });
+        }
+        (data as Record<string, unknown>).productId = productId;
+        (cleanPayload as Record<string, unknown>).productId = productId;
+      }
+      // Unattributed-order repair (admin desk): legacy rows placed before
+      // server-side seller binding carry sellerName "Seller" with no
+      // sellerUsername — invisible to seller settlements. Super_admin/manager
+      // may bind ONE username, once, with a reason. Attribution-only: status,
+      // payment and refund fields are refused in the same call, and no money
+      // moves (no retroactive credit — reporting truth only). The display
+      // name always resolves server-side from the User row, never the client.
+      if (resource === "orders" && role !== "app" && (data as Record<string, unknown>).sellerUsername !== undefined) {
+        const target = String((data as Record<string, unknown>).sellerUsername ?? "").trim();
+        const currentSeller = String((before as { sellerUsername?: unknown } | null)?.sellerUsername ?? "").trim();
+        if (!before) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+        if (currentSeller) return NextResponse.json({ error: "Order already has a seller — re-attribution is refused." }, { status: 409 });
+        if (!target) return NextResponse.json({ error: "sellerUsername is required" }, { status: 400 });
+        // Repair is attribution-only: ownership/identity/payment/refund fields
+        // are refused in the same call (a combined bind+steal/retrack would
+        // orphan idempotency titles into double-pay; sellerName resolves
+        // server-side, never from the client). paymentMethod/actualDelivery
+        // ride along: flipping wallet→cod (or backdating the hold stamp) in
+        // the bind call would re-route every downstream claw/credit branch.
+        const moneyKeys = ["status", "deliveryStatus", "paymentStatus", "refundStatus", "amount", "itemsList", "buyerUsername", "trackingNumber", "orderNumber", "sellerName", "paymentMethod", "actualDelivery", "deliveryLog", "shippingCarrier", "estimatedDelivery", "reviewed", "rating"];
+        if (moneyKeys.some((k) => (data as Record<string, unknown>)[k] !== undefined)) {
+          return NextResponse.json({ error: "Seller repair is attribution-only — change no status, payment or refund field in the same call." }, { status: 400 });
+        }
+        if (typeof reason !== "string" || !reason.trim()) {
+          return NextResponse.json({ error: "A reason is required for seller repair (audit trail)." }, { status: 400 });
+        }
+        const sellerUser = await prisma.user.findUnique({ where: { username: target } }).catch(() => null);
+        if (!sellerUser || !(sellerUser as { isSeller?: boolean }).isSeller) {
+          return NextResponse.json({ error: "Username is not an approved seller account." }, { status: 400 });
+        }
+        (data as Record<string, unknown>).sellerUsername = target;
+        (data as Record<string, unknown>).sellerName =
+          (sellerUser as { businessName?: string; name?: string }).businessName ||
+          (sellerUser as { name?: string }).name ||
+          target;
+        // Deliver-then-repair settlement: the legacy rows this repair exists
+        // for were delivered with NO seller bound, so no earnings were ever
+        // credited — binding alone leaves owed money visible-but-unspendable
+        // (payout counts the net, wallet holds 0, debit 400s forever). When
+        // the row is already delivered, settle the newly-bound seller now
+        // (credit + ledger + hold stamp), locked and once-only: concurrent
+        // repairs serialize, the loser 409s, and the generic update below
+        // lands the binding itself.
+        if (String((before as { status?: unknown } | null)?.status ?? "") === "delivered") {
+          try {
+            await prisma.$transaction(async (tx: any) => {
+              await tx.$queryRawUnsafe(`SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`, String(id));
+              const fresh = await tx.order.findUnique({ where: { [PRIMARY_KEY[resource] ?? "id"]: id } });
+              if (!fresh) throw new Error("__repair_order_gone");
+              if (String((fresh as { sellerUsername?: unknown }).sellerUsername ?? "").trim()) {
+                throw new Error("__repair_already_bound");
+              }
+              // Binding lands INSIDE the locked tx (not just the generic
+              // update after): concurrent different-target repairs serialize
+              // here, and the loser observes the winner's binding and 409s
+              // instead of crediting a second seller for the same order.
+              const resolvedName =
+                (sellerUser as { businessName?: string; name?: string }).businessName ||
+                (sellerUser as { name?: string }).name ||
+                target;
+              await tx.order.update({
+                where: { id: String(id) },
+                data: { sellerUsername: target, sellerName: resolvedName },
+              });
+              const rMethod = String((fresh as { paymentMethod?: unknown }).paymentMethod ?? "").trim().toLowerCase();
+              const rIsCod = rMethod === "cash on delivery" || rMethod === "cod" || rMethod === "cash";
+              const rRate = await resolveCommissionRate(tx);
+              const rSettled = settlementGoodsBasis((fresh as { itemsList?: unknown }).itemsList);
+              const rBasis = Number.isFinite(rSettled) ? (rSettled as number) : Number((fresh as { amount?: unknown }).amount ?? 0);
+              const rLegFee = settledFeeFromLegs((fresh as { itemsList?: unknown }).itemsList);
+              const rNet = rLegFee !== null
+                ? Math.max(0, Math.round(rBasis) - rLegFee)
+                : Math.max(0, Math.round(rBasis * (1 - rRate)));
+              const rTracking = String((fresh as { trackingNumber?: unknown }).trackingNumber ?? "");
+              if (rTracking && rNet > 0) {
+                const earnTitle = `Order earnings · ${rTracking}`;
+                const done = await tx.walletTransaction.count({ where: { username: target, title: earnTitle } });
+                if (!done) {
+                  const seller = await tx.user.findUnique({ where: { username: target } }).catch(() => null);
+                  if (seller) {
+                    await tx.user.update({ where: { id: (seller as { id: string }).id }, data: { walletBalance: { increment: rNet } } });
+                    await tx.walletTransaction.create({
+                      data: {
+                        username: target,
+                        title: earnTitle,
+                        detail: rIsCod ? `COD collected on delivery · repair settlement` : `Escrow released on delivery · repair settlement`,
+                        amount: rNet,
+                      },
+                    });
+                    const settledExists = await tx.ledgerEntry.count({
+                      where: { orderId: String(id), type: "settlement", direction: "in", status: "success" },
+                    });
+                    if (!settledExists) {
+                      const feeRows: { partyName: string; partyRole: string; direction: string; type: string; amount: number; method: string; status: string; orderId: string; createdAt: Date }[] = [
+                        { partyName: target, partyRole: "seller", direction: "in", type: "settlement", amount: rNet, method: String((fresh as { paymentMethod?: unknown }).paymentMethod ?? ""), status: "success", orderId: String(id), createdAt: new Date() },
+                      ];
+                      if (rLegFee !== null && rLegFee > 0) {
+                        feeRows.push({ partyName: "susej", partyRole: "platform", direction: "in", type: "fee", amount: Math.round(rLegFee), method: String((fresh as { paymentMethod?: unknown }).paymentMethod ?? ""), status: "success", orderId: String(id), createdAt: new Date() });
+                      }
+                      await tx.ledgerEntry.createMany({ data: feeRows });
+                    }
+                    await tx.order.update({
+                      where: { id: String(id) },
+                      data: {
+                        actualDelivery: new Date().toISOString(),
+                        ...(rIsCod ? { paymentStatus: "paid" } : {}),
+                      },
+                    });
+                  }
+                }
+              }
+            });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : "";
+            if (msg === "__repair_already_bound") {
+              return NextResponse.json({ error: "Order already has a seller — re-attribution is refused." }, { status: 409 });
+            }
+            if (msg === "__repair_order_gone") {
+              return NextResponse.json({ error: "Order not found" }, { status: 404 });
+            }
+            return NextResponse.json({ error: "Repair settlement failed — binding not applied" }, { status: 503 });
+          }
+        }
+      }
+      // Display-name spoof guard: sellerName resolves server-side on the repair
+      // path only — a bare sellerName PATCH with no binding is refused.
+      if (resource === "orders" && role !== "app" && (data as Record<string, unknown>).sellerName !== undefined && (data as Record<string, unknown>).sellerUsername === undefined) {
+        return NextResponse.json({ error: "sellerName resolves server-side — bind sellerUsername instead." }, { status: 400 });
+      }
       // Payout state machine for DESK decisions (industry: money movement is a
       // one-way valve, never a free-form field edit):
       //   requested -> approved | rejected   (finance decision)
@@ -937,45 +1533,34 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             { status: 409 }
           );
         }
-        // Refund-on-reject (industry standard: a rejected payout never strands
-        // the debit). The seller's wallet was debited at submission; rejection
-        // credits it back server-side and leaves an audit-visible transaction.
-        // (currentStatus is narrowed to requested|approved by the gate above,
-        // so no extra guard is needed here.)
-        if (nextStatus === "rejected") {
-          try {
-            const wRow = before as { userName?: string; amount?: number } | null;
-            const owner = String(wRow?.userName ?? "").trim();
-            const amt = Number(wRow?.amount ?? 0);
-            if (owner && amt > 0) {
-              const target = await prisma.user.findFirst({
-                where: { OR: [{ name: owner }, { username: owner }] },
-              });
-              if (target) {
-                await prisma.user.update({
-                  where: { id: target.id },
-                  data: { walletBalance: { increment: amt } },
-                });
-                await prisma.walletTransaction.create({
-                  data: {
-                    username: String(target.username ?? owner),
-                    title: "Payout rejected — refunded",
-                    detail: `Withdrawal ${id} rejected; funds returned to wallet`,
-                    amount: amt,
-                  },
-                });
-              }
-            }
-          } catch {
-            // Refund is best-effort; the rejection itself always applies and is
-            // auditable, so support can re-credit manually if this ever fails.
-          }
-        }
+        // Refund-on-reject lives in the SECOND withdrawals block below (fee-
+        // inclusive, idempotent by reversal title, fail-closed 503). A
+        // duplicate non-idempotent block used to sit here and double-credit
+        // every rejection (API-C1) — deleted, single return path only.
         // Maker-checker on EXECUTION (bank money actually leaves): approved →
         // completed needs a different admin's prior approval on record.
         if (nextStatus === "completed") {
           const block = await makerCheck(prisma, resource, String(id), session.name);
           if (block) return NextResponse.json({ error: block }, { status: 409 });
+          // Payee check (F12): completing a payout with no recorded
+          // destination certifies an unpayable transfer. The destination rides
+          // in the request-time walletTx detail (`· to <dest>`). Rows predating
+          // the detail format (no debit row at all) are grandfathered —
+          // refusing them would strand ancient payouts with no recourse.
+          {
+            const debit = await prisma.walletTransaction.findFirst({
+              where: { detail: { contains: String(id) }, amount: { lt: 0 } },
+            }).catch(() => null);
+            if (debit) {
+              const dest = String((debit as { detail?: unknown } | null)?.detail ?? "").split("· to ").pop()?.trim() ?? "";
+              if (!dest || /not recorded|no verified account/i.test(dest)) {
+                return NextResponse.json(
+                  { error: "No payee on file — confirm the seller's bank/UPI destination before completing." },
+                  { status: 409 }
+                );
+              }
+            }
+          }
           if ((await financeApproverCount(prisma)) < 2) {
             await writeAuditSafe({
               action: "data.update",
@@ -1090,12 +1675,35 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             ? Math.max(0, Math.round(goodsBasis) - legFee)
             : Math.max(0, Math.round(goodsBasis * (1 - rate)));
           const orderId = String(id);
+          // Serialize with every other money execution for this order
+          // (transitionRefund, dispute ruling, shipment deliver lock the same
+          // row first): guard-reads below observe committed titles, so neither
+          // same-second double-submit nor cross-path cancel-vs-dispute races
+          // can move money twice.
+          await prisma.$transaction(async (tx: any) => {
+            await tx.$queryRawUnsafe(`SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`, orderId);
+            // Route every db call in this block through the locked tx.
+            const prisma = tx;
           if (tracking && rawCurrent !== "cancelled" && nextStatus === "cancelled") {
             let reversed = false;
             if (paysWallet && b.buyerUsername && Number(b.amount ?? 0) > 0) {
               const title = `Order cancelled - refund · ${tracking}`;
+              // Cross-path guard: an app-approve/desk/dispute refund for the
+              // same order already made the buyer whole — a sequential
+              // dispute-then-cancel (or concurrent pair under the lock above)
+              // must never pay twice.
               const done = await prisma.walletTransaction.count({
-                where: { username: String(b.buyerUsername), title },
+                where: {
+                  username: String(b.buyerUsername),
+                  title: {
+                    in: [
+                      title,
+                      `Order refund · ${tracking}`,
+                      `Dispute refund · ${tracking}`,
+                      `Dispute split refund · ${tracking}`,
+                    ],
+                  },
+                },
               });
               if (!done) {
                 const buyer = await prisma.user
@@ -1114,6 +1722,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                       amount: Number(b.amount),
                     },
                   });
+                  // Ledger mirror (staff path was wallet-only → unreconcilable).
+                  // Count-guarded so a retry never double-mirrors.
+                  {
+                    const mirrored = await prisma.ledgerEntry.count({
+                      where: { orderId, type: "reversal", direction: "in", status: "success" },
+                    });
+                    if (!mirrored) {
+                      await prisma.ledgerEntry.createMany({
+                        data: [{ partyName: String(b.buyerName ?? b.buyerUsername ?? ""), partyRole: "buyer", direction: "in", type: "reversal", amount: Number(b.amount), method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
+                      });
+                    }
+                  }
                   reversed = true;
                 }
               } else {
@@ -1127,7 +1747,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 where: { username: String(b.sellerUsername), title: earnTitle },
               });
               const alreadyClawed = await prisma.walletTransaction.count({
-                where: { username: String(b.sellerUsername), title: clawTitle },
+                where: {
+                  username: String(b.sellerUsername),
+                  title: {
+                    in: [
+                      clawTitle,
+                      `Order refund clawback · ${tracking}`,
+                      `Dispute refund clawback · ${tracking}`,
+                      `Dispute split clawback · ${tracking}`,
+                    ],
+                  },
+                },
               });
               if (wasCredited && !alreadyClawed && net > 0) {
                 const seller = await prisma.user
@@ -1146,6 +1776,36 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                       amount: -net,
                     },
                   });
+                  // Ledger mirror for the clawback (count-guarded).
+                  {
+                    const clawMirrored = await prisma.ledgerEntry.count({
+                      where: { orderId, type: "reversal", direction: "out", status: "success" },
+                    });
+                    if (!clawMirrored) {
+                      await prisma.ledgerEntry.createMany({
+                        data: [{ partyName: String(b.sellerUsername), partyRole: "seller", direction: "out", type: "reversal", amount: net, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
+                      });
+                    }
+                    // Platform legs: placement booked fee-in + shipping-in.
+                    const feeOut = legFee !== null && legFee > 0 ? Math.round(legFee) : Math.max(0, Math.round(goodsBasis * rate));
+                    if (feeOut > 0) {
+                      const feeReversed = await prisma.ledgerEntry.count({ where: { orderId, type: "fee", direction: "out" } });
+                      if (!feeReversed) {
+                        await prisma.ledgerEntry.createMany({
+                          data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "fee", amount: feeOut, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
+                        });
+                      }
+                    }
+                    const shipOut = Math.max(0, Math.round(Number(b.amount ?? 0)) - Math.round(goodsBasis));
+                    if (shipOut > 0) {
+                      const shipReversed = await prisma.ledgerEntry.count({ where: { orderId, type: "shipping", direction: "out" } });
+                      if (!shipReversed) {
+                        await prisma.ledgerEntry.createMany({
+                          data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: shipOut, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
+                        });
+                      }
+                    }
+                  }
                   reversed = true;
                 }
               } else if (wasCredited) {
@@ -1154,12 +1814,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             }
             if (reversed) (cleanPayload as Record<string, unknown>).paymentStatus = "refunded";
           }
-          if (tracking && rawCurrent !== "delivered" && nextStatus === "delivered" && isCod && b.sellerUsername) {
-            const earnTitle = `Order earnings · ${tracking}`;
-            const done = await prisma.walletTransaction.count({
-              where: { username: String(b.sellerUsername), title: earnTitle },
-            });
-            if (!done && net > 0) {
+            if (tracking && rawCurrent !== "delivered" && nextStatus === "delivered" && b.sellerUsername) {
+              const earnTitle = `Order earnings · ${tracking}`;
+              const done = await prisma.walletTransaction.count({
+                where: { username: String(b.sellerUsername), title: earnTitle },
+              });
+              if (!done && net > 0) {
               const seller = await prisma.user
                 .findUnique({ where: { username: String(b.sellerUsername) } })
                 .catch(() => null);
@@ -1172,16 +1832,50 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                   data: {
                     username: String(b.sellerUsername),
                     title: earnTitle,
-                    detail: `COD collected on delivery · net after ${blendedPct}% commission`,
+                    detail: isCod
+                      ? `COD collected on delivery · net after ${blendedPct}% commission`
+                      : `Escrow released on delivery · net after ${blendedPct}% commission`,
                     amount: net,
                   },
                 });
-                (cleanPayload as Record<string, unknown>).paymentStatus = "paid";
+                // Ledger mirror (staff path was wallet-only → unreconcilable).
+                // Settlement + platform fee land now (count-guarded); COD
+                // adopts the pending placement legs instead of double-booking.
+                {
+                  const settledExists = await prisma.ledgerEntry.count({
+                    where: { orderId, type: "settlement", direction: "in", status: "success" },
+                  });
+                  if (!settledExists) {
+                    const feeRows: { partyName: string; partyRole: string; direction: string; type: string; amount: number; method: string; status: string; orderId: string; createdAt: Date }[] = [
+                      { partyName: String(b.sellerUsername), partyRole: "seller", direction: "in", type: "settlement", amount: net, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() },
+                    ];
+                    if (legFee !== null && legFee > 0) {
+                      feeRows.push({ partyName: "susej", partyRole: "platform", direction: "in", type: "fee", amount: Math.round(legFee), method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() });
+                    }
+                    await prisma.ledgerEntry.createMany({ data: feeRows });
+                  }
+                  if (isCod) {
+                    const pendingCharge = await prisma.ledgerEntry.findFirst({ where: { orderId, type: "charge", direction: "out", status: "pending" } });
+                    if (pendingCharge) {
+                      await prisma.ledgerEntry.update({ where: { id: pendingCharge.id }, data: { status: "success", amount: Number(b.amount ?? pendingCharge.amount) } });
+                    }
+                    const pendingShip = await prisma.ledgerEntry.findFirst({ where: { orderId, type: "shipping", direction: "in", status: "pending" } });
+                    if (pendingShip) {
+                      const shipShare = Math.max(0, Math.round(Number(b.amount ?? 0)) - Math.round(goodsBasis));
+                      if (shipShare > 0) await prisma.ledgerEntry.update({ where: { id: pendingShip.id }, data: { status: "success", amount: shipShare } });
+                      else await prisma.ledgerEntry.update({ where: { id: pendingShip.id }, data: { status: "cancelled" } });
+                    }
+                  }
+                }
+                (cleanPayload as Record<string, unknown>).paymentStatus = isCod ? "paid" : (b as { paymentStatus?: unknown }).paymentStatus;
+                // Settlement timestamp (drives the 7-day payout hold).
+                (cleanPayload as Record<string, unknown>).actualDelivery = new Date().toISOString();
               }
             } else if (done) {
               (cleanPayload as Record<string, unknown>).paymentStatus = "paid";
             }
           }
+          }); // end locked settlement tx (cancel + deliver legs above)
           // Staff refund decisions from the order-detail panel: the panel
           // edits Order.refundStatus (display-only), but money lives on the
           // linked Refund row. Route the decision through the shared machine
@@ -1220,22 +1914,45 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // title checks) so a dispute ruling composes with — never doubles — a
       // refund on the same order. All legs idempotent by title.
       if (resource === "disputes" && data.status === "resolved") {
+        // One-way state machine: an already-resolved dispute cannot be
+        // re-resolved with a new outcome (that path double-pays via
+        // cross-outcome titles). Reopen explicitly first (audit-trailed).
+        const priorStatus = String(((before ?? {}) as { status?: unknown }).status ?? "");
+        if (priorStatus === "resolved") {
+          return NextResponse.json(
+            { error: "Dispute already resolved — reopen before a new ruling" },
+            { status: 409 }
+          );
+        }
         const outcome = String((data as Record<string, unknown>).outcome ?? "");
         if (outcome === "full_refund" || outcome === "split_50_50") {
           try {
             const b = (before ?? {}) as { orderId?: unknown };
             const ref = String(b.orderId ?? "").trim();
-            const order = ref
+            const found = ref
               ? await prisma.order.findFirst({
                   where: { OR: [{ id: ref }, { trackingNumber: ref }, { orderNumber: ref }] },
                 })
               : null;
-            if (!order) {
+            if (!found) {
               return NextResponse.json(
                 { error: "Linked order not found — ruling recorded without money movement." },
                 { status: 409 }
               );
             }
+            // Locked tx: concurrent rulings (same outcome retries, cross
+            // outcome full-vs-split, or ruling-vs-cancel/approve) serialize on
+            // the order row; guard-reads observe committed titles. Fresh
+            // re-read inside — the outer row predates the lock.
+            const ruling = await prisma.$transaction(async (tx: any) => {
+              await tx.$queryRawUnsafe(`SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`, (found as { id: string }).id);
+              const prisma = tx;
+              const order = await tx.order.findFirst({
+                where: { OR: [{ id: ref }, { trackingNumber: ref }, { orderNumber: ref }] },
+              });
+              if (!order) {
+                return { status: 409 as const, error: "Linked order not found — ruling recorded without money movement." };
+              }
             const tracking = String(order.trackingNumber ?? "");
             const method = String(order.paymentMethod ?? "").trim().toLowerCase();
             const paysWallet = method === "wallet";
@@ -1253,19 +1970,36 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             const disputeNet = disputeLegFee !== null
               ? Math.max(0, Math.round(goodsBasis) - disputeLegFee)
               : Math.max(0, Math.round(goodsBasis * (1 - rate)));
-            const buyerDue = half ? Math.round(Number(order.amount ?? 0) / 2) : Number(order.amount ?? 0);
+            // Split math balances EXACTLY (floor both halves; the ≤₹1 remainder
+            // stays with the buyer): buyerDue = goods half + fee half, so the
+            // delivery-fee share the platform absorbs is an explicit number,
+            // never a silent rounding drift. feeEst = charged − goods basis
+            // (includes any shipping-share of a coupon discount, documented).
+            const roundedGoods = Math.round(goodsBasis);
+            const roundedAmount = Math.round(Number(order.amount ?? 0));
+            const feeEst = Math.max(0, roundedAmount - roundedGoods);
+            const buyerDue = half ? Math.floor(roundedAmount / 2) : roundedAmount;
+            const goodsHalf = half ? Math.floor(roundedGoods / 2) : roundedGoods;
+            const shipAbsorbed = half ? Math.max(0, buyerDue - goodsHalf) : feeEst;
             const clawDue = half
-              ? Math.max(0, Math.round(disputeNet / 2))
+              ? Math.max(0, Math.floor(disputeNet / 2))
               : disputeNet;
+            let buyerPaid = false;
+            let sellerClawedPaid = false;
             const buyerTitle = half ? `Dispute split refund · ${tracking}` : `Dispute refund · ${tracking}`;
             const clawTitle = half ? `Dispute split clawback · ${tracking}` : `Dispute refund clawback · ${tracking}`;
             const settledElsewhere = async (t: string, u: unknown) =>
               u ? (await prisma.walletTransaction.count({ where: { username: String(u), title: t } })) > 0 : false;
             if (paysWallet && order.buyerUsername && buyerDue > 0) {
               const dup = await settledElsewhere(buyerTitle, order.buyerUsername);
+              // Cross-outcome guard: the OPPOSITE dispute ruling for the same
+              // order already made the buyer whole (titles differ so UNIQUE
+              // never collides) — never pay twice.
+              const oppositeBuyer = half ? `Dispute refund · ${tracking}` : `Dispute split refund · ${tracking}`;
               const fullGone =
                 (await settledElsewhere(`Order refund · ${tracking}`, order.buyerUsername)) ||
-                (await settledElsewhere(`Order cancelled - refund · ${tracking}`, order.buyerUsername));
+                (await settledElsewhere(`Order cancelled - refund · ${tracking}`, order.buyerUsername)) ||
+                (await settledElsewhere(oppositeBuyer, order.buyerUsername));
               if (!dup && !fullGone) {
                 const buyer = await prisma.user.findUnique({ where: { username: order.buyerUsername } }).catch(() => null);
                 if (buyer) {
@@ -1278,17 +2012,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                       amount: buyerDue,
                     },
                   });
-                  if (!half) {
-                    await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "refunded" } }).catch(() => {});
-                  }
+                  // ANY dispute settlement marks the order refunded (full or
+                  // split): the payout guard excludes refunded rows wholesale,
+                  // so a split-clawed order can never stay fully withdrawable
+                  // (withdraw-after-claw double-spend). Conservative by design:
+                  // understates withdrawable, never overstates.
+                  await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "refunded" } });
+                  buyerPaid = true;
                 }
               }
             }
-            if (!isCod && order.sellerUsername && clawDue > 0) {
+            // Seller claw runs for wallet AND COD (post-delivery both were
+            // credited — evidence-guarded by wasCredited, so pre-delivery rows
+            // safely no-op).
+            if (order.sellerUsername && clawDue > 0) {
               const dup = await settledElsewhere(clawTitle, order.sellerUsername);
+              // Cross-outcome guard (mirror of the buyer side).
+              const oppositeClaw = half ? `Dispute refund clawback · ${tracking}` : `Dispute split clawback · ${tracking}`;
               const fullGone =
                 (await settledElsewhere(`Order refund clawback · ${tracking}`, order.sellerUsername)) ||
-                (await settledElsewhere(`Order cancelled clawback · ${tracking}`, order.sellerUsername));
+                (await settledElsewhere(`Order cancelled clawback · ${tracking}`, order.sellerUsername)) ||
+                (await settledElsewhere(oppositeClaw, order.sellerUsername));
               const wasCredited =
                 (await prisma.walletTransaction.count({
                   where: { username: String(order.sellerUsername), title: `Order earnings · ${tracking}` },
@@ -1305,13 +2049,140 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                       amount: -clawDue,
                     },
                   });
+                  sellerClawedPaid = true;
                 }
               }
             }
-          } catch {
-            return NextResponse.json({ error: "Dispute settlement failed — ruling not recorded" }, { status: 503 });
+            // Ledger mirror for the ruling: LOUD, never swallowed (a ruling with
+            // money moved but no mirror is unreconcilable). Count-guarded so a
+            // retry after a partial failure never double-mirrors — the wallet
+            // legs above are equally idempotent, so retry-after-503 is safe.
+            // Retry-hole fix: if the wallet legs landed on a prior attempt and
+            // this retry skipped them as dups, buyerPaid/sellerClawedPaid stay
+            // false and the mirror would write NOTHING while resolving the
+            // ruling. Re-derive settled state from the idempotency titles so
+            // the mirror still lands exactly once.
+            try {
+              const buyerSettledForMirror =
+                buyerPaid ||
+                (paysWallet && !!order.buyerUsername && buyerDue > 0 &&
+                  ((await settledElsewhere(buyerTitle, order.buyerUsername)) ||
+                    (await settledElsewhere(`Order refund · ${tracking}`, order.buyerUsername)) ||
+                    (await settledElsewhere(`Order cancelled - refund · ${tracking}`, order.buyerUsername))));
+              const sellerSettledForMirror =
+                sellerClawedPaid ||
+                (!!order.sellerUsername && clawDue > 0 &&
+                  ((await settledElsewhere(clawTitle, order.sellerUsername)) ||
+                    (await settledElsewhere(`Order refund clawback · ${tracking}`, order.sellerUsername)) ||
+                    (await settledElsewhere(`Order cancelled clawback · ${tracking}`, order.sellerUsername))));
+              // Mirror gate is per-outcome-type: a full ruling mirrors
+              // reversal rows, a split mirrors split rows. The old ANY
+              // split|reversal count skipped the mirror when the wallet legs
+              // DID move under a different outcome (money without mirror).
+              // Same-outcome concurrent retries stay serialized by the
+              // one-way resolved guard above + title idempotency (a ledger
+              // UNIQUE would need a migration — logged as NOTED).
+              const alreadyMirrored = await prisma.ledgerEntry.count({
+                where: {
+                  orderId: order.id,
+                  status: "success",
+                  type: half ? "split" : "reversal",
+                },
+              });
+              if (!alreadyMirrored) {
+              const dnow = new Date();
+              const drows: { partyName: string; partyRole: string; direction: string; type: string; amount: number; method: string; status: string; orderId: string; createdAt: Date }[] = [];
+              if (buyerSettledForMirror && order.buyerUsername) {
+                drows.push({ partyName: order.buyerName, partyRole: "buyer", direction: "in", type: half ? "split" : "reversal", amount: buyerDue, method, status: "success", orderId: order.id, createdAt: dnow });
+              }
+              if (sellerSettledForMirror && order.sellerUsername) {
+                drows.push({ partyName: order.sellerUsername, partyRole: "seller", direction: "out", type: half ? "split" : "reversal", amount: clawDue, method, status: "success", orderId: order.id, createdAt: dnow });
+              }
+              if ((buyerSettledForMirror || sellerSettledForMirror) && shipAbsorbed > 0) {
+                drows.push({ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: shipAbsorbed, method, status: "success", orderId: order.id, createdAt: dnow });
+              }
+              // Full-ruling fee reversal: cancel / seller-approve / desk-refund
+              // all reverse the placement fee — a full dispute ruling that keeps
+              // it books invisible platform revenue and disagrees with every
+              // sibling path. (Split books retainedFee explicitly above.)
+              if (!half && (buyerSettledForMirror || sellerSettledForMirror)) {
+                const fullFeeOut = disputeLegFee !== null && disputeLegFee > 0
+                  ? Math.round(disputeLegFee)
+                  : Math.max(0, Math.round(goodsBasis * rate));
+                if (fullFeeOut > 0) {
+                  const feeGone = await prisma.ledgerEntry.count({
+                    where: { orderId: order.id, type: "fee", direction: "out", status: "success" },
+                  });
+                  if (!feeGone) {
+                    drows.push({ partyName: "susej", partyRole: "platform", direction: "out", type: "fee", amount: fullFeeOut, method, status: "success", orderId: order.id, createdAt: dnow });
+                  }
+                }
+              }
+              // Retained-fee leg (split only): the platform keeps roughly half
+              // the commission (goodsHalf − clawDue) while refunding the buyer
+              // and clawing the seller. Without this row the ruling's books
+              // never balance — the kept commission is invisible money.
+              if (half && (buyerSettledForMirror || sellerSettledForMirror)) {
+                const retainedFee = Math.max(0, goodsHalf - clawDue);
+                if (retainedFee > 0) {
+                  drows.push({ partyName: "susej", partyRole: "platform", direction: "in", type: "fee", amount: retainedFee, method, status: "success", orderId: order.id, createdAt: dnow });
+                }
+              }
+              if (drows.length) await prisma.ledgerEntry.createMany({ data: drows });
+              }
+            } catch {
+              // Mirror failure rolls the ruling back LOUD (503, ruling not
+              // recorded) — the wallet legs are title-idempotent, so the admin
+              // retries and nothing double-moves. Silent mirrors are how books
+              // stop balancing.
+              throw new Error("Dispute ledger mirror failed");
+            }
+              return undefined;
+            });
+            if (ruling && (ruling as { status?: number }).status === 409) {
+              return NextResponse.json({ error: (ruling as { error?: string }).error }, { status: 409 });
+            }
+            } catch {
+              return NextResponse.json({ error: "Dispute settlement failed — ruling not recorded" }, { status: 503 });
+            }
+          } else if (outcome === "release_seller") {
+            // Release-to-seller moves no money BY DESIGN (funds already sit
+            // with the seller) — but a resolve without verification used to
+            // freeze COD orders with no settled earnings in limbo under a
+            // "resolved" label. Verify settlement exists before resolving.
+            try {
+              const b = (before ?? {}) as { orderId?: unknown };
+              const ref = String(b.orderId ?? "").trim();
+              const linked = ref
+                ? await prisma.order.findFirst({
+                    where: { OR: [{ id: ref }, { trackingNumber: ref }, { orderNumber: ref }] },
+                  })
+                : null;
+              if (!linked) {
+                return NextResponse.json(
+                  { error: "Linked order not found — ruling recorded without money movement." },
+                  { status: 409 }
+                );
+              }
+              const lt = String(linked.trackingNumber ?? "");
+              const lm = String(linked.paymentMethod ?? "").trim().toLowerCase();
+              const lIsCod = lm === "cash on delivery" || lm === "cod" || lm === "cash";
+              const earned =
+                linked.sellerUsername &&
+                (await prisma.walletTransaction.count({
+                  where: { username: String(linked.sellerUsername), title: `Order earnings · ${lt}` },
+                })) > 0;
+              if (!earned && (lIsCod || String(linked.status ?? "") !== "delivered")) {
+                return NextResponse.json(
+                  { error: "Seller has no settled earnings on this order — deliver (or settle) first, then release." },
+                  { status: 409 }
+                );
+              }
+            } catch (e) {
+              if (e instanceof NextResponse) throw e;
+              return NextResponse.json({ error: "Dispute settlement check failed — ruling not recorded" }, { status: 503 });
+            }
           }
-        }
       }
       // Shipment/order parity: "Mark delivered" previously flipped ONLY the
       // shipment row while the linked order stayed out_for_delivery (and COD
@@ -1329,13 +2200,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 })
               : null;
             if (order && String(order.status ?? "") !== "delivered" && String(order.status ?? "") !== "cancelled") {
-              await prisma.order.update({
-                where: { id: order.id },
-                data: { status: "delivered", deliveryStatus: "delivered" },
-              }).catch(() => {});
+              // Locked tx (same order-row lock as every other money path):
+              // concurrent shipment-vs-order delivers serialize; the earnings
+              // title + settlement guards observe committed state.
+              await prisma.$transaction(async (tx: any) => {
+                await tx.$queryRawUnsafe(`SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`, (order as { id: string }).id);
+                const prisma = tx;
+              // Settlement timestamp here too — without it the 7-day payout
+              // hold treats shipment-delivered rows as immediately withdrawable.
+              // NOTE: settlement runs BEFORE the status flip below — a mid-path
+              // failure must leave the order flippable for retry, never
+              // delivered-but-unpaid (the staff deliver path dedupes on
+              // delivered and would strand the seller forever).
+              const shipDeliveryAt = new Date().toISOString();
               const method = String(order.paymentMethod ?? "").trim().toLowerCase();
               const isCod = method === "cash on delivery" || method === "cod" || method === "cash";
-              if (isCod && order.sellerUsername) {
+              // Escrow release for BOTH rails (wallet sellers were never paid
+              // on this path — status said delivered, wallet said +0, and a
+              // later PATCH delivered deduped so the seller was unpaid forever).
+              if (order.sellerUsername) {
                 const earnTitle = `Order earnings · ${String(order.trackingNumber ?? "")}`;
                 const done = await prisma.walletTransaction.count({
                   where: { username: String(order.sellerUsername), title: earnTitle },
@@ -1364,17 +2247,50 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                         data: {
                           username: String(order.sellerUsername),
                           title: earnTitle,
-                          detail: `COD collected on delivery · net after ${blendedShipPct}% commission`,
+                          detail: isCod
+                            ? `COD collected on delivery · net after ${blendedShipPct}% commission`
+                            : `Escrow released on delivery · net after ${blendedShipPct}% commission`,
                           amount: net,
                         },
                       });
-                      await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "paid" } }).catch(() => {});
+                      // Ledger mirror (settlement + fee, count-guarded).
+                      const settledExists = await prisma.ledgerEntry.count({
+                        where: { orderId: order.id, type: "settlement", direction: "in", status: "success" },
+                      });
+                      if (!settledExists) {
+                        const feeRows: { partyName: string; partyRole: string; direction: string; type: string; amount: number; method: string; status: string; orderId: string; createdAt: Date }[] = [
+                          { partyName: String(order.sellerUsername), partyRole: "seller", direction: "in", type: "settlement", amount: net, method: String(order.paymentMethod ?? ""), status: "success", orderId: order.id, createdAt: new Date() },
+                        ];
+                        if (shipLegFee !== null && shipLegFee > 0) {
+                          feeRows.push({ partyName: "susej", partyRole: "platform", direction: "in", type: "fee", amount: Math.round(shipLegFee), method: String(order.paymentMethod ?? ""), status: "success", orderId: order.id, createdAt: new Date() });
+                        }
+                        await prisma.ledgerEntry.createMany({ data: feeRows });
+                      }
+                      if (isCod) {
+                        const pendingCharge = await prisma.ledgerEntry.findFirst({ where: { orderId: order.id, type: "charge", direction: "out", status: "pending" } });
+                        if (pendingCharge) {
+                          await prisma.ledgerEntry.update({ where: { id: pendingCharge.id }, data: { status: "success", amount: Number(order.amount ?? pendingCharge.amount) } });
+                        }
+                        const pendingShip = await prisma.ledgerEntry.findFirst({ where: { orderId: order.id, type: "shipping", direction: "in", status: "pending" } });
+                        if (pendingShip) {
+                          const shipShare = Math.max(0, Math.round(Number(order.amount ?? 0)) - Math.round(goodsBasis));
+                          if (shipShare > 0) await prisma.ledgerEntry.update({ where: { id: pendingShip.id }, data: { status: "success", amount: shipShare } });
+                          else await prisma.ledgerEntry.update({ where: { id: pendingShip.id }, data: { status: "cancelled" } });
+                        }
+                        await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "paid" } });
+                      }
                     }
                   }
-                } else {
-                  await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "paid" } }).catch(() => {});
+                } else if (isCod) {
+                  await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "paid" } });
                 }
               }
+              // Status flip LAST: only a fully-settled delivery reads delivered.
+              await prisma.order.update({
+                where: { id: order.id },
+                data: { status: "delivered", deliveryStatus: "delivered", actualDelivery: shipDeliveryAt },
+              });
+              });
             }
           }
         } catch {
@@ -1441,13 +2357,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
       }
       // Build changed-field diff for audit — truncate to 1800 chars to fit column.
+      // Callers (e.g. loyalty desk) may attach a top-level `reason` justification;
+      // it rides the audit trail only, never the row write.
       let details = `Fields: ${Object.keys(data as object).join(", ")}`;
+      const reasonText = typeof reason === "string" ? reason.trim().slice(0, 500) : "";
+      if (reasonText) details += ` | reason: ${reasonText.slice(0, 1600)}`;
       if (before) {
         const diffs: string[] = [];
+        // Credential-bearing fields never land in the audit trail (F14):
+        // sessions tokens + app-settings secrets would sit plaintext in
+        // auditLog.details (readable via super_admin reads/exports). Seller
+        // KYC identity (phone/bank/PAN/ID/selfie) gets the same treatment —
+        // the row itself stays readable; the diff must not duplicate PII.
+        const AUDIT_REDACTED = new Set(["token", "value", "secret", "password", "passwordHash", "twoFactorCode", "phone", "bankAccount", "pan", "idNumber", "nameOnId", "dob", "selfieUrl", "idDocUrl", "idBackUrl", "addrProofUrl", "gstCertUrl", "logoUrl", "taxId", "gstin", "aadhaar"]);
         for (const k of Object.keys(data as object)) {
           const oldV = (before as any)[k];
           const newV = (cleanPayload as any)[k] ?? (data as any)[k];
           if (String(oldV ?? "") !== String(newV ?? "")) {
+            if (AUDIT_REDACTED.has(k)) {
+              diffs.push(`${k}: '[redacted]' -> '[redacted]'`);
+              continue;
+            }
             const o = String(oldV ?? "").slice(0, 80);
             const n = String(newV ?? "").slice(0, 80);
             diffs.push(`${k}: '${o}' -> '${n}'`);
@@ -1485,6 +2415,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { resource } = await params;
   if (!PRISMA_MODELS[resource]) return NextResponse.json({ error: "Unknown resource" }, { status: 404 });
   if (!writeAllowed(resource, role)) return forbidden();
+
+  // Paid rails are engine-sold inventory (purchases mint the rows): direct
+  // creation by staff re-creates the orphan/money-for-nothing hole the sweep
+  // cleans. Super_admin break-glass only (audited); the desk kill-switch
+  // (status toggles) stays available to manager/finance via PATCH below.
+  const PAID_RAILS = new Set(["top-sellers", "hot-deals", "featured-posts", "spotlights"]);
+  if (PAID_RAILS.has(resource) && (role === "manager" || role === "finance" || role === "moderator" || role === "app")) {
+    return forbidden("Paid rails are sold by the promotions engine — staff can hide/show rows, not mint them.");
+  }
 
   const body = await request.json();
   if (typeof body !== "object" || body === null) {
@@ -1570,7 +2509,139 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           return NextResponse.json({ row: serialize(row, resource) });
         }
       }
+      // Staff POST orders with a seller binding: the display name always
+      // resolves server-side and the target must be a seller account (F11 —
+      // the POST path had zero attribution guards).
+      if (resource === "orders" && role !== "app" && (cleanPayloadPost as Record<string, unknown>).sellerUsername !== undefined) {
+        const target = String((cleanPayloadPost as Record<string, unknown>).sellerUsername ?? "").trim();
+        if (!target) return NextResponse.json({ error: "sellerUsername is required" }, { status: 400 });
+        const sellerUser = await prisma.user.findUnique({ where: { username: target } }).catch(() => null);
+        if (!sellerUser || !(sellerUser as { isSeller?: boolean }).isSeller) {
+          return NextResponse.json({ error: "Username is not an approved seller account." }, { status: 400 });
+        }
+        (cleanPayloadPost as Record<string, unknown>).sellerUsername = target;
+        (cleanPayloadPost as Record<string, unknown>).sellerName =
+          (sellerUser as { businessName?: string; name?: string }).businessName ||
+          (sellerUser as { name?: string }).name ||
+          target;
+      }
+      // Staff POST orders are settlement-safe by construction (P0 mint fix):
+      // status/paymentStatus/amount are FORCED (placed/pending/0) — a hand-set
+      // delivered+paid+amount row would mint withdrawable earnings with no
+      // buyer debit behind it. Real money enters only via app placement and
+      // settles via the guarded PATCH machines. sellerUsername required (no
+      // new unattributed rows through this lane). itemsList legs are STRIPPED
+      // (price/netPrice/commission): the staff deliver machine prices from
+      // before.itemsList, so crafted legs on a 0-amount row would still mint
+      // seller credit with no debit. Names/qty stay for the record.
+      if (resource === "orders" && role !== "app") {
+        const target = String((cleanPayloadPost as Record<string, unknown>).sellerUsername ?? "").trim();
+        if (!target) return NextResponse.json({ error: "sellerUsername is required" }, { status: 400 });
+        const sellerUser = await prisma.user.findUnique({ where: { username: target } }).catch(() => null);
+        if (!sellerUser || !(sellerUser as { isSeller?: boolean }).isSeller) {
+          return NextResponse.json({ error: "Username is not an approved seller account." }, { status: 400 });
+        }
+        (cleanPayloadPost as Record<string, unknown>).sellerUsername = target;
+        (cleanPayloadPost as Record<string, unknown>).sellerName =
+          (sellerUser as { businessName?: string; name?: string }).businessName ||
+          (sellerUser as { name?: string }).name ||
+          target;
+        (cleanPayloadPost as Record<string, unknown>).status = "placed";
+        (cleanPayloadPost as Record<string, unknown>).deliveryStatus = "awaiting_shipment";
+        (cleanPayloadPost as Record<string, unknown>).paymentStatus = "pending";
+        (cleanPayloadPost as Record<string, unknown>).amount = 0;
+        const rawLines = (cleanPayloadPost as Record<string, unknown>).itemsList;
+        if (Array.isArray(rawLines)) {
+          (cleanPayloadPost as Record<string, unknown>).itemsList = rawLines.map((l) => {
+            if (!l || typeof l !== "object") return l;
+            const line = l as Record<string, unknown>;
+            return {
+              name: typeof line.name === "string" ? line.name.slice(0, 200) : "Item",
+              qty: Math.max(1, Math.round(Number((line as { qty?: unknown; quantity?: unknown }).qty ?? (line as { quantity?: unknown }).quantity ?? 1))),
+              ...(typeof line.listingId === "string" ? { listingId: line.listingId.slice(0, 80) } : {}),
+            };
+          });
+        }
+      }
+      // Top-seller rails: ghost rows (no User, no orders) render a fabricated
+      // store with 0 sales via the serve-time fallback (F13). POST requires a
+      // real seller account, rejects duplicates, and caps the rail at 3.
+      if (resource === "top-sellers" && role !== "app") {
+        // The desk picker sends Seller.id (`app_<username>`); the promo engine
+        // sends username. Accept both — resolve to the username either way.
+        const rawSellerId = String((cleanPayloadPost as Record<string, unknown>).sellerId ?? "").trim();
+        const sellerId = rawSellerId.startsWith("app_") ? rawSellerId.slice(4) : rawSellerId;
+        if (!sellerId) return NextResponse.json({ error: "sellerId is required" }, { status: 400 });
+        const sellerUser = await prisma.user.findUnique({ where: { username: sellerId } }).catch(() => null);
+        if (!sellerUser || !(sellerUser as { isSeller?: boolean }).isSeller) {
+          return NextResponse.json({ error: "sellerId must be an approved seller account." }, { status: 400 });
+        }
+        const dupe = await prisma.topSeller.findFirst({ where: { sellerId } }).catch(() => null);
+        if (dupe) return NextResponse.json({ error: "Seller is already on the top-sellers rail." }, { status: 409 });
+        const railCount = await prisma.topSeller.count().catch(() => 0);
+        if (railCount >= 3) return NextResponse.json({ error: "Top-sellers rail is capped at 3 — remove one first." }, { status: 409 });
+        (cleanPayloadPost as Record<string, unknown>).sellerId = sellerId;
+        (cleanPayloadPost as Record<string, unknown>).sellerName =
+          (sellerUser as { businessName?: string; name?: string }).businessName ||
+          (sellerUser as { name?: string }).name ||
+          sellerId;
+      }
+      // Hot-deal rails: ghost productIds render a fabricated deal card, dupes
+      // stack the same product, and N>3 breaks the rail contract (serve caps
+      // at 3). Same ghost/dupe/cap discipline as top-sellers. NOTE: staff
+      // creation is super_admin-only (paid-rail gate above); this validates
+      // shape for engine + break-glass rows.
+      if (resource === "hot-deals" && role !== "app") {
+        const productId = String((cleanPayloadPost as Record<string, unknown>).productId ?? "").trim();
+        if (!productId) return NextResponse.json({ error: "productId is required" }, { status: 400 });
+        const stripped = productId.startsWith("lst_") ? productId.slice(4) : productId;
+        const [postHit, productHit] = await Promise.all([
+          prisma.post.findUnique({ where: { id: stripped } }).catch(() => null),
+          prisma.product.findUnique({ where: { id: productId } }).catch(() => null),
+        ]);
+        if (!postHit && !productHit) {
+          return NextResponse.json({ error: "productId must be a real listing or product." }, { status: 400 });
+        }
+        const dupe = await prisma.hotDeal.findFirst({ where: { productId } }).catch(() => null);
+        if (dupe) return NextResponse.json({ error: "Product is already on the hot-deals rail." }, { status: 409 });
+        const railCount = await prisma.hotDeal.count().catch(() => 0);
+        if (railCount >= 3) return NextResponse.json({ error: "Hot-deals rail is capped at 3 — remove one first." }, { status: 409 });
+      }
+      // App refund queue is not a free-text drop: the orderRef must resolve to
+      // a real order involving the caller, or the finance queue fills with
+      // zero-amount orphans that page sellers for nothing.
+      if (resource === "refunds" && role === "app") {
+        const ref = String((cleanPayloadPost as Record<string, unknown>).orderRef ?? "").trim().replace(/^#/, "");
+        const caller = String(((session as unknown as { appUser?: Record<string, unknown> }).appUser as { username?: unknown } | undefined)?.username ?? "").trim();
+        const linked = ref
+          ? await prisma.order.findFirst({
+              where: { OR: [{ id: ref }, { trackingNumber: ref }, { orderNumber: ref }, { trackingNumber: `#${ref}` }, { orderNumber: `#${ref}` }] },
+            }).catch(() => null)
+          : null;
+        if (!linked) return NextResponse.json({ error: "Order not found — refunds start from a real order." }, { status: 400 });
+        const parties = [String((linked as { buyerUsername?: unknown }).buyerUsername ?? ""), String((linked as { sellerUsername?: unknown }).sellerUsername ?? "")];
+        if (!caller || !parties.includes(caller)) {
+          return NextResponse.json({ error: "Not your order." }, { status: 403 });
+        }
+        (cleanPayloadPost as Record<string, unknown>).orderRef = String((linked as { trackingNumber?: unknown }).trackingNumber ?? ref);
+      }
       const row = await prisma[PRISMA_MODELS[resource]].create({ data: cleanPayloadPost });
+      // Ticket body without a column: SupportTicket has no description field
+      // (schema change needed for one), so the app's description rides as the
+      // thread's first Message row — otherwise every app ticket arrives
+      // content-less and the desk sees empty threads. Best-effort: never fails
+      // the ticket itself.
+      if (resource === "tickets" && role === "app") {
+        try {
+          const desc = String((body as Record<string, unknown>).description ?? (body as Record<string, unknown>).message ?? "").trim().slice(0, 2000);
+          if (desc) {
+            const sender = String(((session as unknown as { appUser?: Record<string, unknown> }).appUser as { username?: unknown } | undefined)?.username ?? "user");
+            await prisma.message.create({
+              data: { threadId: String((row as { id?: unknown }).id ?? ""), sender, senderRole: "user", body: desc, createdAt: new Date() },
+            });
+          }
+        } catch {}
+      }
       await writeAuditSafe({
         action: "data.create",
         entity: resource,
@@ -1805,11 +2876,34 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         const postId = String(id).slice(4);
         await prisma.post.delete({ where: { id: postId } }).catch(() => {});
       }
+      // Seller identity reset: seller rows are id-keyed `app_<username>`, so
+      // deleting the row without touching the linked User left a ghost seller
+      // login (isSeller + role both + approved verification, zero record).
+      let identityNote = "";
+      if (resource === "sellers" && String(id).startsWith("app_")) {
+        const uname = String(id).slice(4);
+        try {
+          const linked = await prisma.user.findUnique({ where: { username: uname }, select: { id: true, role: true } });
+          if (linked) {
+            await prisma.user.update({
+              where: { id: linked.id },
+              data: {
+                isSeller: false,
+                verification: "none",
+                ...(linked.role === "both" ? { role: "buyer" } : {}),
+              },
+            });
+            identityNote = ` Linked @${uname} reset to buyer.`;
+          }
+        } catch {
+          identityNote = ` Linked @${uname} reset FAILED — clear isSeller manually.`;
+        }
+      }
       await writeAuditSafe({
         action: "data.delete",
         entity: resource,
         entityId: String(id),
-        details: "Deleted record",
+        details: `Deleted record.${identityNote}`,
         adminName: session.name,
         ip: getClientIp(request),
       });

@@ -178,7 +178,12 @@ export default function DisputesScreen() {
   }, [disputes, loaded, getKey]);
 
   const openForm = () => {
-    setOrderRef(orders[0]?.orderNumber ?? 'SJ-');
+    // Prefill the newest PURCHASE (sellerUsername != me): orders[] mixes sales
+    // + purchases, and suggesting the latest sale as the dispute ref is wrong
+    // for seller-buyers.
+    const me = (user?.username ?? '').trim().toLowerCase();
+    const newestPurchase = orders.find((o) => (o.sellerUsername ?? '').trim().toLowerCase() !== me);
+    setOrderRef(newestPurchase?.orderNumber ?? orders[0]?.orderNumber ?? 'SJ-');
     setReason(null);
     setDescription('');
     setShowForm(true);

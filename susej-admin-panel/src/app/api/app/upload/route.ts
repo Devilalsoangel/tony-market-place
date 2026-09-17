@@ -92,8 +92,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Industry shelf (free tier): Cloudinary when CLOUDINARY_URL is configured —
-  // survives every deploy on every platform, served over CDN. Local disk
-  // otherwise (dev machines, Railway volume mounts).
+  // survives every deploy on every platform, served over CDN. Vercel
+  // serverless disk is EPHEMERAL (redeploy/hop wipes public/uploads), so prod
+  // without a durable host must fail HONEST (503) rather than return a URL
+  // that 404s tomorrow. Local disk stays for dev machines / volume mounts.
   if (process.env.CLOUDINARY_URL) {
     try {
       const { v2: cloudinary } = await import("cloudinary");
@@ -106,6 +108,13 @@ export async function POST(request: NextRequest) {
       const msg = e instanceof Error ? e.message : String(e);
       return NextResponse.json({ error: `Image host rejected the upload (${msg.slice(0, 120)}).` }, { status: 502 });
     }
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Image host not configured. Uploads are disabled until the server has durable storage." },
+      { status: 503 }
+    );
   }
 
   const uploadsDir = path.join(process.cwd(), "public", "uploads");

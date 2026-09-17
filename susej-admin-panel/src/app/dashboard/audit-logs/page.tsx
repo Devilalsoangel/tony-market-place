@@ -37,7 +37,9 @@ const columns = [
 const ACTION_FILTERS = ["all", "login", "logout", "data.create", "data.update", "data.delete", "auth.reset"];
 
 export default function AuditLogsPage() {
-  const { data: logs, loading } = useDbResource<AuditLog>("audit-logs");
+  // Bounded recent window (never a full-table pull); tiles say so. Total
+  // events is the server count; the rest describe the loaded window.
+  const { data: logs, total: logsTotal, loading } = useDbResource<AuditLog>("audit-logs", { take: 100 });
   const [actionFilter, setActionFilter] = useState("all");
 
   const filtered = useMemo(() => {
@@ -61,10 +63,10 @@ export default function AuditLogsPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Total events" value={(logs ?? []).length} />
-        <StatTile label="Admins active" value={new Set((logs ?? []).map((l) => l.adminName)).size} />
-        <StatTile label="Logged in today" value={(logs ?? []).filter((l) => l.action.includes("login")).length} tone="purple" />
-        <StatTile label="Deletions" value={(logs ?? []).filter((l) => l.action.includes("delete")).length} tone="red" />
+        <StatTile label="Total events" value={logsTotal ?? (logs ?? []).length} />
+        <StatTile label="Admins active (recent 100)" value={new Set((logs ?? []).map((l) => l.adminName)).size} />
+        <StatTile label="Logins (recent 100)" value={(logs ?? []).filter((l) => l.action.includes("login")).length} tone="purple" />
+        <StatTile label="Deletions (recent 100)" value={(logs ?? []).filter((l) => l.action.includes("delete")).length} tone="red" />
       </div>
 
       <Card>
@@ -86,6 +88,7 @@ export default function AuditLogsPage() {
           <DataTable
             columns={columns}
             data={filtered}
+            totalCount={actionFilter === "all" ? (logsTotal ?? filtered.length) : filtered.length}
             loading={loading}
             searchable
             searchKey="adminName"

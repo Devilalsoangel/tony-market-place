@@ -2,14 +2,22 @@ import { randomBytes, scryptSync, timingSafeEqual, createHmac, createHash } from
 import type { NextRequest } from "next/server";
 
 // Signing key MUST come from env. A hardcoded fallback would let anyone who
-// reads the repo forge admin sessions, so without env we fall back to an
-// ephemeral per-boot secret (sessions die on restart - safe but loud).
+// reads the repo forge admin sessions. In production runtime without env we
+// FAIL LOUD (throw at boot) so a wiped env pages instead of silently bouncing
+// logins across instances (Sep-14 ephemeral-JWT outage). Build phase stays
+// silent (no runtime to warn to); local dev keeps the loud console warning.
 const SECRET =
   process.env.JWT_SECRET ??
   (() => {
-    if (process.env.NODE_ENV === "production" || process.env.NEXT_PHASE?.includes("build")) {
+    const isBuild = process.env.NEXT_PHASE?.includes("build");
+    if (isBuild) {
       // During build there is no runtime to warn to; keep silent.
       return randomBytes(48).toString("hex");
+    }
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "[auth] JWT_SECRET is not set in production — refusing to boot with an ephemeral secret. Set JWT_SECRET (stable 64-hex) and redeploy."
+      );
     }
     console.warn(
       "[auth] JWT_SECRET not set - using an EPHEMERAL per-boot secret. All sessions invalidate on restart. Set JWT_SECRET in .env."

@@ -42,8 +42,8 @@ interface ThreadMessage {
 
 export default function SupportTicketPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: tickets, refresh } = useDbResource<SupportTicket>("tickets");
-  const { data: messageRows, refresh: refreshMessages } = useDbResource<MessageRow>("messages");
+  const { data: tickets, refresh } = useDbResource<SupportTicket>("tickets", { id });
+  const { data: messageRows, refresh: refreshMessages } = useDbResource<MessageRow>("messages", { take: 100 });
   const { data: adminRows } = useDbResource<AdminUser>("admins");
   const adminUser = useAuthStore((s) => s.user);
   const [assignee, setAssignee] = useState("");

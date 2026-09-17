@@ -1,0 +1,24 @@
+Current URL: https://susej-admin-panel.vercel.app/login/2fa?from=%2Fdashboard
+OTP boxes found: 6
+Filling box 0 with 1
+Filling box 1 with 2
+Filling box 2 with 3
+Filling box 3 with 4
+Filling box 4 with 5
+Filling box 5 with 6
+All 6 boxes filled
+Verify button disabled: null
+Clicked Verify
+After 2FA URL: https://susej-admin-panel.vercel.app/login/2fa?from=%2Fdashboard
+Screenshot: admin-after-2fa.png
+{
+  "url": "https://susej-admin-panel.vercel.app/login/2fa?from=%2Fdashboard",
+  "navLinks": [
+    {
+      "text": "Back to login",
+      "href": "https://susej-admin-panel.vercel.app/login"
+    }
+  ],
+  "sellerLinks": [],
+  "bodyText": "Two-Factor Auth\n\nEnter the code from your authenticator app\n\nYour sign-in expired. Please sign in again.\n\nVerify\nBack to login"
+}

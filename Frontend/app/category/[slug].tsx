@@ -48,7 +48,9 @@ const SLUG_SYNONYMS: Record<string, string> = {
 // Legacy posts may use the old "Home" label — surface them under Home Services.
 // Family slugs (mens-fashion, kids-fashion, audio-headphones) surface their
 // parent vertical so admin sub-categories still show real marketplace content.
-const matchesCategory = (postCategory: string, active: string): boolean => {
+// Shared with Explore: same slug must show the same set in both surfaces
+// (exact match first, legacy fuzzy fallback for old labels).
+export const matchesCategory = (postCategory: string, active: string): boolean => {
   const a = postCategory.toLowerCase();
   const b = active.toLowerCase();
   if (a === b) return true;
@@ -57,6 +59,9 @@ const matchesCategory = (postCategory: string, active: string): boolean => {
   const na = a.replace(/[^a-z]/g, '');
   const nb = b.replace(/[^a-z]/g, '');
   if (na.length >= 5 && nb.length >= 5 && (na.includes(nb) || nb.includes(na))) return true;
+  // Short verticals ("Art" ⊂ "Art & Crafts"): prefix match so short labels
+  // still surface under their own family instead of vanishing.
+  if (na.length >= 2 && nb.length >= 2 && (na.startsWith(nb) || nb.startsWith(na))) return true;
   return false;
 };
 
@@ -107,6 +112,7 @@ export default function CategoryDetailScreen() {
           ? allowedNames.some((n) => n.toLowerCase() === p.category.toLowerCase())
           : matchesCategory(p.category, activeCategory)) &&
         (!term ||
+          (p.title ?? '').toLowerCase().includes(term) ||
           p.description.toLowerCase().includes(term) ||
           p.hashtags.some((h) => h.toLowerCase().includes(term)) ||
           p.sellerName.toLowerCase().includes(term) ||

@@ -81,7 +81,7 @@ const makeColumns = (
 ];
 
 export default function RefundsPage() {
-  const { data: refunds, refresh } = useDbResource<RefundRequest>("refunds", { take: 500 });
+  const { data: refunds, total: refundsTotal, refresh } = useDbResource<RefundRequest>("refunds", { take: 100 });
   const [rows, setRows] = useState<RefundRequest[] | null>(refunds);
   const [confirm, setConfirm] = useState<{ r: RefundRequest; decision: "approve" | "reject" | "issue" } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -153,7 +153,7 @@ export default function RefundsPage() {
         <StatTile label="Total requests" value={(rows ?? []).length} />
         <StatTile label="Requested" value={pending.length} tone="amber" />
         <StatTile label="Approved, pending issue" value={approved.length} tone="purple" />
-        <StatTile label="Refunded amount" value={formatCurrency(refundedAmount)} tone="green" />
+        <StatTile label={`Refunded amount${typeof refundsTotal === "number" && refundsTotal > (refunds ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(refundedAmount)} tone="green" />
       </div>
 
       <Card>
@@ -173,6 +173,7 @@ export default function RefundsPage() {
               handleIssue
             )}
             data={rows ?? []}
+            totalCount={refundsTotal ?? (rows ?? []).length}
             searchable
             searchKey="orderRef"
             filename="refunds"

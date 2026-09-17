@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon, PencilIcon, CloseIcon, PlusIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
+import { isApprovedSeller } from '../utils/marketplace';
+import SellerGate from '../components/SellerGate';
 import { serverApi } from '../utils/serverApi';
 import { getAdminUrl } from '../utils/adminSync';
 import { foodHubImages, sellerImages, productDetailImages } from '../utils/screenImages';
@@ -352,6 +354,10 @@ export default function StorefrontEditorScreen() {
     { key: 'banners' as const, label: 'Banners' },
     { key: 'deals' as const, label: 'Hot Deals' },
   ];
+
+  // Approved sellers only (SELLER-C1): buyers/pending deep-links get status,
+  // never tools. Matches server 403s. After all hooks (rules-of-hooks safe).
+  if (!isApprovedSeller(user)) return <SellerGate title="Storefront editor" user={user} />;
 
   return (
     <KeyboardAvoidingView className="flex-1" style={{ backgroundColor: colors.surface }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(& C:\\\\Users\\\\TONI\\\\platform-tools\\\\adb.exe devices; & C:\\\\Users\\\\TONI\\\\platform-tools\\\\adb.exe reverse --list)",
+      "PowerShell(try { $r1 = Invoke-WebRequest -Uri http://localhost:8081/status -TimeoutSec 5 -UseBasicParsing; \"Metro: $\\($r1.StatusCode\\) $\\($r1.Content\\)\" } catch { \"Metro DOWN: $\\($_.Exception.Message\\)\" }; try { $r2 = Invoke-WebRequest -Uri http://localhost:3000/api/app/categories -TimeoutSec 8 -UseBasicParsing; \"Admin: $\\($r2.StatusCode\\) len=$\\($r2.Content.Length\\)\" } catch { \"Admin DOWN: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(& C:\\\\Users\\\\TONI\\\\platform-tools\\\\adb.exe reverse tcp:8081 tcp:8081; & C:\\\\Users\\\\TONI\\\\platform-tools\\\\adb.exe reverse tcp:3000 tcp:3000; & C:\\\\Users\\\\TONI\\\\platform-tools\\\\adb.exe reverse --list; & C:\\\\Users\\\\TONI\\\\platform-tools\\\\adb.exe shell \"dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'\")",
+      "Skill(update-config)",
+      "PowerShell(try { Get-Content .claude\\\\settings.local.json -Raw | ConvertFrom-Json | Out-Null; \"JSON VALID\" } catch { \"JSON BROKEN: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(& C:\\\\Users\\\\TONI\\\\platform-tools\\\\adb.exe shell \"dumpsys window | grep -E 'mCurrentFocus'; dumpsys power | grep -E 'mWakefulness=' | head -1\")"
+    ]
+  }
+}

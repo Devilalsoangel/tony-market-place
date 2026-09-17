@@ -54,14 +54,15 @@ export default function OrderDetailsScreen() {
     if (localOrder || !rawId || serverOrder || serverMiss) return;
     let alive = true;
     const key = String(rawId);
+    // Ownership-scoped single read (server 404s other users' rows — the old
+    // list-scan is gone). Falls back to the scoped list only if the direct
+    // read fails but the network is up (legacy id formats).
     serverApi
-      .getOrders('all')
+      .getOrder(key)
       .then((res) => {
-        if (!alive || !res.ok || !res.data?.orders) return;
-        const hit = (res.data.orders as any[]).find(
-          (o) => o && (String(o.id) === key || String(o.orderNumber ?? '') === key || `#${String(o.orderNumber ?? '')}` === key)
-        );
         if (!alive) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hit = (res.ok ? (res.data as { order?: any } | null)?.order : null) as any;
         if (!hit) {
           setServerMiss(true);
           return;
@@ -81,6 +82,14 @@ export default function OrderDetailsScreen() {
                 price: Number(i.price ?? 0),
                 quantity: Number(i.quantity ?? 1),
                 ...(i.imageUrl ? { imageUrl: String(i.imageUrl) } : {}),
+                // Settled legs ride through (variant/bundle identity + money
+                // truth) — a second-device receipt for a variant/bundle order
+                // must show what was bought and reconcile, not re-derive.
+                ...(typeof i.variantLabel === 'string' && i.variantLabel ? { variantLabel: i.variantLabel } : {}),
+                ...(typeof i.bundleId === 'string' && i.bundleId ? { bundleId: i.bundleId } : {}),
+                ...(typeof i.netPrice === 'number' && Number.isFinite(i.netPrice) ? { netPrice: i.netPrice } : {}),
+                ...(typeof i.commission === 'number' && Number.isFinite(i.commission) ? { commission: i.commission } : {}),
+                ...(typeof i.category === 'string' && i.category ? { category: i.category } : {}),
               }))
             : [],
           total: Number(hit.total ?? 0),
@@ -122,7 +131,7 @@ export default function OrderDetailsScreen() {
     const synced = await retryOrderSync(order.id);
     setRetrying(false);
     if (!synced) {
-      Alert.alert('Still offline', 'Could not reach the server. Your order is kept and you can retry again.');
+      Alert.alert(order?.syncFailed ? 'Order rejected' : 'Still offline', order?.syncFailed ?? 'Could not reach the server. Your order is kept and you can retry again.');
     }
   };
 
@@ -201,7 +210,7 @@ export default function OrderDetailsScreen() {
       : order.status === 'cancelled'
         ? 'Order cancelled'
         : order.kind === 'food'
-          ? 'Arriving in 30–40 min'
+          ? 'Seller confirms delivery time'
           : 'Arriving soon';
 
   const deliveredStep = order.tracking.find((s) => s.done && s.label === 'Delivered');
@@ -230,7 +239,7 @@ export default function OrderDetailsScreen() {
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: insets.bottom + 40, rowGap: 20 }}>
         {/* Offline outbox: order placed locally but never acknowledged.
             Never ghost-deleted — explicit retry (idempotent server-side). */}
-        {order.syncPending && (
+        {order.syncPending && !order.syncFailed && (
           <View className="mx-5 rounded-[24px] p-4" style={{ backgroundColor: '#fff7e6', borderWidth: 1, borderColor: '#f0c36d' }}>
             <Text className="text-[14px] font-inter-600" style={{ lineHeight: 20, color: '#8a5a00' }}>
               Waiting for connection
@@ -248,6 +257,37 @@ export default function OrderDetailsScreen() {
                 {retrying ? 'Retrying…' : 'Retry now'}
               </Text>
             </TouchableOpacity>
+          </View>
+        )}
+        {/* Server rejected this order (expired coupon, insufficient funds,
+            validation). Kept locally with the reason — never a silent
+            not-found. No money moved (server owns debit). */}
+        {order.syncFailed && (
+          <View className="mx-5 rounded-[24px] p-4" style={{ backgroundColor: '#fdecec', borderWidth: 1, borderColor: '#f0a3a3' }}>
+            <Text className="text-[14px] font-inter-600" style={{ lineHeight: 20, color: '#8a1a1a' }}>
+              Order couldn't be placed
+            </Text>
+            <Text className="text-[13px] font-inter-400 mt-1" style={{ lineHeight: 18, color: '#8a1a1a' }}>
+              {order.syncFailed}. No money was charged — fix the issue and retry, or go back and update your cart.
+            </Text>
+            <View className="flex-row gap-3 mt-3">
+              <TouchableOpacity
+                className="px-5 h-11 items-center justify-center rounded-figma-16"
+                style={{ backgroundColor: colors.primaryContainer, opacity: retrying ? 0.6 : 1 }}
+                onPress={handleRetrySync}
+                disabled={retrying}
+              >
+                <Text className="text-[14px] font-inter-600 text-white">
+                  {retrying ? 'Retrying…' : 'Retry now'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="px-5 h-11 items-center justify-center rounded-figma-16 bg-surfaceContainer"
+                onPress={() => router.replace('/(tabs)/feed')}
+              >
+                <Text className="text-[14px] font-inter-600 text-textPrimary">Back to shopping</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
         {/* Order # + status */}
@@ -327,8 +367,8 @@ export default function OrderDetailsScreen() {
             Items ({order.items.length})
           </Text>
           <View style={{ rowGap: 14 }}>
-            {order.items.map((item) => (
-              <View key={item.listingId} className="flex-row items-center">
+            {order.items.map((item, idx) => (
+              <View key={`${item.listingId}|${(item as { bundleId?: string }).bundleId ?? ''}|${(item as { variantLabel?: string }).variantLabel ?? ''}|${idx}`} className="flex-row items-center">
                 <View className="w-12 h-12 rounded-[12px] overflow-hidden mr-3" style={{ backgroundColor: colors.surfaceContainerLow }}>
                   <Image
                     source={(item as any).imageUrl ? { uri: (item as any).imageUrl } : resolveListingImage(null, item.listingId)}
@@ -341,7 +381,7 @@ export default function OrderDetailsScreen() {
                     {item.name}
                   </Text>
                   <Text className="text-[12px] font-inter-400 text-textSecondary" style={{ lineHeight: 16 }}>
-                    Qty {item.quantity}
+                    Qty {item.quantity}{(item as { variantLabel?: string }).variantLabel ? ` · ${(item as { variantLabel?: string }).variantLabel}` : ''}
                   </Text>
                 </View>
                 <Text className="ml-2 shrink-0 text-[14px] font-inter-600 text-textPrimary" style={{ lineHeight: 20 }}>
@@ -391,6 +431,18 @@ export default function OrderDetailsScreen() {
               <Text className="text-[14px] font-inter-400 text-textSecondary" style={{ lineHeight: 20 }}>Items Total</Text>
               <Text className="text-[14px] font-inter-500 text-textPrimary" style={{ lineHeight: 20 }}>{formatPrice(order.total)}</Text>
             </View>
+            {(order.deliveryFee ?? 0) > 0 && (
+              <View className="flex-row justify-between">
+                <Text className="text-[14px] font-inter-400 text-textSecondary" style={{ lineHeight: 20 }}>Delivery</Text>
+                <Text className="text-[14px] font-inter-500 text-textPrimary" style={{ lineHeight: 20 }}>{formatPrice(order.deliveryFee ?? 0)}</Text>
+              </View>
+            )}
+            {Math.max(0, Math.round(order.total + (order.deliveryFee ?? 0) - (order.chargedTotal ?? order.total))) > 0 && (
+              <View className="flex-row justify-between">
+                <Text className="text-[14px] font-inter-400 text-textSecondary" style={{ lineHeight: 20 }}>Coupon savings{order.promoCode ? ` (${order.promoCode})` : ''}</Text>
+                <Text className="text-[14px] font-inter-500 text-success" style={{ lineHeight: 20 }}>-{formatPrice(Math.max(0, Math.round(order.total + (order.deliveryFee ?? 0) - (order.chargedTotal ?? order.total))))}</Text>
+              </View>
+            )}
             <View className="h-[1px]" style={{ backgroundColor: colors.surfaceContainerLow }} />
             <View className="flex-row justify-between">
               <Text className="text-[15px] font-inter-700 text-textPrimary" style={{ lineHeight: 22 }}>{/cash|cod/i.test(order.paymentMethod ?? '') ? 'Order Total (due on delivery)' : 'Total Paid'}</Text>

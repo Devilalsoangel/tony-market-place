@@ -19,6 +19,50 @@ import { useAuth } from '../contexts/AuthContext';
 
 const TICKETS_KEY_BASE = '@susej_tickets';
 const TICKETS_KEY = TICKETS_KEY_BASE;
+// Outbox for admin-queue mirrors that failed (offline at raise time).
+// Flushed on every mount; entries are keyed by ticket id (server POST is
+// id-shaped, replays converge) so a retry can never duplicate the queue.
+const TICKET_OUTBOX_KEY = '@susej_ticket_outbox';
+
+interface TicketMirrorPayload {
+  id: string;
+  subject: string;
+  priority: string;
+  status: string;
+  createdAt: string;
+  messageText?: string;
+}
+
+async function queueTicketMirror(p: TicketMirrorPayload): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(TICKET_OUTBOX_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(list)) {
+      if (!list.some((q) => (q as TicketMirrorPayload).id === p.id)) list.push(p);
+      await AsyncStorage.setItem(TICKET_OUTBOX_KEY, JSON.stringify(list));
+    }
+  } catch {}
+}
+
+async function flushTicketOutbox(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(TICKET_OUTBOX_KEY);
+    if (!raw) return;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return;
+    const m = await import('../utils/adminSync');
+    const left: unknown[] = [];
+    for (const p of list) {
+      try {
+        const ok = await m.syncTicket(p as TicketMirrorPayload);
+        if (!ok) left.push(p);
+      } catch {
+        left.push(p);
+      }
+    }
+    await AsyncStorage.setItem(TICKET_OUTBOX_KEY, JSON.stringify(left));
+  } catch {}
+}
 
 export interface SupportTicket {
   id: string;
@@ -111,6 +155,16 @@ export default function SupportScreen() {
     AsyncStorage.setItem(ticketsKey, JSON.stringify(tickets)).catch(() => {});
   }, [tickets, loaded, ticketsKey]);
 
+  // Flush any ticket mirrors that failed while offline (raise-time retry).
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      if (dead) return;
+      await flushTicketOutbox();
+    })();
+    return () => { dead = true; };
+  }, [tokenSeq]);
+
   const openCount = tickets.filter((t) => t.status === 'open').length;
 
   const submitTicket = () => {
@@ -133,17 +187,24 @@ export default function SupportScreen() {
       ],
     };
     setTickets((prev) => [ticket, ...prev]);
-    // Mirror to the admin panel support queue (fire-and-forget).
-    void import('../utils/adminSync').then((m) =>
-      m.syncTicket({
+    // Mirror to the admin panel support queue. Failures queue into the
+    // outbox (flushed on mount) instead of stranding the ticket on-device.
+    void import('../utils/adminSync').then(async (m) => {
+      const payload = {
         id: ticket.id,
         subject: ticket.subject,
         priority: ticket.priority,
         status: ticket.status,
         createdAt: new Date().toISOString(),
         messageText: text,
-      })
-    );
+      };
+      try {
+        const ok = await m.syncTicket(payload);
+        if (!ok) await queueTicketMirror(payload);
+      } catch {
+        await queueTicketMirror(payload);
+      }
+    });
     setSubject('');
     setMessage('');
     setFormOpen(false);

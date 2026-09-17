@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomInt } from "crypto";
 import { getPrisma } from "@/lib/db";
-import { getAppUser } from "@/lib/app-auth";
+import { getAppUser, isIndianPhoneShape } from "@/lib/app-auth";
 
 // Production OTP request flow:
 // - 6-digit random code, stored as SHA-256 hash with 5-minute expiry,
@@ -44,6 +44,13 @@ export async function POST(req: NextRequest) {
   const phone = (body.phone ?? "").replace(/\D/g, "");
   if (!phone || phone.length < 10) {
     return NextResponse.json({ error: "A valid 10-digit phone number is required" }, { status: 400 });
+  }
+  // India-only product (INR identity, 91-normalized accounts): codes are
+  // issued to Indian shapes only. A foreign number sharing an Indian
+  // account's last 10 digits must never receive a code — the verify step
+  // binds sessions by phone, and cross-country issuance is account takeover.
+  if (!isIndianPhoneShape(phone)) {
+    return NextResponse.json({ error: "Only Indian (+91) mobile numbers are supported" }, { status: 400 });
   }
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });

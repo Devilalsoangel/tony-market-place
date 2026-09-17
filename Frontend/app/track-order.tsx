@@ -2,39 +2,10 @@ import { View, Text, ScrollView, TouchableOpacity, Image, Share } from 'react-na
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { BackIcon, ShareIcon, MapPinIcon, ShopIcon, PhoneIcon, GpsTargetIcon, CheckIcon, CarIcon, BikeIcon } from '../utils/icons';
+import { BackIcon, ShareIcon, MapPinIcon, ShopIcon, GpsTargetIcon, CheckIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useOrders, STATUS_LABELS } from '../contexts/OrderContext';
 import { resolveListingImage } from '../utils/productImages';
-import { trackOrderImages } from '../utils/screenImages';
-import { LeafletMapHost, type LeafletMarker } from '../components/LeafletMap';
-
-const CENTER = { latitude: 18.5204, longitude: 73.8567 };
-
-const pillShadow = {
-  shadowColor: '#1a1a2e',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.1,
-  shadowRadius: 8,
-  elevation: 3,
-};
-
-function hashId(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-}
-
-const positionFor = (key: string) => {
-  const h = hashId(key);
-  return {
-    latitude: CENTER.latitude + ((h % 1000) / 1000 - 0.5) * 0.06,
-    longitude: CENTER.longitude + (((h >> 10) % 1000) / 1000 - 0.5) * 0.06,
-  };
-};
 
 export default function TrackOrderScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
@@ -44,59 +15,10 @@ export default function TrackOrderScreen() {
   // No id must not leak another user's order — show empty state instead.
   const order = rawId ? getOrder(String(rawId)) : undefined;
 
-  const isLiveOrder = !!order && ['placed', 'confirmed', 'preparing', 'out_for_delivery'].includes(order.status);
-  const scrollRef = useRef<ScrollView>(null);
-  const [mapY, setMapY] = useState(0);
-
-  // No simulated rider movement — the map shows the honest pickup → delivery
-  // overview; live rider GPS arrives with a real logistics integration.
-
-  const trackMarkers = useMemo<LeafletMarker[]>(() => {
-    if (!order) return [];
-    const pickup = positionFor(`pickup:${order.id}`);
-    const delivery = positionFor(`delivery:${order.id}`);
-    return [
-      { id: 'pickup', lat: pickup.latitude, lng: pickup.longitude, kind: 'office', color: '#0369a1' },
-      { id: 'delivery', lat: delivery.latitude, lng: delivery.longitude, kind: 'pin', color: '#0e7a5f' },
-    ];
-  }, [order]);
-
-  const trackRoute = useMemo(() => {
-    if (!order) return null;
-    const pickup = positionFor(`pickup:${order.id}`);
-    const delivery = positionFor(`delivery:${order.id}`);
-    return [
-      { latitude: pickup.latitude, longitude: pickup.longitude },
-      { latitude: (pickup.latitude + delivery.latitude) / 2, longitude: (pickup.longitude + delivery.longitude) / 2 },
-      { latitude: delivery.latitude, longitude: delivery.longitude },
-    ];
-  }, [order]);
-
-  const tickRef = useRef(0);
-  const progressRef = useRef(0.35);
-
-  const [trackCenter, setTrackCenter] = useState<{ lat: number; lng: number; zoom: number } | null>(() => {
-    if (!order) return null;
-    const pickup = positionFor(`pickup:${order.id}`);
-    const delivery = positionFor(`delivery:${order.id}`);
-    return {
-      lat: (pickup.latitude + delivery.latitude) / 2,
-      lng: (pickup.longitude + delivery.longitude) / 2,
-      zoom: 13,
-    };
-  });
-
-  // Reset the map frame when a different order is opened.
-  useEffect(() => {
-    if (!order) return;
-    const pickup = positionFor(`pickup:${order.id}`);
-    const delivery = positionFor(`delivery:${order.id}`);
-    setTrackCenter({
-      lat: (pickup.latitude + delivery.latitude) / 2,
-      lng: (pickup.longitude + delivery.longitude) / 2,
-      zoom: 13,
-    });
-  }, [order?.id]);
+  // No map without real GPS: deterministic hash positions rendered fake
+  // pickup/delivery pins around a hardcoded city — Amazon/IG show a status
+  // timeline + honest "live tracking with logistics integration" card until
+  // the order carries real courier coordinates. Never invent locations.
 
   if (!order) {
     return (
@@ -140,12 +62,14 @@ export default function TrackOrderScreen() {
     ? `${order.bookingDate}${order.bookingTime ? ` · ${order.bookingTime}` : ''}`
     : null;
 
-  const product = order.items[0];
-  const productName = product.name;
-  const productPrice = formatPrice(product.price);
-  const quantity = product.quantity;
-  const _firstItem = (order as any)?.items?.[0] as any;
-  const productImage = _firstItem?.imageUrl ? { uri: _firstItem.imageUrl } : resolveListingImage(null, _firstItem?.listingId ?? (order as any)?.id);
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemCount = items.reduce((s, i) => s + Math.max(0, Math.round(Number(i?.quantity ?? 1))), 0);
+  const itemsTotal = items.reduce((s, i) => s + Number(i?.price ?? 0) * Math.max(0, Math.round(Number(i?.quantity ?? 1))), 0);
+  const firstItem = items[0] as any;
+  const productName = firstItem?.name ?? 'Order items';
+  const productPrice = formatPrice(itemsTotal);
+  const quantity = itemCount;
+  const productImage = firstItem?.imageUrl ? { uri: firstItem.imageUrl } : resolveListingImage(null, firstItem?.listingId ?? (order as any)?.id);
 
   const isLive = ['placed', 'confirmed', 'preparing', 'out_for_delivery'].includes(order.status);
 
@@ -169,7 +93,6 @@ export default function TrackOrderScreen() {
       </View>
 
       <ScrollView
-        ref={scrollRef}
         className="flex-1"
         contentContainerStyle={{ paddingBottom: insets.bottom + 128 }}
       >
@@ -190,19 +113,12 @@ export default function TrackOrderScreen() {
                 <GpsTargetIcon size={20} color={colors.primaryContainer} />
               </View>
               <View className="flex-1">
-                <Text className="text-figma-14 font-inter-600 text-textPrimary">Delivery partner on the way</Text>
+                <Text className="text-figma-14 font-inter-600 text-textPrimary">Order with the seller</Text>
                 <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">
-                  Live rider tracking arrives with real logistics
+                  The seller confirms and hands it to delivery — live rider tracking appears here once assigned
                 </Text>
               </View>
             </View>
-            <TouchableOpacity
-              className="mt-3 h-20 bg-surfaceContainer rounded-figma-12 flex-row items-center justify-center"
-              onPress={() => scrollRef.current?.scrollTo({ y: mapY, animated: true })}
-            >
-              <MapPinIcon size={18} color={colors.primaryContainer} />
-              <Text className="text-figma-13 font-inter-600 text-primaryContainer ml-2">Route Map</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -283,20 +199,19 @@ export default function TrackOrderScreen() {
           </View>
 
           <View
-            className="mx-4 h-52 mb-6 rounded-figma-16 overflow-hidden"
+            className="mx-4 mb-6 rounded-figma-16 p-4"
             style={{ borderWidth: 1, borderColor: colors.surfaceContainer }}
-            onLayout={(e) => setMapY(e.nativeEvent.layout.y)}
           >
-            <LeafletMapHost
-              style={{ flex: 1, borderRadius: 16 }}
-              markers={trackMarkers}
-              route={trackRoute}
-              center={trackCenter}
-            />
-            <View className="absolute left-3 bottom-2 px-2.5 py-1 rounded-figma-full bg-surfaceContainerLowest" style={pillShadow}>
-              <Text className="text-figma-10 font-inter-500 text-textSecondary">
-                Approximate route preview - exact addresses hidden until pickup is confirmed
-              </Text>
+            <View className="flex-row items-center">
+              <View className="w-11 h-11 rounded-figma-full bg-surfaceContainer items-center justify-center mr-3">
+                <MapPinIcon size={18} color={colors.primaryContainer} />
+              </View>
+              <View className="flex-1">
+                <Text className="text-figma-14 font-inter-600 text-textPrimary">Live tracking not yet available</Text>
+                <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">
+                  Follow the status timeline above — exact courier location appears once logistics integration is live.
+                </Text>
+              </View>
             </View>
           </View>
         </>
@@ -359,10 +274,16 @@ export default function TrackOrderScreen() {
               {productImage ? <Image source={productImage} className="w-full h-full" style={{ resizeMode: 'cover' }} /> : null}
             </View>
             <View className="flex-1">
-              <Text className="text-figma-16 font-inter-600 text-textPrimary mb-1">{productName}</Text>
+              <Text className="text-figma-16 font-inter-600 text-textPrimary mb-1" numberOfLines={1}>{items.length > 1 ? `${productName} +${items.length - 1} more` : productName}</Text>
               <Text className="text-figma-14 font-inter-700 text-primaryContainer">{productPrice}</Text>
             </View>
           </View>
+          {items.map((it) => (
+            <View key={String(it.listingId)} className="flex-row justify-between mb-2">
+              <Text className="text-figma-12 font-inter-400 text-textSecondary flex-1 mr-2" numberOfLines={1}>{it.name} × {it.quantity}</Text>
+              <Text className="text-figma-12 font-inter-500 text-textPrimary">{formatPrice(Number(it.price ?? 0) * Math.max(0, Math.round(Number(it.quantity ?? 1))))}</Text>
+            </View>
+          ))}
           <View className="gap-2">
             <View className="flex-row justify-between">
               <Text className="text-figma-12 font-inter-400 text-textSecondary">Order Date</Text>

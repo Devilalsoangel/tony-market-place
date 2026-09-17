@@ -162,7 +162,7 @@ function actionToStatus(action: ProductAction): Product["status"] | null {
 
 export default function ProductsPage() {
   const router = useRouter();
-  const { data: dbProducts, refresh } = useDbResource<Product>("products", { take: 500 });
+  const { data: dbProducts, total: productsTotal, refresh } = useDbResource<Product>("products", { take: 100 });
   const { data: dbCategories } = useDbResource<Category>("categories");
   const [products, setProducts] = useState<Product[] | null>(dbProducts);
   const [categories, setCategories] = useState<Category[] | null>(dbCategories);
@@ -317,6 +317,7 @@ export default function ProductsPage() {
           <DataTable
             columns={columns}
             data={filtered}
+            totalCount={activeCat === "__all" ? (productsTotal ?? filtered.length) : null}
             searchable
             searchKey="title"
             filename="products"
@@ -333,12 +334,15 @@ export default function ProductsPage() {
               const snapshot = products;
               const ids = (rows as any[]).map((r) => r.id);
               setProducts((prev) => (prev ? prev.filter((p) => !ids.includes(p.id)) : prev));
-              try {
-                for (const id of ids) await apiDelete("products", id);
-                await refresh();
-              } catch (err) {
+              // Settled, never sequential-abort: one 409 (has orders) must not
+              // silently drop the tail. Per-row report, failures restored.
+              const results = await Promise.allSettled(ids.map((id) => apiDelete("products", id)));
+              const failed = results.filter((r) => r.status === "rejected").length;
+              await refresh();
+              if (failed > 0) {
                 setProducts(snapshot ?? null);
-                alert(err instanceof Error ? err.message : "Bulk delete failed — changes reverted");
+                await refresh();
+                alert(`${failed} of ${ids.length} could not be deleted (likely linked rows) — nothing was removed. Delete them individually for the reason.`);
               }
             }}
             onRowClick={(row) => router.push(`/dashboard/products/${row.id}`)}

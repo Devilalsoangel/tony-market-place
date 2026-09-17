@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
+import { getAppUser } from "@/lib/app-auth";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  // Auth-required: coupon codes ARE the secret — an open catalog lets anyone
+  // harvest codes and burn usageLimits. Guests can still redeem at checkout
+  // (placement validates per-code); they just can't browse the vault.
+  const auth = await getAppUser(req);
+  if (!auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
   const now = new Date();

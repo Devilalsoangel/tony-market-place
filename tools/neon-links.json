@@ -1,0 +1,33 @@
+{
+  "url": "https://console.neon.tech/app/org-long-sea-58955915/projects",
+  "projectLinks": [
+    {
+      "href": "/app/",
+      "txt": ""
+    },
+    {
+      "href": "/app/org-long-sea-58955915/projects",
+      "txt": "Antony ffFree"
+    },
+    {
+      "href": "/app/org-long-sea-58955915/projects",
+      "txt": "Projects"
+    },
+    {
+      "href": "/app/org-long-sea-58955915/people",
+      "txt": "People"
+    },
+    {
+      "href": "/app/org-long-sea-58955915/billing",
+      "txt": "Billing"
+    },
+    {
+      "href": "/app/org-long-sea-58955915/integrations",
+      "txt": "Integrations"
+    },
+    {
+      "href": "/app/org-long-sea-58955915/settings",
+      "txt": "Settings"
+    }
+  ]
+}

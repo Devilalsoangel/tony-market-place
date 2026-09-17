@@ -86,7 +86,8 @@ export async function GET(req: NextRequest) {
   const rows = await prisma.story.findMany({
     where: { status: "active", expiresAt: { gt: now }, image: { not: "" } },
     orderBy: { createdAt: "desc" },
-    take: 200,
+    // Industry cap: latest 100 active stories (24h TTL already bounds rows).
+    take: 100,
   });
 
   return NextResponse.json({

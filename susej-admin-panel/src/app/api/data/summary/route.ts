@@ -5,12 +5,30 @@ import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 /**
  * GET /api/data/summary — server-aggregated dashboard KPIs in ONE round trip.
  * Replaces 8 unbounded full-table pulls + client-side aggregation (which dies
- * at 100k rows). Counts are exact at any scale; derivations match the legacy
- * client math (delivered gross, week-active proxy, hidden-as-pending).
+ * at 100k rows). Counts are exact at any scale.
+ * Honesty rules: no presence source exists, so there is NO "online users"
+ * metric (the old key counted 7-day signups); product stats split hidden
+ * (moderator-taken-down) from any real pending queue; month charts are
+ * bounded recent-window queries and say so.
  */
 export async function GET(req: NextRequest) {
-  const session = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
+  const session = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value) as { role?: unknown } | null;
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // ACL mirror (F4): this endpoint serves revenue + recent orders/audit, so it
+  // enforces the same matrix as /api/data (super_admin + manager + finance
+  // only). Moderators/app get 403 — the money endpoint never consults
+  // FINANCE_READ otherwise. Audit trail rows are super_admin-only (manager +
+  // finance get counts + revenue, never admin activity).
+  let isSuperAdmin = false;
+  {
+    const r = String(session.role ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "_");
+    isSuperAdmin = r === "super_admin" || r === "superadmin" || r === "owner";
+    const allowed =
+      isSuperAdmin ||
+      r === "manager" || r === "admin" ||
+      r === "finance" || r === "accountant" || r === "treasury";
+    if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
@@ -22,12 +40,14 @@ export async function GET(req: NextRequest) {
     userCount,
     newUsersToday,
     active7d,
-    sellerRows,
-    productRows,
+    sellerGroups,
+    productCount,
+    hiddenProductCount,
     orderCount,
     ordersToday,
     deliveredAgg,
-    refundRows,
+    refundsAgg,
+    disputeRefundsAgg,
     communityCount,
     reportedCount,
     openTickets,
@@ -37,12 +57,23 @@ export async function GET(req: NextRequest) {
     prisma.user.count(),
     prisma.user.count({ where: { joinedAt: { gte: startOfDay } } }),
     prisma.user.count({ where: { joinedAt: { gte: weekAgo } } }),
-    prisma.seller.findMany({ select: { kycStatus: true } }),
-    prisma.product.findMany({ select: { category: true, status: true } }),
+    // Grouped counts (exact at any scale) — never full-table pulls for KPIs.
+    prisma.seller.groupBy({ by: ["kycStatus"], _count: { _all: true } }),
+    prisma.product.count(),
+    prisma.product.count({ where: { status: { equals: "hidden", mode: "insensitive" } } }),
     prisma.order.count(),
     prisma.order.count({ where: { createdAt: { gte: startOfDay } } }),
     prisma.order.aggregate({ where: { status: "delivered" }, _sum: { amount: true }, _count: { _all: true } }),
-    prisma.refund.findMany({ where: { status: { in: ["approved", "refunded"] } }, select: { amount: true } }),
+    prisma.refund.aggregate({ where: { status: { in: ["approved", "refunded"] } }, _sum: { amount: true } }),
+    // Dispute rulings move buyer money with NO Refund row — without this leg
+    // the net overstates by every dispute payout.
+    prisma.walletTransaction.aggregate({
+      where: {
+        OR: [{ title: { startsWith: "Dispute refund ·" } }, { title: { startsWith: "Dispute split refund ·" } }],
+        amount: { gt: 0 },
+      },
+      _sum: { amount: true },
+    }).catch(() => ({ _sum: { amount: 0 } })),
     prisma.community.count().catch(() => 0),
     prisma.reportedUser.count().catch(() => 0),
     prisma.supportTicket.count({ where: { status: "open" } }).catch(() => 0),
@@ -51,11 +82,12 @@ export async function GET(req: NextRequest) {
   ]);
 
   const gross = Number(deliveredAgg._sum.amount ?? 0);
-  const refundsOut = refundRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const refundsOut = Number(refundsAgg._sum.amount ?? 0) + Number((disputeRefundsAgg as { _sum?: { amount?: unknown } })._sum?.amount ?? 0);
 
   // Revenue by month (delivered GMV) + user growth by month need dates —
   // bounded recent-window queries (5k) keep charts exact at any real scale;
-  // headline KPIs above are unbounded aggregates, always exact.
+  // headline KPIs above are unbounded aggregates, always exact. Flags tell
+  // the UI when a window filled (history beyond it exists).
   const [userGroups, catGroups] = await Promise.all([
     prisma.user.findMany({ select: { joinedAt: true, role: true, isSeller: true }, orderBy: { joinedAt: "desc" }, take: 5000 }).catch(() => [] as { joinedAt: Date; role: string; isSeller: boolean }[]),
     prisma.product.groupBy({ by: ["category"], _count: { _all: true }, orderBy: { _count: { category: "desc" } }, take: 6 }).catch(() => [] as { category: string | null; _count: { _all: number } }[]),
@@ -83,19 +115,25 @@ export async function GET(req: NextRequest) {
     growthByMonth.set(key, e);
   }
 
-  const approvedSellers = sellerRows.filter((s) => s.kycStatus === "approved").length;
-  const pendingSellers = sellerRows.filter((s) => s.kycStatus === "pending").length;
-  const hiddenProducts = productRows.filter((p) => String(p.status ?? "").toLowerCase() === "hidden").length;
+  const sellerCountFor = (status: string) =>
+    sellerGroups.filter((g) => String(g.kycStatus ?? "").toLowerCase() === status).reduce((s, g) => s + g._count._all, 0);
+  const approvedSellers = sellerCountFor("approved");
+  const pendingSellers = sellerCountFor("pending");
 
   return NextResponse.json({
     counts: {
       totalUsers: userCount,
       newUsersToday,
-      onlineUsers: active7d,
+      // No presence/session source exists — this is new signups (7d), never
+      // "online". The overview labels it as such; wire real presence to
+      // restore an online metric.
+      newUsers7d: active7d,
       verifiedSellers: approvedSellers,
       pendingSellerRequests: pendingSellers,
-      totalProducts: productRows.length,
-      pendingProducts: hiddenProducts,
+      totalProducts: productCount,
+      // Product has no pending queue (active/featured/hidden) — hidden means
+      // moderator-taken-down, reported separately and honestly.
+      hiddenProducts: hiddenProductCount,
       communities: communityCount,
       totalOrders: orderCount,
       ordersToday,
@@ -104,9 +142,13 @@ export async function GET(req: NextRequest) {
     },
     revenue: { gross, refundsOut, net: Math.max(0, gross - refundsOut) },
     revenueByMonth: [...revByMonth.entries()].map(([month, revenue]) => ({ month, revenue })),
+    revenueTrendComplete: deliveredForTrend.length < 5000,
     growthByMonth: [...growthByMonth.entries()].map(([month, v]) => ({ month, ...v })),
+    growthTrendComplete: userGroups.length < 5000,
     topCategories: catGroups.map((g) => ({ name: (g.category ?? "").trim() || "Other", value: g._count._all })),
     recentOrders: recentOrders.map((o) => ({ ...o, createdAt: o.createdAt.toISOString() })),
-    recentAudit: recentAudit.map((a) => ({ ...a, timestamp: a.timestamp.toISOString() })),
+    // Audit activity is need-to-know: the data-plane denies audit-logs to
+    // manager/finance, so the summary must not smuggle the same rows in.
+    recentAudit: isSuperAdmin ? recentAudit.map((a) => ({ ...a, timestamp: a.timestamp.toISOString() })) : [],
   });
 }

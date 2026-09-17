@@ -31,7 +31,10 @@ interface Collection {
 const COLLECTIONS_KEY_BASE = '@susej_saved_collections';
 
 export default function SavedScreen() {
-  const [tab, setTab] = useState<Tab>('collections');
+  // Collections tab removed: nothing could ever enter a collection (no
+  // add-to-collection action exists anywhere), so it was a dead feature.
+  // All Items is the only view until that action ships.
+  const [tab] = useState<Tab>('items');
   const [collections, setCollections] = useState<Collection[]>([]);
   const [collectionsLoaded, setCollectionsLoaded] = useState(false);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
@@ -155,11 +158,7 @@ export default function SavedScreen() {
         <Text className="font-inter-700" style={{ fontSize: 20, lineHeight: 28, color: colors.textPrimary }}>
           Saved
         </Text>
-        <TouchableOpacity className="bg-primaryContainer rounded-figma-8 px-4 py-2" onPress={openNewModal}>
-          <Text className="font-inter-400 text-white" style={{ fontSize: 16, lineHeight: 24 }}>
-            New
-          </Text>
-        </TouchableOpacity>
+        <View className="px-4 py-2" />
       </View>
 
       {/* Title Section */}
@@ -172,37 +171,7 @@ export default function SavedScreen() {
         </Text>
       </View>
 
-      {/* Segmented Tab Control */}
-      <View className="flex-row mx-5 mb-4 bg-surfaceContainerLow rounded-figma-12 p-1">
-        <TouchableOpacity
-          className={`flex-1 flex-row items-center justify-center py-2 rounded-figma-8 ${tab === 'collections' ? 'bg-white' : ''}`}
-          style={{ gap: 4 }}
-          onPress={() => setTab('collections')}
-        >
-          <Text className={`font-inter-600 ${tab === 'collections' ? 'text-primaryContainer' : 'text-textSecondary'}`} style={{ fontSize: 14, lineHeight: 16 }}>
-            Collections
-          </Text>
-          <View className={`px-1.5 py-0.5 rounded-full ${tab === 'collections' ? 'bg-primaryContainer' : ''}`}>
-            <Text className={`font-inter-700 ${tab === 'collections' ? 'text-white' : 'text-textSecondary'}`} style={{ fontSize: 10, lineHeight: 15 }}>
-              {collections.length}
-            </Text>
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className={`flex-1 flex-row items-center justify-center py-2 rounded-figma-8 ${tab === 'items' ? 'bg-white' : ''}`}
-          style={{ gap: 4 }}
-          onPress={() => setTab('items')}
-        >
-          <Text className={`font-inter-600 ${tab === 'items' ? 'text-primaryContainer' : 'text-textSecondary'}`} style={{ fontSize: 14, lineHeight: 16 }}>
-            All Items
-          </Text>
-          <View className={`px-1.5 py-0.5 rounded-full ${tab === 'items' ? 'bg-primaryContainer' : ''}`}>
-            <Text className={`font-inter-500 ${tab === 'items' ? 'text-white' : 'text-textSecondary'}`} style={{ fontSize: 10, lineHeight: 15 }}>
-              {bookmarkCount}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </View>
+      {/* All Items — the only view (Collections returns with add-to-collection) */}
 
       {/* Content */}
       {tab === 'collections' ? (

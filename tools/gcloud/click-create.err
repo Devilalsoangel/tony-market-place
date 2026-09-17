@@ -1,0 +1,16 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+locator.click: Timeout 15000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: /create credentials/i }).first()[22m
+
+    at C:\Users\TONI\projects\social-commerce\tools\gcloud\click-create.mjs:10:11 {
+  log: [
+    "  - waiting for getByRole('button', { name: /create credentials/i }).first()"
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v20.19.4

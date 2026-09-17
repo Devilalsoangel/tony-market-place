@@ -9,7 +9,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePosts, Post } from '../contexts/PostContext';
 import { useOrders } from '../contexts/OrderContext';
 import { resolveListingImage } from '../utils/productImages';
-import { sellerNetForOrders } from '../utils/marketplace';
+import { sellerNetForOrders, isApprovedSeller } from '../utils/marketplace';
+import SellerGate from '../components/SellerGate';
 
 function ViewIcon({ size = 14, color = colors.primaryContainer }: { size?: number; color?: string }) {
   return (
@@ -83,10 +84,13 @@ export default function SellerDashboardScreen() {
 
   // Logged-out fallback is '' (matches nobody): 'user' previously rendered
   // seller "user"'s listings + orders to logged-out viewers (cross-account leak).
-  const myPosts = useMemo(
-    () => posts.filter((p) => p.sellerUsername === (user?.username ?? '')),
-    [posts, user]
-  );
+  // Case-insensitive like the hub (server keeps exact casing): a mixed-case
+  // username must see the same revenue/orders on every seller screen.
+  const myPosts = useMemo(() => {
+    const me = (user?.username ?? '').trim().toLowerCase();
+    if (!me) return [];
+    return posts.filter((p) => (p.sellerUsername ?? '').toLowerCase() === me);
+  }, [posts, user]);
 
   const totalListings = myPosts.length;
   const totalLikes = myPosts.reduce((sum, p) => sum + (p.likes ?? 0), 0);
@@ -103,10 +107,11 @@ export default function SellerDashboardScreen() {
     );
   };
 
-  const salesOrders = useMemo(
-    () => orders.filter((o) => o.sellerUsername === (user?.username ?? '')),
-    [orders, user]
-  );
+  const salesOrders = useMemo(() => {
+    const me = (user?.username ?? '').trim().toLowerCase();
+    if (!me) return [];
+    return orders.filter((o) => (o.sellerUsername ?? '').toLowerCase() === me);
+  }, [orders, user]);
   const salesCount = salesOrders.length;
   // Industry-standard: sellers see NET (after 8% commission) — the number
   // that matches their wallet. Gross here would contradict the hub + wallet.
@@ -148,6 +153,10 @@ export default function SellerDashboardScreen() {
   const pending = user?.verification === 'pending';
   const rejected = user?.verification === 'rejected';
   const verified = user?.verification === 'approved';
+
+  // Approved sellers only (SELLER-C1): buyers/pending deep-links get status,
+  // never tools. Matches server 403s. After all hooks (rules-of-hooks safe).
+  if (!isApprovedSeller(user)) return <SellerGate title="Seller dashboard" user={user} />;
 
   return (
     <View className="flex-1 bg-surface">
@@ -277,9 +286,9 @@ export default function SellerDashboardScreen() {
         <View className="bg-surfaceContainerLow rounded-figma-16 p-4 mb-6">
           <Text className="text-figma-14 font-inter-600 text-textPrimary mb-1">New Listings — Last 7 Days</Text>
           <Text className="text-figma-12 font-inter-400 text-textSecondary mb-4">
-            {totalLikes === 0 ? 'Post more to grow your audience' : `${totalLikes} likes across your listings`}
+            {totalListings === 0 ? 'Post more to grow your audience' : `${totalListings} live listings · ${totalLikes} likes`}
           </Text>
-          {totalLikes === 0 ? (
+          {totalListings === 0 ? (
             <View className="items-center py-6">
               <Text className="text-figma-12 font-inter-400 text-textSecondary">No views yet — share your listings to get seen</Text>
             </View>

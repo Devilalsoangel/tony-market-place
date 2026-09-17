@@ -8,7 +8,7 @@ import { BackIcon, CloseIcon } from '../utils/icons';
 import { colors, formatPrice, shadows } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { useOrders } from '../contexts/OrderContext';
-import { loadMarketplaceConfig } from '../utils/marketplace';
+import { loadMarketplaceConfig, sellerNetForOrders, sellerGoodsForOrders, isApprovedSeller } from '../utils/marketplace';
 import { getWallet, saveWallet, syncWalletFromServer, type WalletTx } from '../utils/walletStore';
 import { getWithdrawalStatuses } from '../utils/adminSync';
 
@@ -123,15 +123,23 @@ export default function WalletScreen() {
   const [custom, setCustom] = useState('');
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [showPayout, setShowPayout] = useState(false);
+  // In-flight payout guard (SELLER-C4): double-tap used to fire two PUTs =
+  // two debits. The button disables while submitting AND the server dedupes
+  // same-amount requests inside 60s — either layer alone stops it.
+  const [payoutBusy, setPayoutBusy] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState('');
   const [payoutMethod, setPayoutMethod] = useState<'bank' | 'upi'>('bank');
-  // Live Commission & Fees from the admin panel (falls back to local constants).
-  const [commissionRate, setCommissionRate] = useState(0.08);
+  const [payoutVpa, setPayoutVpa] = useState('');
+  // UPI destination: explicit VPA per request — a phone number is NOT a VPA
+  // (handles change, non-UPI phones exist). Bank goes to the KYC-verified
+  // account on file, chosen server-side, never typed here.
+  // Live payout fee from the admin panel (falls back to local constants).
+  // (No commission-rate state: the headline shows the blended settled rate,
+  // and all math routes through the shared sellerNetForOrders legs.)
   const [payoutFee, setPayoutFee] = useState(20);
 
   useEffect(() => {
     loadMarketplaceConfig().then((c) => {
-      setCommissionRate(c.commissionRate);
       setPayoutFee(c.payoutFee);
     });
   }, []);
@@ -246,21 +254,33 @@ export default function WalletScreen() {
     // the server never saw. creditWallet is the only client top-up writer.
     try {
       const w = await import('../utils/walletStore');
-      const updated = await w.creditWallet(amount, { title: 'Wallet top-up', detail: 'Added via susej Wallet' });
+      const ref = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+      const updated = await w.creditWallet(amount, { title: 'Wallet top-up', detail: 'Added via susej Wallet', ref });
       setBalance(updated.balance);
       setTransactions(updated.transactions);
-    } catch {
-      Alert.alert('Top-up failed', 'Could not add money. Check your connection and try again.');
+    } catch (e) {
+      // Honest failure copy: a certain server reject (e.g. top-ups disabled
+      // in production — no gateway rail exists yet) is NOT a connection
+      // problem and must never blame the user's internet. Transport failures
+      // keep the connection copy via transportMessage at the call sites.
+      const msg = e instanceof Error ? e.message : '';
+      if (/disabled in production|payment gateway/i.test(msg)) {
+        Alert.alert('Adding money is unavailable', 'Online top-ups are not live yet — a payment partner is still being connected. Your earnings, refunds, and rewards still land in this wallet.');
+      } else {
+        Alert.alert('Top-up failed', msg || 'Could not add money. Check your connection and try again.');
+      }
     }
   };
 
   const rows = useMemo(() => groupTransactions(transactions), [transactions]);
 
   // Seller earnings from the seller's own delivered orders (real order data).
-  const sellerOrders = useMemo(
-    () => orders.filter((o) => o.sellerUsername === (user?.username ?? '')),
-    [orders, user]
-  );
+  // Case-insensitive like every other seller surface (server keeps exact casing).
+  const sellerOrders = useMemo(() => {
+    const me = (user?.username ?? '').trim().toLowerCase();
+    if (!me) return [];
+    return orders.filter((o) => (o.sellerUsername ?? '').toLowerCase() === me);
+  }, [orders, user]);
   const monthStart = useMemo(() => {
     const d = new Date();
     d.setDate(1);
@@ -270,22 +290,75 @@ export default function WalletScreen() {
   // Goods-only net, EXACTLY like the server credits it: sum(items price×qty)
   // per delivered order, commission on merchandise (never the delivery float
   // — the old chargedTotal basis let sellers withdraw money never credited).
-  const goodsTotal = (list: typeof sellerOrders) =>
-    list
-      .filter((o) => o.status === 'delivered')
-      .reduce((s, o) => s + o.items.reduce((t, i) => t + i.price * i.quantity, 0), 0);
+  // Single shared definitions (no inline second formula to drift).
+  const goodsTotal = (list: typeof sellerOrders) => sellerGoodsForOrders(list);
+  // Single net definition everywhere (hub + dashboard + seller-orders +
+  // wallet): per-line settled legs (category overrides at sale time), legacy
+  // fallback to live rate. Delivered-only is inside the shared fn. The old
+  // goods×flatRate recompute diverged whenever an override existed — sellers
+  // saw different earnings on the same orders.
   const earningsTotal = goodsTotal(sellerOrders);
   const earningsMonth = goodsTotal(sellerOrders.filter((o) => o.placedAt >= monthStart));
-  // Platform commission (mirrors admin Commission & Fees + server credit):
-  // payout = goods − commission% on merchandise only.
-  const commissionTotal = Math.round(earningsTotal * commissionRate);
-  const netEarnings = earningsTotal - commissionTotal;
+  const netEarnings = sellerNetForOrders(sellerOrders);
+  // 7-day settlement hold (mirrors the server payout guard exactly): delivered
+  // legs unlock 7 days after actualDelivery (return window). Missing stamp =
+  // UNMATURED (still settling) — counting it as matured let a seller tap Mark
+  // Delivered and withdraw the same second, bypassing the hold entirely.
+  const HOLD_MS = 7 * 24 * 3600 * 1000;
+  // Maturity matches the server payout guard exactly: a missing stamp means
+  // pre-hold-era = matured (every deliver path stamps new rows server-side,
+  // so unstamped can only be legacy). Unparseable garbage stays unmatured
+  // (fail-closed, distinct from legacy-empty).
+  const isMatured = (o: { actualDelivery?: string }) => {
+    const raw = String(o.actualDelivery ?? '');
+    if (!raw) return true;
+    const s = Date.parse(raw);
+    return Number.isFinite(s) && Date.now() - s >= HOLD_MS;
+  };
+  const maturedOrders = sellerOrders.filter((o) => isMatured(o));
+  // Frozen-under-dispute legs unlock on ruling, never before (server excludes
+  // them from lifetimeNet — the client gate must too, or the button enables
+  // and the server 400s). Only MATURED-frozen is subtracted from maturedNet:
+  // unmatured-frozen was never inside it (subtracting all frozen understated
+  // withdrawable by the unmatured slice).
+  const frozenOrders = sellerOrders.filter((o) => o.status === 'delivered' && (o as { disputeFrozen?: boolean }).disputeFrozen === true);
+  const frozenNet = sellerNetForOrders(frozenOrders);
+  const frozenMaturedNet = sellerNetForOrders(frozenOrders.filter((o) => isMatured(o)));
+  const maturedNet = Math.max(0, sellerNetForOrders(maturedOrders) - frozenMaturedNet);
+  const settlingNet = Math.max(0, netEarnings - maturedNet - frozenNet);
+  // Next unlock date ("available on"): the earliest settling leg's unlock day.
+  const nextUnlock = (() => {
+    let earliest = Infinity;
+    for (const o of sellerOrders) {
+      if (o.status !== 'delivered' || o.paymentStatus === 'refunded' || (o as { disputeFrozen?: boolean }).disputeFrozen === true) continue;
+      const s = Date.parse((o.actualDelivery ?? '') as string);
+      if (!Number.isFinite(s)) continue;
+      const unlock = s + HOLD_MS;
+      if (unlock > Date.now() && unlock < earliest) earliest = unlock;
+    }
+    return Number.isFinite(earliest) ? new Date(earliest).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : null;
+  })();
+  // Withdrawable = lifetime settled net MINUS already-committed payouts
+  // (requested/approved/completed), mirroring the server earnings guard.
+  // Committed in TOTAL-DEBIT terms (amount + fee): the gate below compares
+  // balance against amount+fee, so committing amount-only let two sequential
+  // max-withdrawals both pass while the second dies on balance.
+  const committedPayouts = withdrawals
+    .filter((w) => w.status === 'requested' || w.status === 'approved' || w.status === 'completed')
+    .reduce((s, w) => s + Math.max(0, Math.round(Number(w.amount) || 0)) + payoutFee, 0);
+  const withdrawableEarnings = Math.max(0, maturedNet - committedPayouts);
+  // Display commission = goods − settled net (matches the shared fn exactly).
+  const commissionTotal = Math.max(0, earningsTotal - netEarnings);
   const submitPayout = async () => {
+    if (payoutBusy) return;
     const amount = Math.round(Number(payoutAmount));
-    if (!amount || amount < 100 || amount > netEarnings) {
+    if (!amount || amount < 100 || amount > withdrawableEarnings) {
       if (amount && amount < 100) Alert.alert('Minimum payout', `Minimum withdrawal is ${formatPrice(100)}.`);
+      else if (amount > withdrawableEarnings) Alert.alert('Exceeds withdrawable earnings', `You can withdraw up to ${formatPrice(withdrawableEarnings)} (delivered earnings minus pending payouts).`);
       return;
     }
+    setPayoutBusy(true);
+    try {
     const totalDebit = amount + payoutFee;
     if (balance < totalDebit) {
       Alert.alert('Insufficient wallet balance', `Need ${formatPrice(totalDebit)} (incl. ${formatPrice(payoutFee)} fee) but you have ${formatPrice(balance)}.`);
@@ -293,15 +366,52 @@ export default function WalletScreen() {
     }
     // Single transactional server call: debit (amount + fee) + desk row commit
     // atomically — no two-phase client orchestration that can strand a debit.
+    // The chosen rail travels so the desk pays the right destination; UPI
+    // carries an explicit VPA (validated here AND server-side), bank resolves
+    // to the KYC-verified account on file server-side.
+    const vpa = payoutVpa.trim();
+    if (payoutMethod === 'upi' && !/^[a-zA-Z0-9._-]{2,256}@[a-zA-Z]{2,64}$/.test(vpa)) {
+      Alert.alert('Invalid UPI ID', 'Enter your UPI ID in name@bank format (e.g. name@okhdfc).');
+      return;
+    }
     const mod = await import('../utils/serverApi');
-    const res = await mod.serverApi.requestPayout(amount).catch(() => null);
+    // Sticky idempotency key (promo-checkoutRef pattern): a FRESH ref per tap
+    // made every timeout-retry a NEW deterministic server title — i.e. a
+    // second full debit for the same intent. The ref persists per INTENT
+    // (amount+method+destination) until the server acks; retries reuse it so
+    // the server dedupes instead of double-debiting. TTL 24h bounds orphans.
+    // Per-intent slots (not one global): switching intents mid-flight must
+    // not overwrite (or resurrect) another intent's ref.
+    const destKey = payoutMethod === 'upi' ? vpa : 'bank';
+    const PAYOUT_REF_KEY = `@susej_payout_ref:${amount}:${payoutMethod}:${destKey}`;
+    let payoutRef: string | null = null;
+    try {
+      const raw = await AsyncStorage.getItem(PAYOUT_REF_KEY);
+      if (raw) {
+        try {
+          const p = JSON.parse(raw);
+          if (p && typeof p.ref === 'string' && typeof p.at === 'number' && Date.now() - p.at < 24 * 3600 * 1000) {
+            payoutRef = p.ref;
+          }
+        } catch {}
+      }
+    } catch {}
+    if (!payoutRef) {
+      payoutRef = `po-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      try {
+        await AsyncStorage.setItem(PAYOUT_REF_KEY, JSON.stringify({ ref: payoutRef, at: Date.now() }));
+      } catch {}
+    }
+    const res = await mod.serverApi.requestPayout(amount, payoutMethod, payoutRef, payoutMethod === 'upi' ? vpa : undefined).catch(() => null);
     if (!res?.ok || !res.data?.withdrawalId) {
-      Alert.alert('Withdrawal failed', res?.error || 'Could not submit payout. Check your connection and try again.');
+      Alert.alert('Withdrawal failed', res?.error || 'Could not submit payout. Check your connection and try again. Safe to retry — the same attempt can never debit twice.');
       // Re-sync so the UI reflects server truth (the debit never happened on
       // failure — the transaction rolled back).
       void syncWalletFromServer().then(() => getWallet().then((fresh) => { setBalance(fresh.balance); setTransactions(fresh.transactions); }));
       return;
     }
+    // Acked: the intent settled, the ref must never be reused.
+    try { await AsyncStorage.removeItem(PAYOUT_REF_KEY); } catch {}
     // Optimistic local mirror, then authoritative re-sync.
     const now = Date.now();
     const req: WithdrawalRequest = {
@@ -317,11 +427,17 @@ export default function WalletScreen() {
     });
     setShowPayout(false);
     setPayoutAmount('');
+    setPayoutVpa('');
     Alert.alert(
       'Withdrawal requested',
-      `${formatPrice(amount)} payout for ${req.id} is submitted. The platform team reviews it — you'll see the status here.`,
+      payoutMethod === 'upi'
+        ? `${formatPrice(amount)} to ${vpa} (${req.id}) is submitted. The platform team reviews it — you'll see the status here.`
+        : `${formatPrice(amount)} to your verified bank account on file (${req.id}) is submitted. The platform team reviews it — you'll see the status here.`,
       [{ text: 'OK' }]
     );
+    } finally {
+      setPayoutBusy(false);
+    }
   };
 
   const PAYOUT_CHIP: Record<WithdrawalRequest['status'], { label: string; bg: string; fg: string }> = {
@@ -411,7 +527,7 @@ export default function WalletScreen() {
                 </TouchableOpacity>
               </View>
 
-              {user?.isSeller && (
+              {isApprovedSeller(user) && (
                 <View className="mt-4" style={{ borderRadius: 24, backgroundColor: colors.inverseSurface, padding: 20 }}>
                   <View className="flex-row items-center justify-between">
                     <Text className="font-inter-500" style={{ fontSize: 13, lineHeight: 16, color: colors.inverseOnSurface }}>
@@ -425,15 +541,25 @@ export default function WalletScreen() {
                     {formatPrice(netEarnings)}
                   </Text>
                   <Text className="font-inter-400 mt-0.5" style={{ fontSize: 12, lineHeight: 16, color: colors.inverseOnSurface, opacity: 0.7 }}>
-                    Goods {formatPrice(earningsTotal)} · −{formatPrice(commissionTotal)} susej commission ({Math.round(commissionRate * 100)}%)
+                    Goods {formatPrice(earningsTotal)} · −{formatPrice(commissionTotal)} susej commission (blended rate incl. category offers)
                   </Text>
                   <Text className="font-inter-400" style={{ fontSize: 11, lineHeight: 14, color: colors.inverseOnSurface, opacity: 0.55 }}>
-                    From {sellerOrders.filter((o) => o.status === 'delivered').length} delivered order{sellerOrders.filter((o) => o.status === 'delivered').length === 1 ? '' : 's'}
+                    From {sellerOrders.filter((o) => o.status === 'delivered' && (o as { paymentStatus?: string }).paymentStatus !== 'refunded').length} delivered order{sellerOrders.filter((o) => o.status === 'delivered' && (o as { paymentStatus?: string }).paymentStatus !== 'refunded').length === 1 ? '' : 's'}
                   </Text>
+                  {settlingNet > 0 ? (
+                    <Text className="font-inter-500 mt-1" style={{ fontSize: 11, lineHeight: 14, color: colors.inverseOnSurface, opacity: 0.8 }}>
+                      {formatPrice(settlingNet)} settling — withdrawable 7 days after delivery
+                    </Text>
+                  ) : null}
+                  {frozenNet > 0 ? (
+                    <Text className="font-inter-500 mt-1" style={{ fontSize: 11, lineHeight: 14, color: colors.inverseOnSurface, opacity: 0.8 }}>
+                      {formatPrice(frozenNet)} frozen under dispute — unlocks on ruling
+                    </Text>
+                  ) : null}
                   <TouchableOpacity
                     className="mt-4 h-11 items-center justify-center"
                     style={{ borderRadius: 12, backgroundColor: colors.inverseOnSurface }}
-                    disabled={netEarnings <= 0}
+                    disabled={withdrawableEarnings <= 0}
                     onPress={() => setShowPayout(true)}
                   >
                     <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 18, color: colors.inverseSurface }}>
@@ -596,16 +722,34 @@ export default function WalletScreen() {
                 </View>
                 <View className="mt-3 px-4 py-3" style={{ borderRadius: 16, backgroundColor: colors.surfaceContainer }}>
                   <Text className="font-inter-400" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
-                    Transfer to {payoutMethod === 'bank' ? 'Bank account' : 'UPI ID'} · {payoutMethod === 'bank' ? '1-2 business days' : 'Instant to UPI'}
+                    Transfer to {payoutMethod === 'bank' ? 'Bank account' : 'UPI ID'} · {payoutMethod === 'bank' ? '1-2 business days' : 'After approval, usually same day'}
                   </Text>
                   <Text className="font-inter-600 mt-0.5" style={{ fontSize: 13, lineHeight: 18, color: colors.textPrimary }}>
-                    {payoutMethod === 'bank' ? 'Bank transfer' : 'UPI linked to your verified phone'}
+                    {payoutMethod === 'bank' ? 'Business KYC account on file — request fails honestly if none is verified (use UPI if unsure)' : 'Paid to the UPI ID you enter below'}
+                  </Text>
+                  <Text className="font-inter-400 mt-1.5" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
+                    Withdrawable {formatPrice(withdrawableEarnings)}{settlingNet > 0 ? ` · ${formatPrice(settlingNet)} settling${nextUnlock ? ` (next unlocks ${nextUnlock})` : ''}` : ''}{frozenNet > 0 ? ` · ${formatPrice(frozenNet)} frozen under dispute` : ''}
                   </Text>
                 </View>
+                {payoutMethod === 'upi' ? (
+                  <View className="mt-3" style={{ borderRadius: 16, backgroundColor: colors.surfaceContainer }}>
+                    <TextInput
+                      className="px-4 h-14 font-inter-500"
+                      placeholder="UPI ID (name@bank)"
+                      placeholderTextColor={colors.placeholder}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                      style={{ fontSize: 15, lineHeight: 20, color: colors.textPrimary }}
+                      value={payoutVpa}
+                      onChangeText={setPayoutVpa}
+                    />
+                  </View>
+                ) : null}
                 <View className="mt-3" style={{ borderRadius: 16, backgroundColor: colors.surfaceContainer }}>
                   <TextInput
                     className="px-4 h-14 font-inter-500"
-                    placeholder={`Amount (max ${formatPrice(netEarnings)} · min ${formatPrice(100)})`}
+                    placeholder={`Amount (max ${formatPrice(withdrawableEarnings)} · min ${formatPrice(100)})`}
                     placeholderTextColor={colors.placeholder}
                     keyboardType="number-pad"
                     style={{ fontSize: 15, lineHeight: 20, color: colors.textPrimary }}
@@ -628,17 +772,17 @@ export default function WalletScreen() {
                       <Text className="font-inter-600" style={{ fontSize: 13, color: colors.textPrimary }}>Total debit from wallet</Text>
                       <Text className="font-inter-700" style={{ fontSize: 13, color: colors.primary }}>{formatPrice((Number(payoutAmount) || 0) + payoutFee)}</Text>
                     </View>
-                    <Text className="font-inter-400 mt-2" style={{ fontSize: 11, lineHeight: 14, color: colors.textTertiary }}>Estimated arrival: {payoutMethod === 'bank' ? '1-2 business days · 9am-6pm IST' : 'Within minutes to UPI'} · Fee deducted at source.</Text>
+                    <Text className="font-inter-400 mt-2" style={{ fontSize: 11, lineHeight: 14, color: colors.textTertiary }}>Estimated arrival: {payoutMethod === 'bank' ? '1-2 business days · 9am-6pm IST' : 'After approval, usually same day'} · Fee deducted at source. Requests are manually reviewed.</Text>
                   </View>
                 ) : null}
                 <TouchableOpacity
                   className="mt-4 h-14 items-center justify-center"
-                  style={{ borderRadius: 16, backgroundColor: colors.primaryContainer, opacity: payoutAmount && Number(payoutAmount) >= 100 && Number(payoutAmount) <= netEarnings && (Number(payoutAmount) + payoutFee) <= balance ? 1 : 0.4 }}
-                  disabled={!payoutAmount || Number(payoutAmount) < 100 || Number(payoutAmount) > netEarnings || (Number(payoutAmount) + payoutFee) > balance}
+                  style={{ borderRadius: 16, backgroundColor: colors.primaryContainer, opacity: payoutBusy ? 0.4 : payoutAmount && Number(payoutAmount) >= 100 && Number(payoutAmount) <= withdrawableEarnings && (Number(payoutAmount) + payoutFee) <= balance ? 1 : 0.4 }}
+                  disabled={payoutBusy || !payoutAmount || (payoutMethod === 'upi' && !payoutVpa.trim()) || Number(payoutAmount) < 100 || Number(payoutAmount) > withdrawableEarnings || (Number(payoutAmount) + payoutFee) > balance}
                   onPress={submitPayout}
                 >
                   <Text className="font-inter-600" style={{ fontSize: 16, lineHeight: 24, color: colors.onPrimary }}>
-                    Request payout {payoutAmount ? `· ${formatPrice(Number(payoutAmount) + payoutFee)} debit` : ''}
+                    {payoutBusy ? 'Submitting…' : `Request payout ${payoutAmount ? `· ${formatPrice(Number(payoutAmount) + payoutFee)} debit` : ''}`}
                   </Text>
                 </TouchableOpacity>
                 <Text className="font-inter-400 mt-2 text-center" style={{ fontSize: 11, lineHeight: 15, color: colors.textTertiary }}>

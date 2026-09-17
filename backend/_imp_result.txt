@@ -1,0 +1,7 @@
+=== OUT ===
+main.py import OK
+fastapi app: FastAPI
+routes: 108
+sample: ['/users/{user_id}', '/users', '/feed']
+
+=== ERR ===

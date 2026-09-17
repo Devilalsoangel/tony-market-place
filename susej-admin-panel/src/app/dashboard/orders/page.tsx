@@ -68,7 +68,17 @@ const columns = [
   }),
   columnHelper.accessor("sellerName", {
     header: "Seller",
-    cell: (info) => info.getValue(),
+    cell: (info) => {
+      const attributed = String((info.row.original as { sellerUsername?: string }).sellerUsername ?? "").trim();
+      return (
+        <span className="flex items-center gap-1.5">
+          {info.getValue()}
+          {!attributed && (
+            <Badge variant="warning">unattributed</Badge>
+          )}
+        </span>
+      );
+    },
   }),
   columnHelper.accessor("amount", {
     header: "Amount",
@@ -121,7 +131,7 @@ const columns = [
 
 export default function OrdersPage() {
   const router = useRouter();
-  const { data: orders, refresh } = useDbResource<Order>("orders", { take: 500 });
+  const { data: orders, total: ordersTotal, refresh } = useDbResource<Order>("orders", { take: 100 });
   const [filter, setFilter] = useState<string>("all");
 
   const filtered = useMemo(() => {
@@ -174,6 +184,7 @@ export default function OrdersPage() {
           <DataTable
             columns={columns}
             data={filtered}
+            totalCount={filter === "all" ? (ordersTotal ?? filtered.length) : null}
             searchable
             searchKey="id"
             filename="orders"

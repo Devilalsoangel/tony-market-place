@@ -2,6 +2,7 @@
 Unit tests for auth_db.py
 Run with: pytest backend/tests/test_auth_db.py
 """
+
 import pytest
 from datetime import datetime, timezone
 from backend.auth_db import (
@@ -87,8 +88,14 @@ class TestUserCreation:
 
 
 class TestGetAllUsers:
-    def test_get_all_users_returns_list(self):
-        """Test that get_all_users returns a list"""
+    def test_get_all_users_roundtrip(self):
+        """Registration -> fetch roundtrip works (no pre-seeded rows assumed)."""
+        created = create_user(
+            full_name="List User",
+            username="listuser",
+            email="listuser@example.com",
+            password="Secure@123",
+        )
         users = get_all_users()
         assert isinstance(users, list)
-        assert len(users) > 0  # At least demo users
+        assert any(int(u["id"]) == int(created["id"]) for u in users)

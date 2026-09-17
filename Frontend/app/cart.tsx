@@ -4,9 +4,9 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BackIcon, CloseIcon, ShopIcon, MinusIcon, PlusIcon, ArrowRightIcon, ChevronRightIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
-import { useCart, DELIVERY_FEES, type CartItem } from '../contexts/CartContext';
+import { useCart, DELIVERY_FEES, cartLineKey, type CartItem } from '../contexts/CartContext';
 import { resolveListingImage } from '../utils/productImages';
-import { getRedeemedCoupons, setAppliedPromo, clearAppliedPromo } from '../utils/redeemedCoupons';
+import { getRedeemedCoupons, setAppliedPromo, clearAppliedPromo, previewDiscount, type AppliedPromo } from '../utils/redeemedCoupons';
 import { serverApi } from '../utils/serverApi';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,7 +21,7 @@ export default function CartScreen() {
   const savedKey = user?.username ? `${SAVED_KEY_BASE}:${user.username}` : SAVED_KEY_BASE;
   const { cart, updateQuantity, removeFromCart, restoreSavedItem, subtotal } = useCart();
   const [promoCode, setPromoCode] = useState('');
-const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?: boolean } | null>(null);
+const [promo, setPromo] = useState<AppliedPromo | null>(null);
   const [saved, setSaved] = useState<SavedItem[]>([]);
   const [savedLoaded, setSavedLoaded] = useState(false);
   const [savedOpen, setSavedOpen] = useState(true);
@@ -46,7 +46,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
             .map((c) => ({
               code: String(c.code),
               label:
-                c.type === 'percent'
+                c.type === 'percent' || c.type === 'percentage'
                   ? String(c.value) + '% off'
                   : c.type === 'free_delivery'
                     ? 'Free delivery'
@@ -87,9 +87,10 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
   };
 
   const saveForLater = (item: CartItem) => {
-    removeFromCart(item.listingId);
+    removeFromCart(item.listingId, { variantLabel: item.variantLabel, bundleId: item.bundleId });
     setSaved((prev) => {
-      const next = [{ ...item, savedAt: Date.now() }, ...prev.filter((s) => s.listingId !== item.listingId)];
+      const key = cartLineKey(item);
+      const next = [{ ...item, savedAt: Date.now() }, ...prev.filter((s) => cartLineKey(s) !== key)];
       persistSaved(next);
       return next;
     });
@@ -106,47 +107,73 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
       return;
     }
     setSaved((prev) => {
-      const next = prev.filter((s) => s.listingId !== item.listingId);
+      const next = prev.filter((s) => cartLineKey(s) !== cartLineKey(item));
       persistSaved(next);
       return next;
     });
   };
 
-  const removeSaved = (listingId: string) => {
+  const removeSaved = (item: SavedItem) => {
     setSaved((prev) => {
-      const next = prev.filter((s) => s.listingId !== listingId);
+      const next = prev.filter((s) => cartLineKey(s) !== cartLineKey(item));
       persistSaved(next);
       return next;
     });
   };
 
   const hasFood = cart.some((item) => item.type === 'food_item');
-  const delivery = cart.length > 0 ? (promo?.freeDelivery ? 0 : hasFood ? DELIVERY_FEES.food_item : DELIVERY_FEES.product) : 0;
-  const discount = cart.length > 0 ? (promo ? promo.amount : 0) : 0;
-  // Total preview matches checkout (subtotal + delivery). Coupon is settled
-  // server-side on the final bill, so cart shows the coupon as informational
-  // and does not subtract it here — prevents cart/checkout total mismatch.
-  const total = subtotal + delivery;
+  const hasOnlyServices = cart.length > 0 && cart.every((item) => item.type === 'service');
+  // Bundle carts reject coupons server-side (one price authority per order) —
+  // an applied promo is INERT here (totals ignore it, honest note below).
+  const hasBundle = cart.some((item) => !!item.bundleId);
+  const activePromo = promo && !hasBundle ? promo : null;
+  const delivery = cart.length > 0 ? (activePromo?.freeDelivery ? 0 : hasOnlyServices ? 0 : hasFood ? DELIVERY_FEES.food_item : DELIVERY_FEES.product) : 0;
+  // Buyer-visible estimate by the SAME server formula checkout uses
+  // (percent on subtotal+delivery, capped at base−1) — cart and checkout
+  // totals agree, and the server stays truth at placement.
+  const discount = previewDiscount(subtotal, delivery, activePromo);
+  const total = Math.max(0, subtotal + delivery - discount);
 
   const applyPromo = async (override?: string) => {
     const code = (override ?? promoCode).trim().toUpperCase();
     if (override) setPromoCode(override.toUpperCase());
     if (!code) return;
     if (promo && promo.code === code) return;
+    // Bundle carts reject coupons at placement (one price authority) — refuse
+    // the tap with the reason instead of previewing a discount that 400s.
+    if (cart.some((i) => !!i.bundleId)) {
+      Alert.alert('Coupons need a non-bundle cart', 'Bundle deals already carry their own price — coupons apply to regular items only.');
+      return;
+    }
     let amount = 0;
     let freeDelivery = false;
     // Live coupons from server (prevents drift where cart discount differs from server charge).
-    let liveCoupons: Array<{ code: string; type: string; value: number }> = [];
+    let liveCoupons: Array<{ code: string; type: string; value: number; expiresAt?: string }> = [];
     try {
       const res = await serverApi.getCoupons();
       if (res.ok && res.data?.coupons) liveCoupons = res.data.coupons;
     } catch {}
     const live = liveCoupons.find((c) => c.code.toUpperCase() === code);
+    // The server list is already expiry-filtered, but check explicitly so an
+    // expired code says EXPIRED (not "invalid") even on a stale cache.
+    if (live?.expiresAt && new Date(live.expiresAt).getTime() < Date.now()) {
+      setPromo(null);
+      await clearAppliedPromo().catch(() => {});
+      Alert.alert('Coupon expired', `Code ${code} has expired. Try a code from Loyalty > My Coupons or a current server coupon.`);
+      return;
+    }
     if (live) {
-      if (live.type === 'percent') amount = Math.round(subtotal * (live.value / 100));
+      // Percent previews on the SAME base the server charges (subtotal+delivery);
+      // unknown future kinds fail closed here (server is truth at placement,
+      // but the buyer must never see a preview the server won't honor).
+      // 'percentage' is the server alias for 'percent' — both preview.
+      const feeForPreview = hasOnlyServices ? 0 : hasFood ? DELIVERY_FEES.food_item : DELIVERY_FEES.product;
+      const previewBase = Math.round(subtotal) + Math.round(feeForPreview);
+      if (live.type === 'percent' || live.type === 'percentage') amount = Math.round(((subtotal + feeForPreview) * live.value) / 100);
       else if (live.type === 'flat' || live.type === 'fixed') amount = live.value;
       else if (live.type === 'free_delivery') freeDelivery = true;
-      else amount = Math.round(live.value);
+      // Stored face amount never exceeds what the server will honor (base−1).
+      if (!freeDelivery && previewBase > 1) amount = Math.max(0, Math.min(amount, previewBase - 1));
     } else {
       // Loyalty rewards are NOT accepted at checkout yet (the gatekeeper
       // strips them pre-order) — offering them here wastes the apply tap and
@@ -176,7 +203,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
       Alert.alert('Invalid promo code', 'Try a code from Loyalty > My Coupons or a server coupon.');
       return;
     }
-    const applied = { code, amount, ...(freeDelivery ? { freeDelivery: true } : {}) };
+    const applied: AppliedPromo = { code, amount, ...(freeDelivery ? { freeDelivery: true } : {}), ...(live ? { kind: live.type, value: live.value } : {}) };
     setPromo(applied);
     // Checkout reads this so the discount reaches the real charged total.
     setAppliedPromo(applied).catch(() => {});
@@ -197,7 +224,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
 
       <FlatList
         data={cart}
-        keyExtractor={(item) => item.listingId}
+        keyExtractor={(item) => cartLineKey(item)}
         contentContainerClassName="px-5 pb-[352px]"
         contentContainerStyle={{ rowGap: 24, paddingBottom: insets.bottom + 352 }}
         renderItem={({ item }) => (
@@ -223,10 +250,10 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
                     style={{ lineHeight: 16, letterSpacing: 0.14 }}
                     numberOfLines={1}
                   >
-                    {item.name}
+                    {item.name}{item.variantLabel ? ` · ${item.variantLabel}` : ''}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => removeFromCart(item.listingId)} className="pb-1.5">
+                <TouchableOpacity onPress={() => removeFromCart(item.listingId, { variantLabel: item.variantLabel, bundleId: item.bundleId })} className="pb-1.5">
                   <CloseIcon size={12} color={colors.textSecondary} style={{ opacity: 0.4 }} />
                 </TouchableOpacity>
               </View>
@@ -264,7 +291,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
                     hitSlop={{ top: 2, bottom: 2, left: 4, right: 4 }}
                     accessibilityRole="button"
                     accessibilityLabel={`Decrease quantity of ${item.name}`}
-                    onPress={() => updateQuantity(item.listingId, item.quantity - 1)}
+                    onPress={() => updateQuantity(item.listingId, item.quantity - 1, { variantLabel: item.variantLabel, bundleId: item.bundleId })}
                   >
                     <MinusIcon size={11} color={colors.primary} />
                   </TouchableOpacity>
@@ -280,7 +307,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
                     hitSlop={{ top: 2, bottom: 2, left: 4, right: 4 }}
                     accessibilityRole="button"
                     accessibilityLabel={`Increase quantity of ${item.name}`}
-                    onPress={() => updateQuantity(item.listingId, item.quantity + 1)}
+                    onPress={() => updateQuantity(item.listingId, item.quantity + 1, { variantLabel: item.variantLabel, bundleId: item.bundleId })}
                   >
                     <PlusIcon size={11} color={colors.primary} />
                   </TouchableOpacity>
@@ -366,7 +393,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
                 <View style={{ rowGap: 16 }}>
                   {saved.map((item) => (
                     <View
-                      key={item.listingId}
+                      key={cartLineKey(item)}
                       className="rounded-[24px] px-3 py-3"
                       style={{ width: '100%', backgroundColor: colors.surfaceContainerLowest, shadowColor: colors.textPrimary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 20, elevation: 3 }}
                     >
@@ -413,7 +440,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
                             Move to cart
                           </Text>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => removeSaved(item.listingId)} className="ml-6" hitSlop={{ top: 8, bottom: 8, left: 8, right:  8 }} accessibilityRole="button" accessibilityLabel={`Remove ${item.name}from saved`}>
+                        <TouchableOpacity onPress={() => removeSaved(item)} className="ml-6" hitSlop={{ top: 8, bottom: 8, left: 8, right:  8 }} accessibilityRole="button" accessibilityLabel={`Remove ${item.name}from saved`}>
                           <Text className="text-[13px] font-inter-500" style={{ lineHeight: 18, color: colors.textSecondary }}>
                             Remove
                           </Text>
@@ -442,7 +469,7 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
               style={{ backgroundColor: colors.primaryContainer }}
               accessibilityRole="button"
               accessibilityLabel="Start shopping"
-              onPress={() => router.push('/feed')}
+              onPress={() => router.push('/(tabs)/feed')}
             >
               <Text className="text-white text-[14px] font-inter-600" style={{ lineHeight: 18, letterSpacing: 0.14 }}>
                 Start shopping
@@ -469,13 +496,22 @@ const [promo, setPromo] = useState<{ code: string; amount: number; freeDelivery?
             <Text className="text-[16px] font-inter-400 text-textSecondary" style={{ lineHeight: 24 }}>Delivery Fee</Text>
             <Text className="text-[16px] font-inter-400 text-textPrimary" style={{ lineHeight: 24 }}>{formatPrice(delivery)}</Text>
           </View>
-          {/* Discount — informational; settled by server on checkout */}
+          {/* Discount — server-mirror estimate (same formula as checkout); final charge settled server-side */}
           {discount > 0 && (
             <View className="flex-row justify-between items-center">
               <Text className="text-[16px] font-inter-400 text-textSecondary" style={{ lineHeight: 24 }}>
-                {promo ? `Coupon ${promo.code}` : 'Discount'}
+                {activePromo ? `Coupon ${activePromo.code}` : 'Discount'}
               </Text>
-              <Text className="text-[13px] font-inter-400" style={{ lineHeight: 20, color: colors.textSecondary }}>Settled at checkout</Text>
+              <Text className="text-[16px] font-inter-600" style={{ lineHeight: 24, color: colors.success }}>−{formatPrice(discount)}</Text>
+            </View>
+          )}
+          {/* Bundle honesty: an applied coupon stays saved but cannot discount
+              a bundle cart (server rejects the combination at placement). */}
+          {hasBundle && promo && (
+            <View className="flex-row justify-between items-center">
+              <Text className="text-[13px] font-inter-400 text-textSecondary" style={{ lineHeight: 18 }}>
+                Coupon {promo.code} doesn&apos;t apply to bundle deals
+              </Text>
             </View>
           )}
           {/* Divider */}

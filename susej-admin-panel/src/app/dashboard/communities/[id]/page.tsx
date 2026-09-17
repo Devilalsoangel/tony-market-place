@@ -26,7 +26,9 @@ const roleBadgeVariant: Record<string, "primary" | "success" | "warning" | "dang
 
 export default function CommunityDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: communities, refresh } = useDbResource<Community>("communities");
+  // Single-row mode: the old code pulled the FULL communities table to render
+  // ONE room (scale DoS at 100k rows). Members/posts ride the row itself.
+  const { data: communities, refresh } = useDbResource<Community>("communities", { id });
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [community, setCommunity] = useState<Community | null>(null);
 

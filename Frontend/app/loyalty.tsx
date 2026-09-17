@@ -1,12 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Modal, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Modal, Pressable, Alert } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Path, Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, StarIcon, CheckIcon, CloseIcon } from '../utils/icons';
 import { colors, shadows } from '../utils/theme';
-import { addRedeemedCoupon } from '../utils/redeemedCoupons';
 import { useAuth } from '../contexts/AuthContext';
 
 const LOYALTY_KEY_BASE = '@susej_loyalty';
@@ -162,23 +161,14 @@ export default function LoyaltyScreen() {
   const progress = tierInfo.next ? Math.min(1, (balance - tierInfo.min) / (tierInfo.next - tierInfo.min)) : 1;
 
   const redeem = (reward: Reward) => {
-    if (balance < reward.cost || coupons.some((c) => c.rewardId === reward.id)) return;
-    const coupon: Coupon = { rewardId: reward.id, rewardTitle: reward.title, code: genCouponCode(), createdAt: Date.now() };
-    // The code becomes REAL: persisted where cart/checkout accept and consume it.
-    addRedeemedCoupon({
-      code: coupon.code,
-      rewardTitle: reward.title,
-      ...(reward.flatOff != null ? { discountFlat: reward.flatOff } : {}),
-      ...(reward.freeDelivery ? { freeDelivery: true } : {}),
-      redeemedAt: coupon.createdAt,
-    }).catch(() => {});
-    setBalance((prev) => prev - reward.cost);
-    setHistory((prev) => [
-      { id: `l${Date.now()}`, title: `Redeemed · ${reward.title}`, detail: `${reward.cost} points used`, points: -reward.cost, date: 'Just now' },
-      ...prev,
-    ]);
-    setCoupons((prev) => [coupon, ...prev]);
-    setLastCoupon(coupon);
+    // Checkout does not honor SUSEJ- codes yet (cart + checkout gate to
+    // server-listed codes only). Selling points for a refused code would be a
+    // dead-end sale — so redemption stays disabled until server redemption
+    // lands. No points move here.
+    Alert.alert(
+      'Checkout redemption coming soon',
+      'Reward codes will apply at checkout once server redemption lands. Your points stay untouched until then.'
+    );
   };
 
   const renderTx = ({ item }: { item: LoyaltyTx }) => {
@@ -280,7 +270,7 @@ export default function LoyaltyScreen() {
                   About earning
                 </Text>
                 <Text className="font-inter-400 mt-1" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
-                  Points come from the seller program. Automatic earning is coming soon — redeemed rewards below are real and apply at checkout.
+                  Points come from the seller program. Automatic earning is coming soon — checkout redemption for reward codes is coming soon; points are never spent until then.
                 </Text>
               </View>
 
@@ -328,12 +318,11 @@ export default function LoyaltyScreen() {
                       ) : (
                         <TouchableOpacity
                           className="px-4 h-10 items-center justify-center"
-                          style={{ borderRadius: 12, backgroundColor: affordable ? colors.primaryContainer : colors.surfaceContainer }}
-                          disabled={!affordable}
+                          style={{ borderRadius: 12, backgroundColor: colors.surfaceContainer }}
                           onPress={() => redeem(reward)}
                         >
-                          <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: affordable ? colors.onPrimary : colors.disabledText }}>
-                            Redeem
+                          <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: colors.textSecondary }}>
+                            Soon
                           </Text>
                         </TouchableOpacity>
                       )}
@@ -383,7 +372,7 @@ export default function LoyaltyScreen() {
               </Text>
             </View>
             <Text className="font-inter-400 text-center mt-3" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
-              Apply this code at checkout — saved in My Coupons.
+              Saved in My Coupons — loyalty redemption at checkout is coming soon; platform codes work today.
             </Text>
             <TouchableOpacity
               className="mt-5 w-full h-12 items-center justify-center"

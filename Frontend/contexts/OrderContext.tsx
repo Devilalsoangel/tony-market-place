@@ -28,6 +28,9 @@ export interface OrderItem {
   /** Variant selection at purchase time (e.g. "Size:M") — the server
    * re-checks availability at placement; the receipt shows what was bought. */
   variantLabel?: string;
+  /** Bundle row id for combo lines — the server re-prices from the Bundle
+   * row at placement; the cart split is preview-only. */
+  bundleId?: string;
   /** Settled per-line facts persisted by the server at placement (net unit
    * price after coupon share + commission rupees, category-aware). Earnings
    * displays sum these — never re-derived — so client/admin can never
@@ -96,10 +99,24 @@ export interface Order {
    * (network failure after optimistic create). Kept — never ghost-deleted —
    * until retryOrderSync succeeds or the server explicitly rejects it. */
   syncPending?: boolean;
+  /** Server explicitly rejected this order (bad coupon, OOS, funds). Kept —
+   * never ghost-deleted — so the buyer sees WHY instead of a not-found page. */
+  syncFailed?: string;
   paymentMethod?: string;
   bookingDate?: string;
   bookingTime?: string;
+  /** Accepted-offer lock carried for sync retries (server re-verifies). */
+  offer?: { threadId: string; messageId: string };
   refund?: Refund;
+  /** Settlement stamp ("" = pre-hold era = matured). Seller earnings unlock
+   *  7 days after this date (payout hold); every surface reads the same value. */
+  actualDelivery?: string;
+  /** Server settlement state: 'refunded' rows were clawed back (never
+   *  earnings — headlines must exclude them, exactly like the server guard). */
+  paymentStatus?: string;
+  /** True while an open/under_review dispute freezes this order's net (unlocks
+   *  on ruling — withdrawable-truth, mirrors the server payout guard). */
+  disputeFrozen?: boolean;
 }
 
 export interface PlaceOrderOptions {
@@ -111,6 +128,14 @@ export interface PlaceOrderOptions {
   // Promo code applied in cart — forwarded to server for validation so
   // cart coupon drift cannot create a client-only discount mismatch.
   promoCode?: string;
+  // Server-mirror discount estimate (previewDiscount) so the local receipt
+  // shows the discounted figure the server will charge — not the full price.
+  // The server re-validates and settles the real discount; this never prices.
+  discountEstimate?: number;
+  // Accepted-offer lock (chat deal → checkout): the server prices this order
+  // from the verified accepted offer row, not the listing mirror. Single-item
+  // only, never combinable with coupons (server enforces both).
+  offer?: { threadId: string; messageId: string };
   // Structured shipping fields — the server canonicalizes these into a clean
   // address string, so garbage can never be serialized into the Order row.
   addressParts?: {
@@ -135,15 +160,19 @@ interface OrderContextType {
    * idempotent on orderNumber, so a lost-ack retry can never double-charge).
    * Returns true when the server acknowledges the order. */
   retryOrderSync: (id: string) => Promise<boolean>;
-  updateOrderStatus: (id: string, status: OrderStatus) => boolean;
-  markReviewed: (id: string, rating: number, comment?: string, anonymous?: boolean) => void;
+  /** Returns true when the server acknowledged the transition (false = local
+   *  refusal or server rollback — callers must surface it, never silent). */
+  updateOrderStatus: (id: string, status: OrderStatus) => Promise<boolean>;
+  markReviewed: (id: string, rating: number, comment?: string, anonymous?: boolean) => Promise<boolean>;
   requestRefund: (orderId: string, reason: string) => void;
+  /** Seller decisions await the server ack (false = rolled back, surface it);
+   *  plain timeline notes resolve true immediately (no server round-trip). */
   respondRefund: (
     orderId: string,
     author: RefundTimelineAuthor,
     text: string,
     newStatus?: RefundStatus
-  ) => void;
+  ) => Promise<boolean>;
   /**
    * Cancels an order. Contract: returns true when the order was cancelled
    * (status set to 'cancelled', tracking note appended, persisted).
@@ -279,6 +308,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
                   price: Number(i.price ?? 0),
                   quantity: Number(i.quantity ?? 1),
                   ...(i.imageUrl ? { imageUrl: String(i.imageUrl) } : {}),
+                  ...(typeof i.bundleId === 'string' && i.bundleId ? { bundleId: i.bundleId } : {}),
                   ...((typeof i.variantLabel === 'string' && i.variantLabel
                     ? { variantLabel: i.variantLabel }
                     : priorItemsByListing.get(String(i.listingId ?? i.postId ?? ''))?.variantLabel
@@ -303,6 +333,26 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
             address: o.address ? String(o.address) : undefined,
             paymentMethod: o.paymentMethod ? String(o.paymentMethod) : undefined,
             serverId: sid,
+            // Settlement stamp rides through like the other server facts —
+            // the payout hold reads it, so it must survive pulls.
+            ...((o as { actualDelivery?: unknown }).actualDelivery
+              ? { actualDelivery: String((o as { actualDelivery?: unknown }).actualDelivery) }
+              : prior?.actualDelivery
+                ? { actualDelivery: prior.actualDelivery }
+                : {}),
+            // Settlement state rides through too — refunded rows are clawed
+            // back (never earnings) and frozen rows unlock on ruling. Server
+            // wins when present; prior survives pulls from older builds.
+            ...(typeof (o as { paymentStatus?: unknown }).paymentStatus === 'string' && (o as { paymentStatus?: string }).paymentStatus
+              ? { paymentStatus: (o as { paymentStatus?: string }).paymentStatus }
+              : prior?.paymentStatus
+                ? { paymentStatus: prior.paymentStatus }
+                : {}),
+            ...((o as { disputeFrozen?: unknown }).disputeFrozen !== undefined
+              ? { disputeFrozen: Boolean((o as { disputeFrozen?: unknown }).disputeFrozen) }
+              : prior?.disputeFrozen !== undefined
+                ? { disputeFrozen: prior.disputeFrozen }
+                : {}),
             // Server refund row wins (cross-device truth); else keep local.
             ...(serverRefund
               ? {
@@ -338,11 +388,13 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         });
       // Keep unmatched locals that are still syncing (or freshly created and
       // possibly in-flight): dropping them orphans orders the server may
-      // already hold under a different id.
+      // already hold under a different id. Rejected rows (syncFailed) are
+      // kept too — they carry the WHY plus the retry path, and deleting them
+      // on the next pull ghost-deletes the receipt.
       const now = Date.now();
       for (const o of ordersRef.current) {
         if (seenLocalIds.has(o.id)) continue;
-        if (o.syncPending || now - o.placedAt < 120000) serverOrders.push(o);
+        if (o.syncPending || o.syncFailed || now - o.placedAt < 120000) serverOrders.push(o);
       }
       // Server is the single source of truth — replace instead of merge so
       // stale pre-wipe local rows (demo orders) can never resurface.
@@ -372,11 +424,13 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       let index = ordersRef.current.length;
       const delivery =
         cart.length > 0
-          ? cart.some((i) => i.type === 'food_item')
-            ? DELIVERY_FEES.food_item
-            : DELIVERY_FEES.product
+          ? cart.every((i) => i.type === 'service')
+            ? 0
+            : cart.some((i) => i.type === 'food_item')
+              ? DELIVERY_FEES.food_item
+              : DELIVERY_FEES.product
           : 0;
-      const discount = 0;
+      const discount = Math.max(0, Math.round(Number(options?.discountEstimate ?? 0)));
       let first = true;
       for (const [sellerUsername, items] of sellers) {
         const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -406,6 +460,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
             quantity: i.quantity,
             ...(i.imageUrl ? { imageUrl: i.imageUrl } : {}),
             ...(i.variantLabel ? { variantLabel: i.variantLabel } : {}),
+            ...(i.bundleId ? { bundleId: i.bundleId } : {}),
           })),
           total,
           chargedTotal,
@@ -418,6 +473,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
           ...(options?.promoCode ? { promoCode: options.promoCode } : {}),
           ...(options?.bookingDate ? { bookingDate: options.bookingDate } : {}),
           ...(options?.bookingTime ? { bookingTime: options.bookingTime } : {}),
+          ...(options?.offer ? { offer: options.offer } : {}),
           tracking: isFood
             ? [
                 { label: 'Order Placed', time: new Date(now).toLocaleString(), done: true },
@@ -463,6 +519,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         bookingTime: o.bookingTime,
         deliveryFee: options?.deliveryFee ?? 0,
         promoCode: options?.promoCode ?? undefined,
+        ...(options?.offer ? { offer: options.offer } : {}),
         ...(options?.addressParts ?? {}),
       });
       created.forEach((o) => {
@@ -470,7 +527,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
           const sid = res.ok && res.data && res.data.order ? String(res.data.order.id) : undefined;
           if (sid) {
             setOrders((prev) => {
-              const next = prev.map((x) => (x.id === o.id ? { ...x, serverId: sid, syncPending: false } : x));
+              const next = prev.map((x) => (x.id === o.id ? { ...x, serverId: sid, syncPending: false, syncFailed: undefined } : x));
               persist(next);
               return next;
             });
@@ -487,9 +544,13 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
             });
             return;
           }
-          // Server rejected this order (coupon expired, insufficient funds, validation) — remove optimistic ghost
+          // Server rejected this order (coupon expired, insufficient funds,
+          // validation) — FLAG it with the reason instead of ghost-deleting:
+          // the buyer navigated to this receipt and must see WHY, not a
+          // not-found page. No money moved (server owns debit).
+          const reason = String((res as { error?: unknown }).error ?? 'Rejected by server');
           setOrders((prev) => {
-            const next = prev.filter((x) => x.id !== o.id);
+            const next = prev.map((x) => (x.id === o.id ? { ...x, syncPending: false, syncFailed: reason } : x));
             persist(next);
             return next;
           });
@@ -529,22 +590,24 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
           bookingTime: order.bookingTime,
           deliveryFee: order.deliveryFee ?? 0,
           promoCode: order.promoCode ?? undefined,
+          offer: order.offer ?? undefined,
         })
         .catch(() => null);
       const sid = res && res.ok && res.data && res.data.order ? String(res.data.order.id) : undefined;
       if (sid) {
         setOrders((prev) => {
-          const next = prev.map((x) => (x.id === id ? { ...x, serverId: sid, syncPending: false } : x));
+          const next = prev.map((x) => (x.id === id ? { ...x, serverId: sid, syncPending: false, syncFailed: undefined } : x));
           persist(next);
           return next;
         });
         return true;
       }
-      // Explicit server reject on retry: the order can never exist — remove it
-      // honestly instead of leaving a permanent pending row. Offline keeps it.
+      // Explicit server reject on retry: flag the reason on the row (never
+      // ghost-delete). Offline keeps pending.
       if (res && !res.ok && res.error !== 'offline') {
+        const reason = String(res.error ?? 'Rejected by server');
         setOrders((prev) => {
-          const next = prev.filter((x) => x.id !== id);
+          const next = prev.map((x) => (x.id === id ? { ...x, syncPending: false, syncFailed: reason } : x));
           persist(next);
           return next;
         });
@@ -565,7 +628,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateOrderStatus = useCallback(
-    (id: string, status: OrderStatus): boolean => {
+    async (id: string, status: OrderStatus): Promise<boolean> => {
       const order = ordersRef.current.find((o) => o.id === id);
       if (!order || order.status === 'cancelled') return false;
       if (status === 'cancelled') {
@@ -573,7 +636,10 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       } else {
         const curIdx = ORDER_STATUS_FLOW.indexOf(order.status);
         const nextIdx = ORDER_STATUS_FLOW.indexOf(status);
-        if (nextIdx === -1 || nextIdx <= curIdx) return false;
+        // Adjacent-only fulfilment (seller P0): placed→confirmed→preparing→
+        // out_for_delivery→delivered. Skipping straight to delivered used to
+        // instantly settle withdrawable earnings with no packing/shipping.
+        if (nextIdx === -1 || nextIdx !== curIdx + 1) return false;
       }
       const prevSnapshot = ordersRef.current.find((o) => o.id === id);
       setOrders((prev) => {
@@ -588,14 +654,21 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
                 ? new Date().toLocaleString()
                 : step.time,
           }));
-          return { ...o, status, tracking };
+          // Delivery stamp (7-day hold anchor): set atomically on entering
+          // delivered so the wallet hold gate and server payout guard agree.
+          // Never backfill — missing stamp means unmatured, not withdrawable.
+          const stamp = status === 'delivered' && !(o as { actualDelivery?: unknown }).actualDelivery
+            ? { actualDelivery: new Date().toISOString() }
+            : {};
+          return { ...o, status, tracking, ...stamp };
         });
         persist(next);
         return next;
       });
       // Server sync OUTSIDE the updater (updaters must stay pure: StrictMode
       // double-invokes them, which fired this PATCH twice and let rapid taps
-      // roll back to a stale snapshot), with rollback when the server refuses.
+      // roll back to a stale snapshot). AWAITED: a refusal/offline rolls back
+      // AND reports false so the seller never packs on a lie.
       const realId = ordersRef.current.find((o) => o.id === id)?.serverId ?? id;
       const rollbackStatus = () => {
         setOrders((cur) => {
@@ -604,19 +677,20 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
           return rolled;
         });
       };
-      void serverApi
-        .updateOrder(realId, { status })
-        .then((res) => {
-          if (!res.ok) rollbackStatus(); // Rollback optimistic update — server truth wins.
-        })
-        .catch(rollbackStatus);
-      return true;
+      try {
+        const res = await serverApi.updateOrder(realId, { status });
+        if (!res.ok) rollbackStatus(); // Rollback optimistic update — server truth wins.
+        return res.ok;
+      } catch {
+        rollbackStatus();
+        return false;
+      }
     },
     [persist]
   );
 
   const markReviewed = useCallback(
-    (id: string, rating: number, comment?: string, anonymous?: boolean) => {
+    async (id: string, rating: number, comment?: string, anonymous?: boolean): Promise<boolean> => {
       const prevSnapshot = ordersRef.current.find((o) => o.id === id);
       setOrders((prev) => {
         const next = prev.map((order) =>
@@ -627,6 +701,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       });
       // Rollback on server refusal (not delivered / already reviewed /
       // offline): a review the server never stored must not render as posted.
+      // Returns the ack so callers show success ONLY after the server confirms.
       const realId = ordersRef.current.find((o) => o.id === id)?.serverId ?? id;
       const rollbackReview = () => {
         setOrders((cur) => {
@@ -635,12 +710,14 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
           return rolled;
         });
       };
-      void serverApi
-        .updateOrder(realId, { rating, reviewComment: comment ?? '', reviewAnonymous: !!anonymous })
-        .then((res) => {
-          if (!res.ok) rollbackReview();
-        })
-        .catch(rollbackReview);
+      try {
+        const res = await serverApi.updateOrder(realId, { rating, reviewComment: comment ?? '', reviewAnonymous: !!anonymous });
+        if (!res.ok) rollbackReview();
+        return res.ok;
+      } catch {
+        rollbackReview();
+        return false;
+      }
     },
     [persist]
   );
@@ -676,7 +753,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   );
 
   const respondRefund = useCallback(
-    (orderId: string, author: RefundTimelineAuthor, text: string, newStatus?: RefundStatus) => {
+    async (orderId: string, author: RefundTimelineAuthor, text: string, newStatus?: RefundStatus): Promise<boolean> => {
       const now = Date.now();
       const prevStatus = ordersRef.current.find((o) => o.id === orderId)?.refund?.status;
       setOrders((prev) => {
@@ -699,7 +776,8 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       // legs shared with the finance desk). The legacy admin-mirror call is
       // gone — it patched a duplicate row and moved no money. Server refusal
       // (not the seller, nothing pending, offline) rolls the optimistic
-      // decision back so the UI never shows money that didn't move.
+      // decision back AND reports false — the UI never shows money that
+      // didn't move.
       if (newStatus === 'approved' || newStatus === 'rejected') {
         const realId = ordersRef.current.find((o) => o.id === orderId)?.serverId ?? orderId;
         const rollback = () => {
@@ -721,13 +799,16 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
             return next;
           });
         };
-        void serverApi
-          .respondRefund(realId, newStatus)
-          .then((res) => {
-            if (!res.ok) rollback();
-          })
-          .catch(rollback);
+        try {
+          const res = await serverApi.respondRefund(realId, newStatus);
+          if (!res.ok) rollback();
+          return res.ok;
+        } catch {
+          rollback();
+          return false;
+        }
       }
+      return true;
     },
     [persist]
   );

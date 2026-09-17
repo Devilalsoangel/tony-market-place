@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon, CameraPlusIcon, MapPinIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
+import { isApprovedSeller } from '../utils/marketplace';
+import SellerGate from '../components/SellerGate';
 import { usePosts } from '../contexts/PostContext';
 import { CATEGORY_TREE } from '../utils/categories';
 
@@ -120,13 +122,41 @@ export default function EditShopScreen() {
   const save = async () => {
     try {
       const nextCategory = isCategoryLocked ? (user?.category ?? category) : category;
-      await updateUser({ businessName: name, category: nextCategory });
+      // Server-backed identity: businessName/category via updateUser (mirrors
+      // to Postgres); about->bio, address->location, photo->avatar so the
+      // storefront is identical on every device. upload FIRST — a local
+      // file:// URI is unviewable on any other phone.
+      let hostedPhoto: string | null = null;
+      if (photoUri && !/^https?:\/\//i.test(photoUri)) {
+        try {
+          const { uploadToServer } = await import('../utils/mediaUpload');
+          hostedPhoto = await uploadToServer(photoUri);
+          setPhotoUri(hostedPhoto);
+        } catch {
+          Alert.alert('Photo upload failed', 'Your text changes were not saved — retry with connection so the store photo uploads first.');
+          return;
+        }
+      }
+      const avatar = hostedPhoto ?? (photoUri && /^https?:\/\//i.test(photoUri) ? photoUri : undefined);
+      const res = await updateUser({
+        businessName: name,
+        category: nextCategory,
+        bio: about,
+        location: address,
+        ...(avatar ? { avatar } : {}),
+      });
+      if (typeof res === 'string') {
+        Alert.alert('Could not save', res);
+        return;
+      }
       if (!isCategoryLocked) setCategory(nextCategory);
+      // Device-only extras (no server column yet): tagline/email/phone/hours.
+      // Kept locally so nothing typed is lost; labelled as this-device-only.
       await AsyncStorage.setItem(
         shopKey,
-        JSON.stringify({ tagline, about, address, email, phone, hours, photoUri })
+        JSON.stringify({ tagline, about, address, email, phone, hours, photoUri: hostedPhoto ?? photoUri })
       );
-      Alert.alert('Saved', 'Shop profile updated.');
+      Alert.alert('Saved', 'Store name, photo, about and address synced to all devices. Tagline, email, phone and hours stay on this device for now.');
     } catch {
       Alert.alert('Something went wrong', 'Please try again.');
     }
@@ -182,6 +212,10 @@ export default function EditShopScreen() {
       )}
     </View>
   );
+
+  // Approved sellers only (SELLER-C1): buyers/pending deep-links get status,
+  // never tools. Matches server 403s. After all hooks (rules-of-hooks safe).
+  if (!isApprovedSeller(user)) return <SellerGate title="Edit shop" user={user} />;
 
   return (
     <View className="flex-1 bg-surface">
@@ -254,12 +288,9 @@ export default function EditShopScreen() {
 
           <View className="mt-5">
             <Field label="Business Address" value={address} onChange={setAddress} />
-            <TouchableOpacity className="flex-row items-center mb-5" onPress={() => router.push('/map')}>
-              <MapPinIcon size={14} color={colors.primaryContainer} />
-              <Text className="font-inter-500 ml-1.5" style={{ fontSize: 12, lineHeight: 16, color: colors.primaryContainer }}>
-                Use current location
-              </Text>
-            </TouchableOpacity>
+            {/* No map shortcut: the /map screen is buyer discovery with no
+                seller pick-and-return mode — the old button stranded sellers
+                on a map with no path back. Type the address manually. */}
             <Field label="Contact Email" value={email} onChange={setEmail} />
             <Field
               label="Contact Phone"
@@ -332,7 +363,10 @@ export default function EditShopScreen() {
             className="mt-6 p-4 rounded-figma-16"
             style={{ borderWidth: 1, borderColor: colors.error }}
             onPress={() => {
-              const own = posts.filter((p) => username && p.sellerUsername === username);
+              // Case-insensitive like every other seller surface (a mixed-case
+              // account owns its listings everywhere — including here).
+              const me = (username ?? '').trim().toLowerCase();
+              const own = posts.filter((p) => me && (p.sellerUsername ?? '').toLowerCase() === me);
               if (!deactivated && own.length === 0) {
                 Alert.alert('Deactivate Shop', 'You have no listings yet — nothing to hide.');
                 return;
@@ -348,18 +382,47 @@ export default function EditShopScreen() {
                     text: deactivated ? 'Reactivate' : 'Deactivate',
                     style: deactivated ? 'default' : 'destructive',
                     onPress: async () => {
+                      // Sequential, not Promise.all: every updatePost snapshots
+                      // for its own revert — concurrent snapshots wipe each
+                      // other's optimistic paints on a single refusal (bulk
+                      // over-revert). Slower, exact per-row accounting.
                       try {
                         if (deactivated) {
-                          for (const id of deactivatedIds ?? []) updatePost(id, { status: 'published' });
-                          if (deactivatedKey) await AsyncStorage.removeItem(deactivatedKey);
-                          setDeactivatedIds(null);
-                          Alert.alert('Shop live', 'Your listings are visible to buyers again.');
+                          const ids = deactivatedIds ?? [];
+                          const failed: string[] = [];
+                          for (const id of ids) {
+                            const ok = await updatePost(id, { status: 'published' }).catch(() => false);
+                            if (!ok) failed.push(id);
+                          }
+                          if (failed.length === 0) {
+                            if (deactivatedKey) await AsyncStorage.removeItem(deactivatedKey);
+                            setDeactivatedIds(null);
+                            Alert.alert('Shop live', 'Your listings are visible to buyers again.');
+                          } else {
+                            // Keep the failed set for retry — clearing it
+                            // strands server-hidden stragglers behind a "live"
+                            // claim recoverable only via a full hide-all cycle.
+                            if (deactivatedKey) await AsyncStorage.setItem(deactivatedKey, JSON.stringify(failed));
+                            setDeactivatedIds(failed);
+                            Alert.alert('Partially live', `${ids.length - failed.length} of ${ids.length} republished — ${failed.length} failed and reverted. Check your connection and retry.`);
+                          }
                         } else {
                           const ids = own.map((p) => p.id);
-                          for (const p of own) updatePost(p.id, { status: 'hidden' });
-                          if (deactivatedKey) await AsyncStorage.setItem(deactivatedKey, JSON.stringify(ids));
-                          setDeactivatedIds(ids);
-                          Alert.alert('Shop hidden', 'Your listings are now hidden from buyers.');
+                          const failed: string[] = [];
+                          for (const p of own) {
+                            const ok = await updatePost(p.id, { status: 'hidden' }).catch(() => false);
+                            if (!ok) failed.push(p.id);
+                          }
+                          if (failed.length === 0) {
+                            if (deactivatedKey) await AsyncStorage.setItem(deactivatedKey, JSON.stringify(ids));
+                            setDeactivatedIds(ids);
+                          }
+                          Alert.alert(
+                            'Shop hidden',
+                            failed.length > 0
+                              ? `${own.length - failed.length} of ${own.length} hidden — ${failed.length} failed and reverted. Check your connection and retry.`
+                              : 'Your listings are now hidden from buyers.'
+                          );
                         }
                       } catch {
                         Alert.alert('Something went wrong', 'Please try again.');

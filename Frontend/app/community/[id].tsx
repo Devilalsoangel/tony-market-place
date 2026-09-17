@@ -62,11 +62,29 @@ export default function CommunityChatScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const communityId = Array.isArray(id) ? id[0] : id ?? '';
-  const { communities, messagesFor, sendMessage, join, leave } = useCommunities();
+  const { communities, messagesFor, sendMessage, refreshMessages, join, leave } = useCommunities();
   const [text, setText] = useState('');
 
   const community = communities.find((c) => c.id === communityId);
   const messages = messagesFor(communityId);
+
+  // Room open = pull the shared history (server truth). Member B sees member
+  // A's messages, and a second device sees the same room — chat that only
+  // lives on one device is theater, not community.
+  useEffect(() => {
+    if (communityId) refreshMessages(communityId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communityId]);
+  // Live incoming (DM parity): poll the open room so members staring at it
+  // see each other without leaving/re-entering.
+  useEffect(() => {
+    if (!communityId) return;
+    const t = setInterval(() => {
+      refreshMessages(communityId);
+    }, 6000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communityId]);
   const listRef = useRef<FlatList<ChatItem>>(null);
   const [pollMessages, setPollMessages] = useState<PollMessage[]>([]);
   const [showPollBuilder, setShowPollBuilder] = useState(false);
@@ -342,7 +360,7 @@ export default function CommunityChatScreen() {
                     );
                   })}
                   <Text className="font-inter-500 text-textSecondary mt-1" style={{ fontSize: 12, lineHeight: 14 }}>
-                    Votes {total}
+                    Votes {total} · personal tally — shared community voting is coming soon
                   </Text>
                 </View>
               </View>

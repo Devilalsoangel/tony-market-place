@@ -1,0 +1,20 @@
+{
+  "dependencies": {
+    "embedded-postgres": "^18.4.0-beta.17",
+    "ws": "^8.21.3"
+  },
+  "name": "social-commerce",
+  "version": "1.0.0",
+  "main": "check-db.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

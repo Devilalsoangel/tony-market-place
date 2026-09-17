@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { serverApi } from '../utils/serverApi';
+import { usePosts } from '../contexts/PostContext';
+import { hasRealImage, resolveListingImage } from '../utils/productImages';
 
 const AUCTIONS_KEY = '@susej_auctions';
 
@@ -22,6 +24,8 @@ export interface Auction {
   id: string;
   title: string;
   seller: string;
+  /** Stable seller identity (display `seller` renames must not orphan lots). */
+  sellerUsername?: string;
   verified: boolean;
   startPrice: number;
   currentBid: number;
@@ -53,7 +57,11 @@ function normalizeAuction(a: any): Auction {
 }
 
 function auctionImage(key: string) {
-  return { uri: `https://picsum.photos/seed/${key}/600/600` };
+  // Honest tile: the auction photo IS the linked listing photo (resolved by
+  // the detail screen via PostContext). No stock/fake photo is ever implied.
+  // List rows render the neutral tile; detail resolves the real image.
+  void key;
+  return { uri: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="450"><rect width="100%" height="100%" fill="%23EFECFF"/></svg>' };
 }
 
 function formatEndsIn(ms: number): string {
@@ -78,6 +86,12 @@ export default function AuctionsScreen() {
   const insets = useSafeAreaInsets();
   const [loaded, setLoaded] = useState(false);
   const [auctions, setAuctions] = useState<Auction[]>([]);
+  const { posts } = usePosts();
+  // List photo = the linked listing's real photo (same source as detail).
+  const photoFor = useCallback((a: Auction) => {
+    const post = posts.find((p) => p.id === a.imageKey);
+    return post && hasRealImage(post) ? resolveListingImage(post, post.id) : auctionImage(a.imageKey);
+  }, [posts]);
 
   const loadAuctions = useCallback(() => {
     AsyncStorage.getItem(AUCTIONS_KEY)
@@ -135,9 +149,42 @@ export default function AuctionsScreen() {
             winner: a.winner ? String(a.winner) : undefined,
           }));
         setAuctions((prev) => {
-          const known = new Set(prev.map((p) => p.id));
+          // Server rows win on id (price/outbid/end-time refresh); local-only
+          // rows (bids thread, reminder flag) are preserved, never overwritten.
+          const serverById = new Map(serverRows.map((sa) => [sa.id, sa]));
+          // Late adopt: a kill between local persist and server-id adopt forks
+          // the row (auc_ twin + server cuid coexist forever). Match orphans
+          // by (title+startPrice+seller) and adopt the server id, keeping the
+          // local bid thread.
+          const claimedServerIds = new Set<string>();
+          const next = prev.map((p) => {
+            const s = serverById.get(p.id);
+            if (s) {
+              const { bids: _b, reminder: _r, ...serverFields } = s as Record<string, unknown>;
+              void _b; void _r;
+              return { ...p, ...serverFields };
+            }
+            if (p.id.startsWith('auc_')) {
+              const twin = serverRows.find(
+                (sa) =>
+                  !claimedServerIds.has(sa.id) &&
+                  !prev.some((q) => q.id === sa.id) &&
+                  sa.title === p.title &&
+                  Number(sa.startPrice) === Number(p.startPrice) &&
+                  (sa.sellerUsername || sa.seller) === (p.sellerUsername || p.seller)
+              );
+              if (twin) {
+                claimedServerIds.add(twin.id);
+                const { bids: _b2, reminder: _r2, ...twinFields } = twin as unknown as Record<string, unknown>;
+                void _b2; void _r2;
+                return { ...p, ...twinFields, id: twin.id };
+              }
+            }
+            return p;
+          });
+          const known = new Set(next.map((p) => p.id));
           const fresh = serverRows.filter((sa) => !known.has(sa.id));
-          return fresh.length ? [...fresh, ...prev] : prev;
+          return fresh.length ? [...fresh, ...next] : next;
         });
       });
     }, [])
@@ -168,7 +215,7 @@ export default function AuctionsScreen() {
         onPress={() => router.push(`/auction/${a.id}`)}
       >
         <View className="w-full bg-surfaceContainer" style={{ aspectRatio: 4 / 3 }}>
-          <Image source={auctionImage(a.imageKey)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
+          <Image source={photoFor(a)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
           <View
             className="absolute top-3 left-3 px-2.5 py-1 rounded-figma-full"
             style={{ backgroundColor: a.status === 'live' ? colors.error : a.status === 'ended' ? colors.surfaceContainer : colors.tertiary }}
@@ -215,7 +262,7 @@ export default function AuctionsScreen() {
               </Text>
               <View className="flex-row items-center justify-between mt-2">
                 <Text className="font-inter-500" style={{ fontSize: 12, lineHeight: 14, color: colors.textSecondary }}>
-                  {a.reminder ? 'Reminder set' : 'Set a reminder'}
+                  {a.reminder ? 'Watching' : 'Watch this lot'}
                 </Text>
                 <Switch
                   value={!!a.reminder}
@@ -255,7 +302,7 @@ export default function AuctionsScreen() {
       ) : (
         <ScrollView className="flex-1 px-5" contentContainerClassName="pb-24">
           <Text className="font-inter-400 mt-2 mb-4 text-textSecondary" style={{ fontSize: 13, lineHeight: 18 }}>
-            Bid live on rare finds — or set reminders for upcoming lots.
+            Bid live on rare finds — or watch upcoming lots to find them fast.
           </Text>
           {live.length || upcoming.length || endedList.length ? (
             <>

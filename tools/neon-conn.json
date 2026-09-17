@@ -1,0 +1,18 @@
+{
+  "url": "https://console.neon.tech/app/projects/green-paper-44362813?database=neondb&modal=connect_branch",
+  "bodyText": "/\nAntony ff\nFree\n/\nsusej-team\nAdmin\nSearch...\nCtrlK\n\nAll OK\nAsk AI\nUpgrade\nPROJECT\nConnect\nDashboard\nBranches\nIntegrations\nSettings\nBRANCH\nproduction\nproduction\nOverview\nMonitoring\nChild branches\nPostgres database\nTables\nSQL Editor\nBackup & Restore\nComputes\nData API\nRoles\nDatabases\nData masking\nAuth\nOnboard your agent\nInstall Neon skills to give your agent safe access to your Neon projects\nCopy command\nFeedback\nCollapse menu\nProject dashboard\nConnect\nImport data\nGet connected to your new database\nDismiss\nConnection string\nCopy your project’s connection string and add it to your app config.\nNeon init\nSet up your local dev environment with a single command.\nIDE extension\nSet up your app with the Neon extension in VS Code or Cursor.\nMCP server\nConnect your app to Neon’s MCP server with supported AI tools.\nCompute\n0.04 / 100\nCU-hrs\nStorage\n0.03 / 0.5\nGB\nHistory\n0\nGB\nNetwork transfer\n0 / 5\nGB\nUsage since Sep 1, 2026. Metrics may be delayed by an hour and are not updated for inactive projects. Learn more.\nMonitoring\nView all metrics\nBranch\nproduction\nDefault\nCompute\nNo computes\nRefresh\n1 / 10 Branch\nView all\nName\n\t\nPrimary compute\n\t\nCreated by\n\n\nproduction\nDefault\n\t\n0.25 ↔ 2 CU\nIdle\n\t\nPreview Workflow\n\nYou don't have any preview branches yet. Improve your workflow by adding database branching to your development previews.\n\nInstall an integration\nProject settings\nManage\nRegion\t\nAWS Asia Pacific 1 (Singapore)\n\nDefault compute size\t0.25 ↔ 2 CU\nHistory retention\t6 hours\nPostgres version\t18\nTo extend the compute size limit, upgrade your plan\nNeon AI Assistant\nConnect to your branch\nBranch\nproduction\nDefault\nPostgres database\nData API\nAuth\nCompute\nPrimary\nIdle\nDatabase\nneondb\nRole\nReset password\nneondb_owner\nConnection string\nConnection pooling\nCopy snippet\nShow password",
+  "psqlMatches": [],
+  "allInputs": [
+    {
+      "val": "on",
+      "ph": "",
+      "type": "checkbox"
+    }
+  ],
+  "textareas": [
+    "x"
+  ],
+  "codeBlocks": [
+    "Copy snippetShow password"
+  ]
+}

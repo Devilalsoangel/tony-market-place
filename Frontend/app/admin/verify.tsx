@@ -230,12 +230,17 @@ export default function AdminVerifyScreen() {
                 </View>
 
                 <View className="flex-row flex-wrap gap-2 mb-4">
-                  {seller.docs.map((doc) => (
-                    <View key={doc} className="flex-row items-center gap-1 bg-surfaceContainer rounded-figma-full px-2.5 py-1">
-                      <CheckIcon size={10} color={colors.success} />
-                      <Text className="text-figma-11 font-inter-500 text-textPrimary">{doc} ✓</Text>
-                    </View>
-                  ))}
+                  {seller.docs.map((doc: any, i: number) => {
+                    // Scrubbed records file docs as {type,label,fileName} stubs
+                    // (URLs stripped on ack) — render the label, never the object.
+                    const label = typeof doc === 'string' ? doc : String(doc?.label ?? doc?.type ?? 'Document');
+                    return (
+                      <View key={`${label}-${i}`} className="flex-row items-center gap-1 bg-surfaceContainer rounded-figma-full px-2.5 py-1">
+                        <CheckIcon size={10} color={colors.success} />
+                        <Text className="text-figma-11 font-inter-500 text-textPrimary">{label} ✓</Text>
+                      </View>
+                    );
+                  })}
                 </View>
 
                 <View className="flex-row gap-3">

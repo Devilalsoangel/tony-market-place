@@ -13,11 +13,9 @@ export async function GET(req: NextRequest) {
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
   const now = new Date();
-  // Expire campaigns whose window has passed so the app never renders stale placements.
-  await prisma.promotionPurchase.updateMany({
-    where: { status: "active", endsAt: { not: null, lt: now } },
-    data: { status: "expired" },
-  });
+  // Read-path purity: no writes on GET (expiry is owned by lazySweep + the
+  // cron lane; the query below already filters past-window rows, so readers
+  // never see stale placements either way).
 
   const rows = await prisma.promotionPurchase.findMany({
     where: {
@@ -127,10 +125,26 @@ export async function POST(req: NextRequest) {
   if (String((post as any).status ?? "published") !== "published") {
     return NextResponse.json({ error: "Only live listings can be promoted" }, { status: 400 });
   }
+  // No paid placement on an imageless listing for listing-rendered rails
+  // (hotDeal/featuredPost/spotlight): feed + PDP gates hide imageless rows
+  // unconditionally, so the placement could never render. topSeller pins the
+  // seller card (logo), not the listing — exempt.
+  {
+    const kind = String(getPackage(packageId)?.kind ?? "");
+    const images = Array.isArray((post as any).images) ? (post as any).images.filter((u: unknown) => typeof u === "string" && (u as string).trim()) : [];
+    const cover = typeof (post as any).image === "string" ? (post as any).image.trim() : "";
+    if (kind !== "topSeller" && images.length === 0 && !cover) {
+      return NextResponse.json({ error: "Add a photo to this listing before promoting it" }, { status: 400 });
+    }
+  }
 
-  const checkoutRef =
-    String(body.checkoutRef ?? "").trim() ||
-    `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // checkoutRef is REQUIRED (idempotency key): a missing ref used to mint a
+  // fresh random key per call, so every legacy/replayed call without one
+  // double-charged. The app sends a sticky per-package+post ref (until ack).
+  const checkoutRef = String(body.checkoutRef ?? "").trim();
+  if (!checkoutRef) {
+    return NextResponse.json({ error: "checkoutRef is required — retry with the same ref, never a new one" }, { status: 400 });
+  }
   const existing = await prisma.promotionPurchase.findUnique({ where: { checkoutRef } });
   if (existing) {
     return NextResponse.json(
@@ -246,12 +260,17 @@ export async function PATCH(req: NextRequest) {
   if (!caller) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   // The app's local mirror uses PRM- ids; the server row is matched by its
-  // own id, or — for mirror rows — by owned postId.
-  const rows = id
+  // own id, or — for mirror rows — by owned postId. Try id first, then fall
+  // back to the postId match (a local id otherwise 404s into a rollback
+  // loop where End-early can never succeed).
+  let rows = id
     ? await prisma.promotionPurchase.findMany({ where: { id } })
-    : await prisma.promotionPurchase.findMany({
-        where: { postId, sellerId: caller, status: "active" },
-      });
+    : [];
+  if (!rows.length && postId) {
+    rows = await prisma.promotionPurchase.findMany({
+      where: { postId, sellerId: caller, status: "active" },
+    });
+  }
   const row = rows[0];
   if (!row) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
   if (row.sellerId !== caller) {

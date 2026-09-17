@@ -87,6 +87,35 @@ export default function AddressBookScreen() {
         setAddresses(real);
         const selected = await getSelectedAddress(username);
         if (active) setSelectedId(selected?.id ?? real[0]?.id ?? null);
+        // Server truth (cross-device): replace the mirror when reachable.
+        // Offline/unreachable keeps the local cache — never blank the book.
+        try {
+          const mod = await import('../utils/serverApi');
+          const res = await mod.serverApi.getAddresses();
+          if (active && res.ok && Array.isArray(res.data?.addresses) && res.data.addresses.length > 0) {
+            const server = res.data.addresses.map((a) => ({
+              id: a.id,
+              type: a.type,
+              name: a.name,
+              street: a.street,
+              city: a.city,
+              phone: a.phone,
+            }));
+            setAddresses(server);
+            await AsyncStorage.setItem(addressesKey(username), JSON.stringify(server)).catch(() => {});
+            const sel = await getSelectedAddress(username);
+            if (!sel) {
+              const def = res.data.addresses.find((a) => a.isDefault) ?? res.data.addresses[0];
+              const match = server.find((s) => s.id === def.id);
+              if (match) {
+                await AsyncStorage.setItem(selectedAddressKey(username), JSON.stringify(match)).catch(() => {});
+                setSelectedId(match.id);
+              }
+            }
+          }
+        } catch {
+          // offline — local mirror stands
+        }
       } catch {
         if (active) setLoadFailed(true);
       }
@@ -128,6 +157,19 @@ export default function AddressBookScreen() {
     setSelectedId(addr.id);
     setModalOpen(false);
     setForm({ name: '', phone: '', street: '', city: '', type: 'Home' });
+    // Mirror to the server (cross-device truth). Fire-and-forget: offline
+    // keeps the local entry; the next load pulls server truth when reachable.
+    import('../utils/serverApi')
+      .then((mod) =>
+        mod.serverApi.addAddress({
+          type: addr.type,
+          street: addr.street,
+          city: addr.city,
+          phone: addr.phone,
+          isDefault: addresses.length === 0,
+        })
+      )
+      .catch(() => {});
   }, [addresses, canSave, form, persist, username]);
 
   const openAdd = () => setModalOpen(true);

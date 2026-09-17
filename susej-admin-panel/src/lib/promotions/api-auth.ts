@@ -3,12 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 const APP_API_KEY = process.env.APP_API_KEY ?? (process.env.NODE_ENV === "production" ? "" : "dev-key");
 
 export function checkAppKey(request: NextRequest) {
-  // Unset key = device gate DISABLED, not "deny all". x-app-key never
-  // authenticated anything by itself — every app write additionally requires a
-  // valid Bearer susej_ session (getAppUser) bound to a real user, which is the
-  // actual security boundary. Treating "unset" as deny-all silently broke ALL
-  // app->admin sync in production (seller queue stayed empty).
-  if (!APP_API_KEY) return true;
+  // Prod fail-CLOSED (industry standard): a missing APP_API_KEY must deny
+  // device calls, never silently open them. Dev stays open for velocity.
+  // Prod currently HAS the key (dev-key) so live APK sync is unaffected.
+  if (!APP_API_KEY) return process.env.NODE_ENV !== "production";
   return request.headers.get("x-app-key") === APP_API_KEY;
 }
 

@@ -16,14 +16,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Not your thread" }, { status: 403 });
   }
 
-  const messages = await prisma.chatMessage.findMany({
+  // Latest 100 (industry cap): desc-take then reverse to asc for the UI.
+  // take-500-asc returned the FIRST 500 — long threads never saw new messages.
+  const latestDesc = await prisma.chatMessage.findMany({
     where: { threadId: id },
-    orderBy: { createdAt: "asc" },
-    take: 500,
+    orderBy: { createdAt: "desc" },
+    take: 100,
   });
-  // mark received messages as seen
+  const messages = latestDesc.reverse();
+  // Seen-marks scope to exactly what we return: marking the whole thread
+  // would fake read-receipts for history the user never saw.
   await prisma.chatMessage.updateMany({
-    where: { threadId: id, receiver: username, status: { not: "seen" } },
+    where: { id: { in: messages.map((m) => m.id) }, receiver: username, status: { not: "seen" } },
     data: { status: "seen" },
   });
   return NextResponse.json({
@@ -145,6 +149,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   if ((msg as unknown as { offerStatus?: string }).offerStatus !== "pending") {
     return NextResponse.json({ error: "Offer already decided" }, { status: 409 });
+  }
+  // No self-dealing: accepting your own offer is meaningless and previously
+  // let a seller's tap mint a buyer order on their own device (BUYER-C1).
+  // (Decline/counter of your own pending offer stays open as a retract path.)
+  if (next === "accepted" && String((msg as unknown as { sender?: unknown }).sender ?? "") === username) {
+    return NextResponse.json({ error: "You can't accept your own offer" }, { status: 400 });
   }
   await prisma.chatMessage.update({ where: { id: messageId }, data: { offerStatus: next } });
   return NextResponse.json({ ok: true, status: next });

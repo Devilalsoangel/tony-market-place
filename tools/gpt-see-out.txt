@@ -1,0 +1,11 @@
+[gpt-see] image: C:\Users\TONI\projects\social-commerce\tools\admin-login.png (26 KB, image/png)
+[gpt-see] CDP :9222 alive
+[gpt-see] logged in
+[gpt-see] done mode=dom in 14.7s
+Auth method: Admin ID + password (credential-based authentication).
+
+Email logged in: No email is shown. The field is Admin ID, with placeholder e.g. alexrivera.
+
+Google sign-in: No, there is no Google sign-in option visible.
+
+Sign In button: A purple “Sign In” button that submits the Admin ID/password credentials.

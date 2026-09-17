@@ -12,12 +12,7 @@ export async function GET(req: NextRequest) {
   const username = auth.user.username!;
   const rows = await prisma.dispute.findMany({
     where: {
-      OR: [
-        { buyerName: username },
-        { sellerName: username },
-        { buyerName: auth.user.name },
-        { sellerName: auth.user.name },
-      ],
+      OR: [{ buyerName: username }, { sellerName: username }],
     },
     orderBy: { raisedAt: "desc" },
     take: 100,
@@ -58,8 +53,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "orderRef and reason are required" }, { status: 400 });
   }
   const username = auth.user.username!;
+  const hashedRef = `#${ref}`;
   const order = await prisma.order.findFirst({
-    where: { OR: [{ id: ref }, { trackingNumber: ref }, { orderNumber: ref }] },
+    where: { OR: [{ id: ref }, { id: hashedRef }, { trackingNumber: ref }, { trackingNumber: hashedRef }, { orderNumber: ref }, { orderNumber: hashedRef }] },
   });
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
   if (order.buyerUsername !== username && order.sellerUsername !== username) {

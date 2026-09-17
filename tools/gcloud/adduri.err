@@ -1,0 +1,16 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+locator.fill: Timeout 10000ms exceeded.
+Call log:
+[2m  - waiting for locator('input[type="text"], input[type="url"]').last()[22m
+
+    at C:\Users\TONI\projects\social-commerce\tools\gcloud\add-uri.mjs:17:13 {
+  log: [
+    `  - waiting for locator('input[type="text"], input[type="url"]').last()`
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v20.19.4

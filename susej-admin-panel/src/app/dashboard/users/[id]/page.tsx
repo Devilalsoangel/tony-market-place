@@ -64,11 +64,14 @@ function sameIdentity(a?: string | null, b?: string | null): boolean {
 
 export default function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: users, refresh } = useDbResource<User>("users");
-  const { data: products } = useDbResource<Product>("products");
-  const { data: orders } = useDbResource<Order>("orders");
-  const { data: reportedRows } = useDbResource<ReportedUserRow>("reported-users");
-  const { data: sessionRows } = useDbResource<AppSessionRow>("sessions");
+  // Single-row user + capped relations: the old code pulled 5 FULL tables
+  // (users/products/orders/reported-users/sessions unbounded) to render ONE
+  // profile — a scale DoS at 100k rows.
+  const { data: users, refresh } = useDbResource<User>("users", { id });
+  const { data: products } = useDbResource<Product>("products", { take: 100 });
+  const { data: orders } = useDbResource<Order>("orders", { take: 100 });
+  const { data: reportedRows } = useDbResource<ReportedUserRow>("reported-users", { take: 100 });
+  const { data: sessionRows } = useDbResource<AppSessionRow>("sessions", { take: 100 });
   const [confirmAction, setConfirmAction] = useState<"suspend" | "ban" | "delete" | null>(null);
   const [user, setUser] = useState<User | null>(null);
 

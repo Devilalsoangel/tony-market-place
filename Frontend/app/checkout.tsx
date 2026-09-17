@@ -1,13 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, TextInput } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, MapPinIcon, ChevronRightIcon, ShopIcon, BagIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
-import { useCart, DELIVERY_FEES } from '../contexts/CartContext';
+import { useCart, DELIVERY_FEES, cartLineKey, type CartItem } from '../contexts/CartContext';
 import { useOrders } from '../contexts/OrderContext';
 import { resolveListingImage } from '../utils/productImages';
-import { getAppliedPromo, setAppliedPromo, clearAppliedPromo, type AppliedPromo } from '../utils/redeemedCoupons';
+import { getAppliedPromo, setAppliedPromo, clearAppliedPromo, previewDiscount, type AppliedPromo } from '../utils/redeemedCoupons';
 import { getSelectedAddress, SavedAddress } from './address-book';
 import { getSelectedPayment, PaymentMethod } from './payment-methods';
 import { getWallet, syncWalletFromServer } from '../utils/walletStore';
@@ -17,7 +17,37 @@ import { useAuth } from '../contexts/AuthContext';
 
 export default function CheckoutScreen() {
   const insets = useSafeAreaInsets();
-  const { cart, subtotal, clearCart, updatePrices } = useCart();
+  const { cart: storeCart, subtotal: storeSubtotal, clearCart, updatePrices } = useCart();
+  // Accepted-offer mode (chat deal → checkout): route params carry the struck
+  // deal. The synthetic single-item cart ISOLATES the deal — the stored cart
+  // is never touched, mixed, or cleared by an offer purchase (BUYER-C1).
+  const offerParams = useLocalSearchParams<{
+    offerListing?: string; offerPrice?: string; offerName?: string;
+    offerThread?: string; offerMsg?: string; offerSeller?: string; offerSellerName?: string;
+    offerType?: string;
+  }>();
+  const strParam = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
+  const offerPrice = Math.round(Number(strParam(offerParams.offerPrice)));
+  const offerMode =
+    !!strParam(offerParams.offerListing) &&
+    Number.isFinite(offerPrice) && offerPrice > 0 && offerPrice <= 10000000 &&
+    !!strParam(offerParams.offerThread) && !!strParam(offerParams.offerMsg) &&
+    !!strParam(offerParams.offerSeller);
+  const offerItem: CartItem | null = offerMode
+    ? {
+        listingId: strParam(offerParams.offerListing),
+        // Server resolves the fee from the listing type; the param carries it
+        // so service offers preview 0 delivery like the server charges.
+        type: (['product', 'service', 'food_item'] as const).includes(strParam(offerParams.offerType) as 'product') ? (strParam(offerParams.offerType) as CartItem['type']) : 'product',
+        name: strParam(offerParams.offerName) || 'Accepted offer',
+        price: offerPrice,
+        quantity: 1,
+        seller: strParam(offerParams.offerSellerName) || strParam(offerParams.offerSeller),
+        sellerUsername: strParam(offerParams.offerSeller),
+      }
+    : null;
+  const cart = offerItem ? [offerItem] : storeCart;
+  const subtotal = offerItem ? offerPrice : storeSubtotal;
   const { placeOrders } = useOrders();
   const { user } = useAuth();
   const username = user?.username ?? null;
@@ -54,7 +84,7 @@ export default function CheckoutScreen() {
           if (promo) {
             try {
               const res = await serverApi.getCoupons();
-              const list: Array<{ code: string }> = (res.data as any)?.coupons ?? [];
+              const list: Array<{ code: string; expiresAt?: string }> = (res.data as any)?.coupons ?? [];
               const known = list.some((c) => String(c.code).toUpperCase() === promo.code.toUpperCase());
               if (!known) {
                 await clearAppliedPromo().catch(() => {});
@@ -63,7 +93,7 @@ export default function CheckoutScreen() {
                   setCouponError(
                     promo.code.startsWith('SUSEJ-')
                       ? 'Loyalty coupons are not accepted at checkout yet — they stay in My Coupons.'
-                      : `Coupon ${promo.code} is no longer valid — it was removed.`
+                      : `Coupon ${promo.code} is no longer valid — it expired or was removed.`
                   );
                 }
               } else if (active) {
@@ -87,16 +117,32 @@ export default function CheckoutScreen() {
   );
 
   const hasFood = cart.some((item) => item.type === 'food_item');
-  const delivery = cart.length > 0 ? (hasFood ? DELIVERY_FEES.food_item : DELIVERY_FEES.product) : 0;
+  const hasOnlyServices = cart.length > 0 && cart.every((item) => item.type === 'service');
+  // Bundle carts reject coupons server-side (one price authority per order):
+  // the promo is INERT here (preview 0, never forwarded) — same as offerMode.
+  const hasBundle = cart.some((item) => !!(item as { bundleId?: string }).bundleId);
+  const couponInert = offerMode || hasBundle;
+  // Bookings carry no delivery fee (services are fulfilled, not shipped) —
+  // same rule as OrderContext so preview, receipt, and server charge agree.
+  // Free-delivery promos zero the fee line exactly like the cart screen.
+  const delivery = cart.length > 0 ? (appliedPromo?.freeDelivery && !couponInert ? 0 : hasOnlyServices ? 0 : hasFood ? DELIVERY_FEES.food_item : DELIVERY_FEES.product) : 0;
   // Totals preview exactly what the SERVER charges at order time (subtotal +
-  // delivery). Promo codes are settled server-side on the final bill — no
-  // client-side discount is shown or assumed here.
-  const total = subtotal + delivery;
+  // delivery − server-mirror coupon estimate). The server stays truth at
+  // placement; this is the buyer's pre-Pay figure, computed by the SAME
+  // formula on cart and checkout.
+  const promoDiscount = previewDiscount(subtotal, delivery, appliedPromo, couponInert);
+  const total = Math.max(0, subtotal + delivery - promoDiscount);
 
 
   const handleApplyCoupon = async () => {
     const code = couponInput.trim().toUpperCase();
     if (!code) return;
+    // Bundle carts reject coupons at placement — refuse the tap with the
+    // reason instead of previewing a discount that 400s.
+    if (hasBundle) {
+      setCouponError('Coupons need a non-bundle cart — bundle deals already carry their own price.');
+      return;
+    }
     setCouponBusy(true);
     setCouponError(null);
     try {
@@ -111,13 +157,23 @@ export default function CheckoutScreen() {
         setCouponError('Coupon expired');
         return;
       }
-      // Percent codes compute off the CURRENT subtotal (preview only — the
-      // server settles the final bill). Zeroing them while showing "applied"
-      // lied about the benefit.
+      // Preview mirrors the SERVER settlement (orders route): flat/fixed =
+      // rupees off, percent/percentage = subtotal %, free_delivery = fee off.
+      // Anything else previews 0 (server is truth at placement). Stored face
+      // amount never exceeds what the server honors (base−1).
+      const previewBase = Math.round(subtotal) + Math.round(delivery);
+      const rawAmount =
+        found.type === 'flat' || found.type === 'fixed'
+          ? found.value
+          : found.type === 'percent' || found.type === 'percentage'
+            ? Math.max(0, Math.round(((subtotal + delivery) * found.value) / 100))
+            : 0;
       const promo: AppliedPromo = {
         code: found.code,
-        amount: found.type === 'flat' ? found.value : Math.max(0, Math.round((subtotal * found.value) / 100)),
-        freeDelivery: false,
+        amount: previewBase > 1 && !(found.type === 'free_delivery') ? Math.max(0, Math.min(rawAmount, previewBase - 1)) : rawAmount,
+        freeDelivery: found.type === 'free_delivery',
+        kind: found.type,
+        value: found.value,
       };
       await setAppliedPromo(promo);
       setAppliedPromoState(promo);
@@ -136,6 +192,8 @@ export default function CheckoutScreen() {
     setCouponError(null);
   };
 
+  // Honest ETA: no courier/SLA source exists, so this is a planning estimate
+  // only — the seller confirms the delivery date after accepting the order.
   const deliveryEta = (() => {
     const d = new Date();
     d.setDate(d.getDate() + 3);
@@ -182,15 +240,87 @@ export default function CheckoutScreen() {
     // Industry-standard: revalidate cart prices against server truth BEFORE
     // charging. The cart freezes prices at add-time; a seller edit since then
     // must surface for re-confirmation, never charge silently.
+    // Offer mode: the struck deal IS the price authority (server re-verifies
+    // acceptance at placement) — only availability is checked, never the
+    // live listing price, or every deal would false-positive as "changed".
     try {
       const fresh = await Promise.all(
         cart.map((item) =>
           serverApi.getPost(item.listingId).then((res) => {
-            const post = (res.data as { post?: { price?: unknown; isSold?: unknown; status?: unknown } } | null)?.post;
+            const post = (res.data as { post?: { price?: unknown; isSold?: unknown; status?: unknown; stockLeft?: unknown; variants?: { name: string; priceDelta?: unknown; values: { label: string; stock?: unknown; priceDelta?: unknown }[] }[] } } | null)?.post;
+            const gone = !res.ok || !post || post.isSold === true || (typeof post.status === 'string' && post.status !== 'published' && post.status !== 'active');
+            const key = cartLineKey(item);
+            const vlabel = String((item as { variantLabel?: string }).variantLabel ?? '');
+            // Case-insensitive pick resolution (matches the server): seller
+            // renames ("Size"→"size") must not false-negative into a scary
+            // receipt when the server would accept the pick.
+            let variantDelta = 0;
+            let numericPick = false;
+            let variantShort: string | null = null;
+            let variantMissing = false;
+            if (Array.isArray(post?.variants)) {
+              const tracked = post.variants.some((g) => Array.isArray(g?.values) && g.values.some((x) => typeof x?.stock === 'number'));
+              if (!vlabel) {
+                // The server rejects unlabeled lines on tracked listings —
+                // surface "pick an option" HERE, not as a 409 row.
+                if (tracked && !gone) variantMissing = true;
+              } else {
+                const qty = item.quantity ?? 1;
+                for (const part of vlabel.split(',').map((s) => s.trim()).filter(Boolean)) {
+                  const ci = part.indexOf(':');
+                  const g = (ci >= 0 ? part.slice(0, ci) : '').trim().toLowerCase();
+                  const lab = (ci >= 0 ? part.slice(ci + 1) : part).trim().toLowerCase();
+                  const grp = (post?.variants ?? []).find((v) => String(v?.name ?? '').trim().toLowerCase() === g);
+                  const val = grp?.values.find((x) => String(x?.label ?? '').trim().toLowerCase() === lab);
+                  if (val) {
+                    const d = Number(val.priceDelta ?? 0);
+                    if (Number.isFinite(d)) variantDelta += d;
+                    if (typeof val.stock === 'number') {
+                      numericPick = true;
+                      if (qty > Math.floor(val.stock)) {
+                        variantShort = String(val.label);
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            if (offerMode) {
+              // Deal price is the authority (never the live listing price);
+              // option coverage is still checked so a tracked-variant deal
+              // fails HERE with guidance instead of a server 400 row.
+              const sl = typeof post?.stockLeft === 'number' ? Math.floor(post.stockLeft) : null;
+              return { id: item.listingId, key, price: item.price, gone, stock: null, variantShort, variantMissing };
+            }
+            // Bundle lines: Bundle row is the price authority (server
+            // re-prices at placement) — availability only, never compare.
+            if (item.bundleId) {
+              const sl = typeof post?.stockLeft === 'number' ? Math.floor(post.stockLeft) : null;
+              return { id: item.listingId, key, price: item.price, gone, stock: sl, bundle: true as const };
+            }
+            if (vlabel) {
+              // Variant lines reprice to variant truth (base + picked deltas):
+              // the server charges base+delta now, so a stale cart delta must
+              // surface for re-confirmation like any other price change.
+              const base = res.ok && post ? Number(post.price) : NaN;
+              const truth = Number.isFinite(base) ? base + variantDelta : NaN;
+              // Base stockLeft does NOT gate variant lines the server tracks
+              // per-value (it ignores base there); unknown/unlimited picks
+              // fall back to the base gate exactly like the server.
+              return { id: item.listingId, key, price: truth, gone, stock: numericPick ? null : (typeof post?.stockLeft === 'number' ? Math.floor(post.stockLeft) : null), variantShort, variantMissing };
+            }
+            // Stock truth: the server atomically reserves at placement and
+            // 409s over-stock carts — surface "only N left" HERE pre-charge
+            // instead of failing into a rejected order row.
+            const sl = typeof post?.stockLeft === 'number' ? Math.floor(post.stockLeft) : null;
             return {
               id: item.listingId,
+              key,
               price: res.ok && post ? Number(post.price) : NaN,
-              gone: !res.ok || !post || post.isSold === true || (typeof post.status === 'string' && post.status !== 'published' && post.status !== 'active'),
+              gone,
+              stock: sl,
+              variantMissing,
             };
           })
         )
@@ -205,9 +335,51 @@ export default function CheckoutScreen() {
         );
         return;
       }
+      const missing = fresh.filter((f) => (f as { variantMissing?: boolean }).variantMissing);
+      if (missing.length > 0) {
+        const first = missing[0];
+        const name = cart.find((c) => cartLineKey(c) === first.key)?.name ?? 'An item';
+        setPlacing(false);
+        placingRef.current = false;
+        Alert.alert(
+          'Choose options',
+          offerMode
+            ? `“${name}” has options (size, color, …) — this deal can't complete without one. Confirm the option with the seller in chat, then order from the product page.`
+            : `“${name}” has options (size, color, …) — pick one on the product page before ordering.`
+        );
+        return;
+      }
+      const variantGone = fresh.filter((f) => (f as { variantShort?: string | null }).variantShort);
+      if (variantGone.length > 0) {
+        const first = variantGone[0] as { key: string; variantShort: string };
+        const name = cart.find((c) => cartLineKey(c) === first.key)?.name ?? 'An item';
+        setPlacing(false);
+        placingRef.current = false;
+        Alert.alert(
+          'Variant out of stock',
+          `“${first.variantShort}” in “${name}” just went out of stock. Change the variant or remove it to continue.`
+        );
+        return;
+      }
+      const short = fresh.filter((f) => f.stock !== null && (cart.find((c) => cartLineKey(c) === f.key)?.quantity ?? 0) > (f.stock as number));
+      if (short.length > 0) {
+        const first = short[0];
+        const left = first.stock as number;
+        const name = cart.find((c) => cartLineKey(c) === first.key)?.name ?? 'An item';
+        setPlacing(false);
+        placingRef.current = false;
+        Alert.alert(
+          'Only a few left',
+          left <= 0
+            ? `“${name}” just went out of stock. Remove it to continue.`
+            : `Only ${left} left of “${name}”. Lower the quantity in your cart to continue.`
+        );
+        return;
+      }
       const truth: Record<string, number> = {};
       for (const f of fresh) {
-        if (Number.isFinite(f.price) && f.price >= 0) truth[f.id] = f.price;
+        if ((f as { bundle?: boolean }).bundle) continue;
+        if (Number.isFinite(f.price) && f.price >= 0) truth[f.key] = f.price;
       }
       const changed = updatePrices(truth);
       if (changed.length > 0) {
@@ -229,19 +401,27 @@ export default function CheckoutScreen() {
     // for debit/routing. NEVER send paymentText (display copy with the
     // amount baked in): "Wallet · ₹X" !== "wallet" skipped the debit while
     // the order was still marked paid + seller credited (free-order hole).
+    // Offer mode: no coupons ever stack with a struck deal (server 400s it),
+    // and the offer lock rides along for server-side acceptance verification.
+    // Bundle carts: same ban (one price authority per order).
     const created = await placeOrders(cart, addressText, payment.id, {
       deliveryFee: delivery,
-      promoCode: appliedPromo?.code,
+      promoCode: couponInert ? undefined : appliedPromo?.code,
+      discountEstimate: couponInert ? 0 : promoDiscount,
       addressParts: address
         ? { label: address.type, name: address.name, phone: address.phone, street: address.street, city: address.city }
         : undefined,
+      ...(offerMode
+        ? { offer: { threadId: strParam(offerParams.offerThread), messageId: strParam(offerParams.offerMsg) } }
+        : {}),
     });
       if (!created || created.length === 0) {
         // placeOrders always returns the optimistic orders when the cart is
         // non-empty (guarded above), so this is dead in practice — kept as a
         // fail-closed gate. NOTE: server rejects (bad coupon, OOS, funds)
-        // arrive ASYNC via the ghost-removal path and land the user on an
-        // honest not-found order page; the coupon gate above keeps that rare.
+        // arrive ASYNC and FLAG the order row with the reason (syncFailed) —
+        // the receipt shows WHY instead of a not-found page; the coupon
+        // gatekeeper above keeps that rare.
         // Order failed after wallet check: no debit occurred (server owns debit),
         // so do not synthesize a credit. Re-sync to ensure UI truth.
         void syncWalletFromServer().catch(()=>{});
@@ -250,11 +430,15 @@ export default function CheckoutScreen() {
         placingRef.current = false;
         return;
       }
-    // The promo was NOT applied to this order's total (settled server-side), so
-    // a redeemed loyalty coupon is left spendable. Clear only the applied
-    // marker so it doesn't leak into the next cart session.
-    clearAppliedPromo().catch(() => {});
-    clearCart();
+    // The receipt carries the discount estimate (server settles the real
+    // figure); a redeemed loyalty coupon stays spendable until the server
+    // accepts a loyalty code. Clear only the applied marker so it doesn't
+    // leak into the next cart session. Offer mode skips both clears — the
+    // stored cart and promo belong to another purchase.
+    if (!offerMode) {
+      clearAppliedPromo().catch(() => {});
+      clearCart();
+    }
     router.replace(`/order/${created[0].id}`);
   };
 
@@ -405,7 +589,7 @@ export default function CheckoutScreen() {
           </Text>
           <View style={{ rowGap: 14 }}>
             {cart.map((item) => (
-              <View key={item.listingId} className="flex-row items-center">
+              <View key={cartLineKey(item)} className="flex-row items-center">
                 <View className="w-12 h-12 rounded-[12px] overflow-hidden mr-3" style={{ backgroundColor: colors.surfaceContainerLow }}>
                   <Image
                     source={resolveListingImage({ image: item.imageUrl }, item.listingId)}
@@ -439,11 +623,18 @@ export default function CheckoutScreen() {
               <Text className="text-[14px] font-inter-400 text-textSecondary" style={{ lineHeight: 20 }}>Delivery Fee</Text>
               <Text className="text-[14px] font-inter-500 text-textPrimary" style={{ lineHeight: 20 }}>{formatPrice(delivery)}</Text>
             </View>
-            {appliedPromo ? (
-              <View className="flex-row items-center justify-between px-3 py-2" style={{ borderRadius: 12, backgroundColor: colors.successBg, borderWidth: 1, borderColor: colors.success + '30' }}>
-                <Text className="text-[13px] font-inter-600" style={{ color: colors.success }}>✓ {appliedPromo.code} applied</Text>
+            {offerMode ? (
+              <View className="px-3 py-2" style={{ borderRadius: 12, backgroundColor: colors.successBg, borderWidth: 1, borderColor: colors.success + '30' }}>
+                <Text className="text-[13px] font-inter-600" style={{ color: colors.success }}>✓ Accepted offer locked at {formatPrice(offerPrice)}</Text>
+                <Text className="font-inter-400 mt-0.5" style={{ fontSize: 11, color: colors.textSecondary }}>Struck deal — coupons can't combine. Verified with the seller at payment.</Text>
+              </View>
+            ) : appliedPromo ? (
+              <View className="flex-row items-center justify-between px-3 py-2" style={{ borderRadius: 12, backgroundColor: hasBundle ? colors.surfaceContainer : colors.successBg, borderWidth: 1, borderColor: hasBundle ? colors.outlineVariant : colors.success + '30' }}>
+                <Text className="text-[13px] font-inter-600" style={{ color: hasBundle ? colors.textSecondary : colors.success }}>
+                  {hasBundle ? `${appliedPromo.code} saved — doesn't apply to bundle deals` : `✓ ${appliedPromo.code} applied${promoDiscount > 0 ? ` −${formatPrice(promoDiscount)}` : ''}`}
+                </Text>
                 <View className="flex-row items-center" style={{ gap: 8 }}>
-                  <Text className="text-[11px] font-inter-400" style={{ color: colors.textSecondary }}>Settled on final bill</Text>
+                  <Text className="text-[11px] font-inter-400" style={{ color: colors.textSecondary }}>Final bill at payment</Text>
                   <TouchableOpacity onPress={handleRemoveCoupon} className="px-3 py-1" style={{ borderRadius: 8, backgroundColor: colors.surfaceContainerLowest }}>
                     <Text className="text-[11px] font-inter-600" style={{ color: colors.error }}>Remove</Text>
                   </TouchableOpacity>
@@ -453,7 +644,7 @@ export default function CheckoutScreen() {
               <View>
                 <View className="flex-row" style={{ gap: 8 }}>
                   <View className="flex-1" style={{ borderRadius: 12, backgroundColor: colors.surfaceContainer, borderWidth: 1, borderColor: couponError ? colors.error : colors.outlineVariant }}>
-                    <TextInput value={couponInput} onChangeText={(t) => { setCouponInput(t.toUpperCase()); if (couponError) setCouponError(null); }} placeholder="Coupon code (e.g. WELCOME20)" placeholderTextColor={colors.placeholder} autoCapitalize="characters" className="px-4 h-11 font-inter-500" style={{ fontSize: 13, color: colors.textPrimary }} editable={!couponBusy} />
+                    <TextInput value={couponInput} onChangeText={(t) => { setCouponInput(t.toUpperCase()); if (couponError) setCouponError(null); }} placeholder="Coupon code" placeholderTextColor={colors.placeholder} autoCapitalize="characters" className="px-4 h-11 font-inter-500" style={{ fontSize: 13, color: colors.textPrimary }} editable={!couponBusy} />
                   </View>
                   <TouchableOpacity onPress={handleApplyCoupon} disabled={!couponInput.trim() || couponBusy} className="px-5 h-11 items-center justify-center" style={{ borderRadius: 12, backgroundColor: !couponInput.trim() || couponBusy ? colors.disabled : colors.primaryContainer, opacity: !couponInput.trim() || couponBusy ? 0.5 : 1 }}>
                     <Text className="font-inter-600" style={{ fontSize: 13, color: colors.onPrimary }}>{couponBusy ? '...' : 'Apply'}</Text>
@@ -463,8 +654,8 @@ export default function CheckoutScreen() {
               </View>
             )}
             <View className="px-3 py-2" style={{ borderRadius: 12, backgroundColor: colors.surfaceContainer, borderWidth: 1, borderColor: colors.outlineVariant }}>
-              <Text className="font-inter-600" style={{ fontSize: 12, color: colors.textPrimary }}>Estimated delivery {deliveryEta} · 7-day returns where offered · COD available</Text>
-              <Text className="font-inter-400 mt-0.5" style={{ fontSize: 11, color: colors.textSecondary }}>Fulfilled from seller’s store location · Tracked shipping · Estimated, not guaranteed.</Text>
+              <Text className="font-inter-600" style={{ fontSize: 12, color: colors.textPrimary }}>Typically arrives around {deliveryEta} · COD available</Text>
+              <Text className="font-inter-400 mt-0.5" style={{ fontSize: 11, color: colors.textSecondary }}>Planning estimate, not guaranteed — seller confirms date after acceptance · Returns as per seller policy.</Text>
             </View>
             <View className="flex-row items-center px-3 py-2" style={{ borderRadius: 12, backgroundColor: colors.surfaceContainerLow }}>
               <Text className="font-inter-500" style={{ fontSize: 11, color: colors.textSecondary }}>🔒 128-bit SSL · Secure payment · Protected by susej · Wallet / COD</Text>

@@ -39,7 +39,7 @@ export default function SearchScreen() {
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState(q || '');
   const [tab, setTab] = useState<SearchTab>('products');
-  const { posts, hiddenPostIds = [], mutedSellers = [] } = usePosts() as { posts: import('../contexts/PostContext').Post[]; hiddenPostIds?: string[]; mutedSellers?: string[] };
+  const { posts, hiddenPostIds = [], mutedSellers = [], searchServer } = usePosts() as { posts: import('../contexts/PostContext').Post[]; hiddenPostIds?: string[]; mutedSellers?: string[]; searchServer: (q: string) => Promise<unknown> };
   const { communities } = useCommunities();
   const { user } = useAuth();
   const recentKey = user?.username ? `${RECENT_KEY_BASE}:${user.username}` : RECENT_KEY_BASE;
@@ -55,6 +55,26 @@ export default function SearchScreen() {
   }, [q]);
 
   const term = query.trim().toLowerCase();
+
+  // Cross-device search: the local filter above answers instantly from cache;
+  // a debounced server query (title/description, 100-cap) merges hits from
+  // other devices into the cache, which then flow into the same results.
+  // Offline/failure keeps local results — never a blanked screen.
+  const [serverSearching, setServerSearching] = useState(false);
+  useEffect(() => {
+    if (term.length < 2) {
+      setServerSearching(false);
+      return;
+    }
+    setServerSearching(true);
+    const t = setTimeout(() => {
+      searchServer(term)
+        .catch(() => {})
+        .finally(() => setServerSearching(false));
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [term]);
 
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentLoaded, setRecentLoaded] = useState(false);
@@ -140,7 +160,8 @@ export default function SearchScreen() {
         !hiddenPostIds.includes(p.id) &&
         !mutedSellers.includes(p.sellerUsername) &&
         hasRealImage(p) &&
-        (p.description.toLowerCase().includes(term) ||
+        ((p.title ?? '').toLowerCase().includes(term) ||
+          p.description.toLowerCase().includes(term) ||
           p.category.toLowerCase().includes(term) ||
           p.hashtags.some((h) => h.toLowerCase().includes(term)) ||
           p.sellerName.toLowerCase().includes(term) ||
@@ -301,6 +322,11 @@ export default function SearchScreen() {
           <BellIcon size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
+      {serverSearching && !!term && (
+        <View className="px-4 pt-1.5">
+          <Text className="text-figma-11 font-inter-400 text-secondary">Searching the marketplace…</Text>
+        </View>
+      )}
 
       {!query ? (
         <View className="px-4 pt-4">

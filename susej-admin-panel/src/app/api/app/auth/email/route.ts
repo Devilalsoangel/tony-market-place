@@ -107,6 +107,13 @@ export async function POST(req: NextRequest) {
         });
       } catch (e: unknown) {
         if ((e as { code?: string })?.code !== "P2002") throw e;
+        // Race-close: a concurrent same-email register won between our
+        // findUnique and create. Return the winner's verdict (409 sign-in),
+        // not a 503 — the username loop must only retry USERNAME collisions.
+        const emailTaken = await prisma.user.findUnique({ where: { email } }).catch(() => null);
+        if (emailTaken) {
+          return NextResponse.json({ error: "An account with this email already exists. Sign in instead." }, { status: 409 });
+        }
       }
     }
     if (!user) return NextResponse.json({ error: "Could not create account — try again" }, { status: 503 });

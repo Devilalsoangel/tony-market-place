@@ -21,6 +21,8 @@ const ID_PREFIX: Record<SectionKind, string> = {
   "top-sellers": "ts",
   "hot-deals": "hd",
   "storefront-banners": "sb",
+  "featured-posts": "fp",
+  "spotlight": "sl",
 };
 
 function itemTitle(kind: SectionKind, item: AnyItem): string {
@@ -31,6 +33,8 @@ function itemTitle(kind: SectionKind, item: AnyItem): string {
       return (item as HotDeal).productName;
     case "storefront-banners":
       return (item as StorefrontBanner).title;
+    default:
+      return "";
   }
 }
 
@@ -44,6 +48,8 @@ function itemSubtitle(kind: SectionKind, item: AnyItem): string {
       const banner = item as StorefrontBanner;
       return `by @${banner.sellerUsername}${banner.subtitle ? ` \u00b7 ${banner.subtitle}` : ""}`;
     }
+    default:
+      return "";
   }
 }
 
@@ -63,17 +69,59 @@ export function SectionTabCard({
 
   const isAutoComputed = config.autoCompute === true;
   const isSyncFromApp = config.syncFromApp === true;
+  const isVisibilityOnly = config.visibilityOnly === true;
 
   const items: AnyItem[] =
     kind === "top-sellers"
       ? state.topSellers
       : kind === "hot-deals"
         ? state.hotDeals
-        : state.storefrontBanners;
+        : kind === "storefront-banners"
+          ? state.storefrontBanners
+          : [];
 
   const atLimit = config.max !== undefined && items.length >= config.max;
   const section = state.layout.find((s) => s.name === kind);
+  // Missing row means ON (fresh prod renders every rail) — the toggle always
+  // works: flipping a missing section CREATES the row in the chosen state.
   const sectionEnabled = section?.isEnabled ?? true;
+  const sectionMissing = !section;
+
+  // Paid rails (promo-engine items): visibility kill-switch only. Item
+  // management lives in Promotions — this desk hides/shows the rail.
+  if (isVisibilityOnly) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <CardTitle>{config.title}</CardTitle>
+          <div
+            className={`flex items-center gap-2 ${sectionMissing ? "opacity-70" : ""}`}
+            title={sectionMissing ? "Missing section renders ON — flipping creates it" : undefined}
+          >
+            <span className="text-xs text-gray-400">Show on home page</span>
+            <Switch
+              checked={sectionEnabled}
+              onChange={(v) => {
+                if (!section) {
+                  void actions.createLayoutItem(kind, config.title, v).then((created) => {
+                    if (!created) toast.error("Could not create section — check connection.");
+                  });
+                  return;
+                }
+                void actions.updateLayoutItem(section.id, { isEnabled: v });
+              }}
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-500">
+            Paid placements from the promotions engine render on the home screen while this is on.
+            Items are managed in Promotions — this switch is the kill-switch for wrong or fraudulent placements.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const toggleVisibility = async (item: AnyItem) => {
     const status = (item as { status: string }).status;
@@ -92,6 +140,14 @@ export function SectionTabCard({
   };
 
   const duplicateItem = async (item: AnyItem) => {
+    // Auto-computed rails (top-sellers, hot-deals) are server-resolved by
+    // sellerId/productId — cloning one mints a fake "X (Copy)" identity that
+    // serves REAL stats under a fabricated name (intelligence-guard
+    // violation). Refuse; admin edits the original or re-ranks instead.
+    if (config.autoCompute) {
+      toast.error("This rail is auto-computed — edit the original instead of duplicating.");
+      return;
+    }
     if (atLimit) {
       toast.error(config.maxMessage ?? `Maximum ${config.max} reached.`);
       return;
@@ -116,6 +172,12 @@ export function SectionTabCard({
       case "hot-deals":
         await actions.addHotDeal(copy as HotDeal);
         break;
+      default:
+        // Sync-from-app sections (banners) have no add path by design — the
+        // Duplicate button is already hidden for them, but never silent-noop
+        // if a future caller reaches here.
+        toast.error("Duplicating isn't available for this section.");
+        return;
     }
   };
 
@@ -147,11 +209,22 @@ export function SectionTabCard({
           )}
         </CardTitle>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+          <div
+            className={`flex items-center gap-2 ${sectionMissing ? "opacity-70" : ""}`}
+            title={sectionMissing ? "Missing section renders ON — flipping creates it in the chosen state" : undefined}
+          >
             <span className="text-xs text-gray-400">Show on home page</span>
             <Switch
               checked={sectionEnabled}
-              onChange={(v) => void actions.updateLayoutItem(section!.id, { isEnabled: v })}
+              onChange={(v) => {
+                if (!section) {
+                  void actions.createLayoutItem(kind, config.title, v).then((created) => {
+                    if (!created) toast.error("Could not create section — check connection.");
+                  });
+                  return;
+                }
+                void actions.updateLayoutItem(section.id, { isEnabled: v });
+              }}
             />
           </div>
           {!isAutoComputed && !isSyncFromApp && (

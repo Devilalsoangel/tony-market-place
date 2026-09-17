@@ -15,7 +15,8 @@ import { usePromotions } from '../contexts/PromotionContext';
 import { useFollow } from '../contexts/FollowContext';
 import { findMainCategory } from '../utils/categories';
 import { STORE_THEMES, saveStoreTheme } from '../utils/sellerUnlocks';
-import { sellerNetForOrders, getPackages, getChatPinPrice, getChatPinDays, loadMarketplaceConfig } from '../utils/marketplace';
+import { sellerNetForOrders, getPackages, getChatPinPrice, getChatPinDays, loadMarketplaceConfig, isApprovedSeller } from '../utils/marketplace';
+import SellerGate from '../components/SellerGate';
 
 // Seller Dashboard Hub — store hero, KPI stats, needs-action, quick actions,
 // recent orders, performance, growth tools, listings, storefront manager.
@@ -73,7 +74,9 @@ export default function SellerDashboardHubScreen() {
   const { promotions } = usePromotions();
   const { followerCounts } = useFollow();
 
-  const username = user?.username || 'user';
+  // Logged-out fallback is '' (matches nobody): 'user' previously rendered
+  // seller "user"'s data to logged-out viewers (cross-account leak, C2).
+  const username = user?.username ?? '';
   const shopName = user?.businessName || user?.name || 'My Store';
   const avatar = user?.avatar || resolveAvatar(username ?? 'user').uri;
   // Banner: real uploaded photo from edit-shop when set — no stock placeholder (per-user).
@@ -98,10 +101,23 @@ export default function SellerDashboardHubScreen() {
   const verified = user?.verification === 'approved';
   const category = user?.category ? findMainCategory(user.category)?.label ?? user.category : null;
 
-  const myPosts = useMemo(() => posts.filter((p) => p.sellerUsername === username), [posts, username]);
-  const myOrders = useMemo(() => orders.filter((o) => o.sellerUsername === username), [orders, username]);
+  // Case-insensitive like seller-orders (server keeps exact casing, C3).
+  const myPosts = useMemo(() => {
+    const me = username.trim().toLowerCase();
+    if (!me) return [];
+    return posts.filter((p) => (p.sellerUsername ?? '').toLowerCase() === me);
+  }, [posts, username]);
+  const myOrders = useMemo(() => {
+    const me = username.trim().toLowerCase();
+    if (!me) return [];
+    return orders.filter((o) => (o.sellerUsername ?? '').toLowerCase() === me);
+  }, [orders, username]);
 
-  const myPromos = useMemo(() => promotions.filter((p) => p.sellerUsername === username), [promotions, username]);
+  const myPromos = useMemo(() => {
+    const me = (username ?? '').trim().toLowerCase();
+    if (!me) return [];
+    return promotions.filter((p) => (p.sellerUsername ?? '').toLowerCase() === me);
+  }, [promotions, username]);
   const activePromoCount = myPromos.filter((p) => p.status === 'active').length;
 
   // Live promo pricing (admin-editable) — hub cards must never show stale
@@ -165,17 +181,20 @@ export default function SellerDashboardHubScreen() {
   // Real sales analytics (unlocked feature) — computed from real orders/posts only.
   const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const analytics = useMemo(() => {
-    const funnel = ['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'] as const;
-    const counts = funnel.map((s) => myOrders.filter((o) => o.status === s).length);
     const dayIdx = (ts: number) => (new Date(ts).getDay() + 6) % 7;
     const revPerDay = [0, 0, 0, 0, 0, 0, 0];
     for (const o of myOrders) {
       if (o.status !== 'delivered') continue;
-      revPerDay[dayIdx(o.placedAt || Date.now())] += o.items.reduce((t, i) => t + i.price * i.quantity, 0);
+      // Net per order (settled legs, not gross) — chart agrees with the Net
+      // revenue KPI above. Bucketed by actualDelivery (settlement day), not
+      // placedAt: the wallet hold releases Friday+7 for a Friday delivery,
+      // and a Monday-placed chart bar could never tie out otherwise.
+      const stamp = Date.parse(String((o as { actualDelivery?: unknown }).actualDelivery ?? ""));
+      revPerDay[dayIdx(Number.isFinite(stamp) ? stamp : o.placedAt || Date.now())] += sellerNetForOrders([o]);
     }
     const maxRev = Math.max(...revPerDay, 1);
     const top = [...myPosts].sort((a, b) => (b.likes || 0) - (a.likes || 0))[0];
-    return { counts, revBars: revPerDay.map((v) => Math.round((v / maxRev) * 72) + 4), top };
+    return { revBars: revPerDay.map((v) => Math.round((v / maxRev) * 72) + 4), top };
   }, [myOrders, myPosts]);
 
   const removeListing = (id: string) => {
@@ -190,6 +209,10 @@ export default function SellerDashboardHubScreen() {
   };
 
   const formatRevenue = (n: number) => (n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : n >= 1000 ? `₹${(n / 1000).toFixed(1)}k` : `₹${n}`);
+
+  // Approved sellers only (SELLER-C1): buyers/pending deep-links get status,
+  // never tools. Matches server 403s. After all hooks (rules-of-hooks safe).
+  if (!isApprovedSeller(user)) return <SellerGate title="Seller dashboard" user={user} />;
 
   return (
     <View className="flex-1 bg-surface">
@@ -573,7 +596,7 @@ export default function SellerDashboardHubScreen() {
                   </View>
                 </View>
                 <Text className="font-inter-400 text-textSecondary mt-0.5" style={{ fontSize: 11.5, lineHeight: 15 }}>
-                  Accent color buyers see on your public storefront
+                  Accent color preview on this device — buyer-side themes arrive with the next storefront sync
                 </Text>
               </View>
             </View>
@@ -680,7 +703,7 @@ export default function SellerDashboardHubScreen() {
                   </TouchableOpacity>
                 </View>
                 <View className="items-center justify-center self-stretch py-1" style={{ gap: 14 }}>
-                  <TouchableOpacity onPress={() => router.push(`/product/${p.id}`)}>
+                  <TouchableOpacity onPress={() => router.push(`/edit-listing/${p.id}`)} accessibilityRole="button" accessibilityLabel={`Edit ${((p.description || '').split('\n')[0] || 'listing').slice(0, 40)}`}>
                     <PencilIcon size={16} color={colors.textSecondary} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => removeListing(p.id)}>

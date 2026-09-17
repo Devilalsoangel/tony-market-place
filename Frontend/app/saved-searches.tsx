@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Switch, ActivityIndicator, Keyboard } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Keyboard } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,7 +33,6 @@ export default function SavedSearchesScreen() {
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState('');
-  const [alertOn, setAlertOn] = useState(false);
 
   const persist = useCallback((next: SavedSearch[]) => {
     setSaved(next);
@@ -72,20 +71,18 @@ export default function SavedSearchesScreen() {
         id: `ss_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         query: q,
         savedAt: Date.now(),
-        priceAlert: alertOn,
+        // No background price alerts exist (no push pipeline): always false.
+        // The field stays for stored-row shape + a future alert feature.
+        priceAlert: false,
       };
       persist([entry, ...saved]);
     }
     setDraft('');
-    setAlertOn(false);
     setShowForm(false);
     Keyboard.dismiss();
   };
 
   const removeSearch = (id: string) => persist(saved.filter((s) => s.id !== id));
-
-  const toggleAlert = (id: string, value: boolean) =>
-    persist(saved.map((s) => (s.id === id ? { ...s, priceAlert: value } : s)));
 
   if (!loaded) {
     return (
@@ -119,28 +116,6 @@ export default function SavedSearchesScreen() {
           <CloseIcon size={14} color={colors.textTertiary} />
         </TouchableOpacity>
       </TouchableOpacity>
-      {item.priceAlert ? (
-        <View className="flex-row items-center self-start mt-2 px-2.5 py-1 rounded-figma-full" style={{ backgroundColor: colors.surfaceContainerLow, gap: 6 }}>
-          <BellIcon size={12} color={colors.primaryContainer} />
-          <Text className="font-inter-500" style={{ fontSize: 11, lineHeight: 14, color: colors.tertiary }}>
-            Alerting on price drops
-          </Text>
-        </View>
-      ) : null}
-      <View className="flex-row items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: colors.surfaceContainer }}>
-        <View className="flex-row items-center" style={{ gap: 8 }}>
-          <BellIcon size={14} color={item.priceAlert ? colors.primaryContainer : colors.secondary} />
-          <Text className="font-inter-500" style={{ fontSize: 12, lineHeight: 16, color: item.priceAlert ? colors.primary : colors.textSecondary }}>
-            {item.priceAlert ? 'Price-drop alert on' : 'Price-drop alert off'}
-          </Text>
-        </View>
-        <Switch
-          value={item.priceAlert}
-          onValueChange={(v) => toggleAlert(item.id, v)}
-          trackColor={{ false: colors.surfaceContainer, true: colors.primaryContainer }}
-          thumbColor={colors.surfaceContainerLowest}
-        />
-      </View>
     </View>
   );
 
@@ -197,17 +172,6 @@ export default function SavedSearchesScreen() {
                     autoFocus
                   />
                 </View>
-                <View className="flex-row items-center justify-between mt-3 px-1">
-                  <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 13, lineHeight: 18 }}>
-                    Alert me on price drop
-                  </Text>
-                  <Switch
-                    value={alertOn}
-                    onValueChange={setAlertOn}
-                    trackColor={{ false: colors.surfaceContainer, true: colors.primaryContainer }}
-                    thumbColor={colors.surfaceContainerLowest}
-                  />
-                </View>
                 <TouchableOpacity
                   className="mt-3 h-12 items-center justify-center rounded-figma-16"
                   style={{ backgroundColor: draft.trim() ? colors.primaryContainer : colors.surfaceContainerLow }}
@@ -229,7 +193,7 @@ export default function SavedSearchesScreen() {
               </Text>
             </View>
             <Text className="font-inter-400 text-textSecondary px-1 mb-3" style={{ fontSize: 12, lineHeight: 16 }}>
-              Tap a search to run it. Turn on alerts to get notified when prices drop.
+              Tap a search to run it. Price-drop alerts are not available yet.
             </Text>
           </View>
         }
@@ -243,7 +207,7 @@ export default function SavedSearchesScreen() {
               No saved searches yet
             </Text>
             <Text className="font-inter-400 text-textSecondary text-center mt-1" style={{ fontSize: 13, lineHeight: 20 }}>
-              Save searches you want to revisit, and turn on price alerts to get notified on drops.
+              Save searches you want to revisit in one tap.
             </Text>
             <TouchableOpacity
               className="mt-5 h-11 px-6 items-center justify-center rounded-figma-full"

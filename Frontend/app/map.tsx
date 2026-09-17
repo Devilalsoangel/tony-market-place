@@ -43,22 +43,13 @@ const compactPrice = (n: number): string => {
   return `₹${Math.round(n)}`;
 };
 
-const hashString = (s: string): number => {
-  let h = 0;
-  for (let i = 0; i < s.length; i += 1) {
-    h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  }
-  return h;
-};
-
 const positionFor = (key: string, lat?: number | null, lng?: number | null) => {
   if (typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)) return { latitude: lat, longitude: lng };
-  // No precise coordinates: spread pins around center with deterministic jitter so clustered
-  // sellers don't stack exactly on top of each other. Honest label shown on card.
-  const h = hashString(key);
-  const dLat = ((h % 1000) / 1000 - 0.5) * 0.08; // ~ ±0.04° ~ 4km
-  const dLng = (((h >> 10) % 1000) / 1000 - 0.5) * 0.08;
-  return { latitude: CENTER.latitude + dLat, longitude: CENTER.longitude + dLng };
+  // No precise coordinates: NO pin. IG/FB hide imprecise sellers instead of
+  // rendering plausible-but-fake locations. The seller still appears in the
+  // list below with a "Location not shared" label. Null = unmapped.
+  void key;
+  return null;
 };
 
 interface SellerPin {
@@ -69,6 +60,21 @@ interface SellerPin {
   categories: string[];
   latitude: number;
   longitude: number;
+}
+
+/**
+ * Sellers with listings but no precise coordinates. They get NO pin (a pin
+ * would be a fabricated location) but DO appear in the list below with their
+ * self-declared area — OLX/Amazon show city-level proximity as fallback, and
+ * an empty Nearby screen on real prod data is a dead end.
+ */
+interface UnmappedSeller {
+  username: string;
+  name: string;
+  verified: boolean;
+  priceFrom: number;
+  categories: string[];
+  locationLabel: string;
 }
 
 type CommunityPin = Community & { latitude: number; longitude: number };
@@ -151,6 +157,11 @@ export default function MapScreen() {
   const sellers = useMemo<SellerPin[]>(() => {
     const bySeller = new Map<string, SellerPin>();
     for (const p of posts) {
+      const pos = positionFor(p.sellerUsername, (p as any).listingLat ?? (p as any).lat, (p as any).listingLng ?? (p as any).lng);
+      // Unmapped sellers are excluded from pins AND from this array (nearness
+      // cannot be claimed without coordinates, and a jittered fake pin is a
+      // production-integrity violation). They appear in the unmapped list
+      // below instead — discoverable here, not only via search/explore.
       const existing = bySeller.get(p.sellerUsername);
       if (existing) {
         existing.verified = existing.verified || Boolean(p.verified);
@@ -158,22 +169,55 @@ export default function MapScreen() {
         if (p.category && !existing.categories.includes(p.category)) {
           existing.categories.push(p.category);
         }
-      } else {
-        bySeller.set(p.sellerUsername, {
-          username: p.sellerUsername,
-          name: p.sellerName,
-          verified: Boolean(p.verified),
-          priceFrom: p.price,
-          categories: p.category ? [p.category] : [],
-          ...positionFor(p.sellerUsername, (p as any).listingLat ?? (p as any).lat, (p as any).listingLng ?? (p as any).lng),
-        });
+        continue;
       }
+      if (!pos) continue;
+      bySeller.set(p.sellerUsername, {
+        username: p.sellerUsername,
+        name: p.sellerName,
+        verified: Boolean(p.verified),
+        priceFrom: p.price,
+        categories: p.category ? [p.category] : [],
+        ...pos,
+      });
     }
     return Array.from(bySeller.values());
   }, [posts]);
 
+  const unmappedSellers = useMemo<UnmappedSeller[]>(() => {
+    const mapped = new Set(sellers.map((s) => s.username));
+    const bySeller = new Map<string, UnmappedSeller>();
+    for (const p of posts) {
+      if (mapped.has(p.sellerUsername)) continue;
+      const pos = positionFor(p.sellerUsername, (p as any).listingLat ?? (p as any).lat, (p as any).listingLng ?? (p as any).lng);
+      if (pos) continue;
+      const existing = bySeller.get(p.sellerUsername);
+      if (existing) {
+        existing.verified = existing.verified || Boolean(p.verified);
+        existing.priceFrom = Math.min(existing.priceFrom, p.price);
+        if (p.category && !existing.categories.includes(p.category)) {
+          existing.categories.push(p.category);
+        }
+        continue;
+      }
+      const area = String((p as any).sellerLocation ?? (p as any).listingLocation ?? "").trim();
+      bySeller.set(p.sellerUsername, {
+        username: p.sellerUsername,
+        name: p.sellerName,
+        verified: Boolean(p.verified),
+        priceFrom: p.price,
+        categories: p.category ? [p.category] : [],
+        locationLabel: area || "Location not shared",
+      });
+    }
+    return Array.from(bySeller.values());
+  }, [posts, sellers]);
+
   const communityPins = useMemo<CommunityPin[]>(
-    () => communities.map((c) => ({ ...c, ...positionFor(c.id, (c as any)?.listingLat ?? (c as any)?.lat, (c as any)?.listingLng ?? (c as any)?.lng) })),
+    () => communities.flatMap((c) => {
+      const pos = positionFor(c.id, (c as any)?.listingLat ?? (c as any)?.lat, (c as any)?.listingLng ?? (c as any)?.lng);
+      return pos ? [{ ...c, ...pos }] : [];
+    }),
     [communities]
   );
 
@@ -196,6 +240,16 @@ export default function MapScreen() {
         ? sellers
         : sellers.filter((s) => s.categories.includes(activeCategory)),
     [sellers, activeCategory]
+  );
+
+  // Unmapped sellers sort AFTER pinned ones (no nearness claim) and respect
+  // the same category filter.
+  const visibleUnmapped = useMemo(
+    () =>
+      activeCategory === 'All'
+        ? unmappedSellers
+        : unmappedSellers.filter((s) => s.categories.includes(activeCategory)),
+    [unmappedSellers, activeCategory]
   );
 
   const visibleCommunities = useMemo(
@@ -229,7 +283,7 @@ export default function MapScreen() {
     const delivery = positionFor(`delivery:${routeSource.username}`, typeof rLat === 'number' ? rLat : null, typeof rLng === 'number' ? rLng : null);
     // Honest delivery preview: seller pin -> user location -> listing location (if set)
     const mid = userLoc ?? CENTER;
-    if (delivery.latitude === CENTER.latitude && delivery.longitude === CENTER.longitude) {
+    if (!delivery) {
       return [{ latitude: routeSource.latitude, longitude: routeSource.longitude }, mid];
     }
     return [
@@ -328,8 +382,8 @@ export default function MapScreen() {
     setSelectedCommunityId(null);
   };
 
-  const listData: Array<SellerPin | CommunityPin> =
-    view === 'Sellers' ? visibleSellers : visibleCommunities;
+  const listData: Array<SellerPin | UnmappedSeller | CommunityPin> =
+    view === 'Sellers' ? [...visibleSellers, ...visibleUnmapped] : visibleCommunities;
 
   useEffect(() => {
     if (mapState !== 'loading') return;
@@ -420,7 +474,7 @@ export default function MapScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             className="px-3 py-2 bg-surfaceContainer rounded-figma-full"
-            onPress={() => router.push('/(tabs)/chat')}
+            onPress={() => router.push(`/(tabs)/chat?to=${encodeURIComponent(s.username)}`)}
           >
             <Text className="text-figma-12 font-inter-600 text-primaryContainer">Message</Text>
           </TouchableOpacity>
@@ -428,6 +482,40 @@ export default function MapScreen() {
       </View>
       <Text className="text-figma-12 font-inter-400 text-textSecondary mt-2">
         From {formatPrice(s.priceFrom)} · {s.categories.join(', ')}
+      </Text>
+    </View>
+  );
+
+  const renderUnmappedRow = (s: UnmappedSeller) => (
+    <View className="bg-surfaceContainerLowest rounded-figma-24 p-4 mb-3" style={cardShadow}>
+      <View className="flex-row items-center">
+        <View className="w-10 h-10 rounded-full mr-3 overflow-hidden" style={{ backgroundColor: colors.surfaceContainer }}>
+          <Image source={resolveAvatar(s.username)} className="w-full h-full" />
+        </View>
+        <View className="flex-1">
+          <View className="flex-row items-center gap-1">
+            <Text className="text-figma-14 font-inter-600 text-textPrimary">{s.name}</Text>
+            {s.verified && <VerifiedIcon size={14} />}
+          </View>
+          <Text className="text-figma-12 font-inter-400 text-textSecondary">@{s.username}</Text>
+        </View>
+        <View className="flex-row gap-2">
+          <TouchableOpacity
+            className="px-3 py-2 bg-primaryContainer rounded-figma-full"
+            onPress={() => router.push(`/seller/${s.username}`)}
+          >
+            <Text className="text-figma-12 font-inter-600 text-white">View Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="px-3 py-2 bg-surfaceContainer rounded-figma-full"
+            onPress={() => router.push(`/(tabs)/chat?to=${encodeURIComponent(s.username)}`)}
+          >
+            <Text className="text-figma-12 font-inter-600 text-primaryContainer">Message</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      <Text className="text-figma-12 font-inter-400 text-textSecondary mt-2">
+        From {formatPrice(s.priceFrom)} · {s.categories.join(', ')}{s.categories.length > 0 ? ' · ' : ''}{s.locationLabel} (area, not a pin)
       </Text>
     </View>
   );
@@ -522,7 +610,7 @@ export default function MapScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           className="h-11 px-4 bg-surfaceContainer rounded-figma-16 flex-row items-center justify-center"
-          onPress={() => router.push('/(tabs)/chat')}
+          onPress={() => router.push(`/(tabs)/chat?to=${encodeURIComponent(selectedSeller.username)}`)}
         >
           <SendIcon size={16} color={colors.primaryContainer} />
           <Text className="text-figma-14 font-inter-600 text-primaryContainer ml-1.5">Message</Text>
@@ -632,7 +720,10 @@ export default function MapScreen() {
           <FlatList
             data={listData}
             keyExtractor={(item) => ('username' in item ? item.username : item.id)}
-            renderItem={({ item }) => ('username' in item ? renderSellerRow(item) : renderCommunityRow(item))}
+            renderItem={({ item }) => {
+              if (!('username' in item)) return renderCommunityRow(item);
+              return 'latitude' in item ? renderSellerRow(item) : renderUnmappedRow(item);
+            }}
             contentContainerClassName="p-4"
             ListEmptyComponent={emptyList}
           />

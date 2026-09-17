@@ -1,0 +1,42 @@
+[OK] /dashboard (2648ms) rows=0 btns=12 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[404] /dashboard/home (2624ms) rows=0 btns=0 :: 404 | This page could not be found.
+[OK] /dashboard/products (2818ms) rows=2 btns=23 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/categories (2680ms) rows=23 btns=83 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/orders (2635ms) rows=2 btns=32 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/auctions (2661ms) rows=2 btns=22 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/bundles (3069ms) rows=2 btns=23 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/food-hub (3208ms) rows=2 btns=21 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/bookings (3145ms) rows=2 btns=23 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[404] /dashboard/offers-coupons (2625ms) rows=0 btns=0 :: 404 | This page could not be found.
+[OK] /dashboard/shipping (3103ms) rows=2 btns=27 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/users (3119ms) rows=11 btns=23 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/sellers (2618ms) rows=2 btns=25 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/sellers/pending (3105ms) rows=0 btns=13 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/blocked (3080ms) rows=2 btns=22 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/address-book (3284ms) rows=2 btns=21 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/payments (3185ms) rows=2 btns=24 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/promotions (3098ms) rows=2 btns=29 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/commission (3153ms) rows=7 btns=21 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/wallet (3103ms) rows=2 btns=23 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/refunds (3124ms) rows=2 btns=24 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/disputes (3162ms) rows=2 btns=25 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/loyalty (3115ms) rows=2 btns=22 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/payment-methods (3119ms) rows=2 btns=22 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/reviews (3116ms) rows=2 btns=21 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/posts (3080ms) rows=2 btns=23 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/stories (3089ms) rows=2 btns=20 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/communities (3136ms) rows=2 btns=24 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/hashtags (3125ms) rows=2 btns=21 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[404] /dashboard/reported (2705ms) rows=0 btns=0 :: 404 | This page could not be found.
+[404] /dashboard/tickets (2648ms) rows=0 btns=0 :: 404 | This page could not be found.
+[OK] /dashboard/settings (3099ms) rows=0 btns=22 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/analytics (3116ms) rows=0 btns=12 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+[OK] /dashboard/system (3191ms) rows=14 btns=12 :: S | SUSEJ | OVERVIEW | Dashboard | Home Management | COMMERCE | Products | Categories | Orders | Auctions | Bundles | Food Hub
+
+=== CONSOLE ERRORS (0) ===
+FATAL: page.screenshot: Timeout 30000ms exceeded.
+Call log:
+[2m  - taking page screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+

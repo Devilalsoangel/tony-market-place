@@ -10,6 +10,7 @@ import { usePosts } from '../../contexts/PostContext';
 import { profileImages } from '../../utils/screenImages';
 import { useFollow } from '../../contexts/FollowContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { isApprovedSeller, sellerPendingReview } from '../../utils/marketplace';
 
 function WalletIcon({ size = 20, color = colors.primary }: { size?: number; color?: string }) {
   return (
@@ -174,8 +175,10 @@ export default function ProfileScreen() {
             {/* Divider before account sections */}
             <View className="h-px" style={{ backgroundColor: colors.surfaceContainer }} />
 
-            {/* My Store (sellers) */}
-            {user?.isSeller && (
+            {/* My Store (APPROVED sellers only — H13: pending applicants
+                used to walk straight into the ungated hub). Pending sees an
+                application tracker entry instead. */}
+            {isApprovedSeller(user) ? (
               <View className="px-5 pb-4">
                 <TouchableOpacity
                   className="flex-row items-center px-4 py-3.5"
@@ -194,7 +197,26 @@ export default function ProfileScreen() {
                   <ChevronRightIcon size={14} color={colors.onPrimary} />
                 </TouchableOpacity>
               </View>
-            )}
+            ) : sellerPendingReview(user) ? (
+              <View className="px-5 pb-4">
+                <TouchableOpacity
+                  className="flex-row items-center px-4 py-3.5"
+                  style={{ borderRadius: 16, backgroundColor: colors.surfaceContainerLow }}
+                  onPress={() => router.push('/become-seller')}
+                >
+                  <ShopIcon size={18} color={colors.primary} />
+                  <View className="flex-1 ml-3">
+                    <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 18, color: colors.textPrimary }}>
+                      Application under review
+                    </Text>
+                    <Text className="font-inter-400" style={{ fontSize: 11, lineHeight: 15, color: colors.textSecondary }}>
+                      Track status · tools unlock on approval
+                    </Text>
+                  </View>
+                  <ChevronRightIcon size={14} color={colors.textTertiary} />
+                </TouchableOpacity>
+              </View>
+            ) : null}
 
             {/* Apply to be a Seller (buyers only — no dashboard access until approved) */}
             {!user?.isSeller && (

@@ -8,6 +8,8 @@ import { colors } from '../utils/theme';
 import { CATEGORY_TREE, findMainCategory } from '../utils/categories';
 import CategoryPicker from '../components/CategoryPicker';
 import { useAuth } from '../contexts/AuthContext';
+import { isApprovedSeller } from '../utils/marketplace';
+import SellerGate from '../components/SellerGate';
 
 const STORE_CATEGORIES_KEY_BASE = '@susej_store_categories';
 
@@ -67,6 +69,12 @@ export default function CategoriesManagerScreen() {
   };
 
   const handleMainChange = (id: string) => {
+    // One-shop-one-category lock (H8): approved sellers can't silently move
+    // mains here while edit-shop/become-seller lock it — same rule everywhere.
+    if (isApprovedSeller(user)) {
+      Alert.alert('Category locked', 'Your primary category is locked after approval. Contact support to change it.');
+      return;
+    }
     setMain(id);
     persist(id, children);
   };
@@ -79,12 +87,16 @@ export default function CategoriesManagerScreen() {
 
   const handleSave = () => {
     persist(main, children);
-    Alert.alert('Store updated', 'Your storefront filters are updated.');
+    Alert.alert('Saved on this device', 'Sub-category chips preview here. Buyer-side curation arrives with the next storefront sync — buyers currently see the standard taxonomy.');
   };
 
   const mainNode = findMainCategory(main);
   const previewChips = ['All', ...children];
   const pickerSiblings = mainNode ? mainNode.children : [];
+
+  // Approved sellers only (SELLER-C1): buyers/pending deep-links get status,
+  // never tools. Matches server 403s. After all hooks (rules-of-hooks safe).
+  if (!isApprovedSeller(user)) return <SellerGate title="Store categories" user={user} />;
 
   return (
     <View className="flex-1 bg-surface">

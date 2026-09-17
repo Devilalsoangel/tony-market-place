@@ -17,10 +17,8 @@ const API_ENDPOINTS = [
   { method: "POST", path: "/api/logout", desc: "End session" },
   { method: "POST", path: "/api/forgot-password", desc: "Request password reset" },
   { method: "POST", path: "/api/reset-password", desc: "Complete password reset" },
-  { method: "GET", path: "/api/v1/home", desc: "Public home feed" },
-  { method: "GET", path: "/api/v1/promotions/my", desc: "My promotions" },
-  { method: "POST", path: "/api/v1/promotions/checkout", desc: "Promotion checkout" },
-  { method: "GET", path: "/api/v1/cron/sweep", desc: "Scheduled promotions sweep" },
+  { method: "GET", path: "/api/v1/home", desc: "Public home feed (app-key)" },
+  { method: "POST", path: "/api/v1/cron/sweep", desc: "Scheduled promotions sweep (CRON_SECRET, POST only)" },
 ];
 
 const METHOD_TONE: Record<string, "success" | "info" | "warning" | "danger" | "default"> = {

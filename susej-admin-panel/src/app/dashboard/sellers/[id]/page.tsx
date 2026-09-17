@@ -162,7 +162,8 @@ function IdentityCard({ seller, onView }: { seller: Seller; onView: (d: SellerDo
 
 export default function SellerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: sellers, refresh } = useDbResource<Seller>("sellers");
+  // Single-row mode: exact seller, never the whole table (false-negative past 100 rows).
+  const { data: sellers, refresh } = useDbResource<Seller>("sellers", { id });
   const { data: categoryRows } = useDbResource<{ id: string; name: string }>("categories");
   const adminUser = useAuthStore((s) => s.user);
   const [viewingDoc, setViewingDoc] = useState<SellerDocument | null>(null);
@@ -206,7 +207,13 @@ export default function SellerDetailPage({ params }: { params: Promise<{ id: str
     const current = seller;
     if (!current) return;
     setSeller({ ...current, ...patch });
-    void apiPatch("sellers", current.id, patch);
+    // Revert + shout on failure: the old fire-and-forget left the desk
+    // showing values that never persisted (fail-closed KYC propagation 422s).
+    void apiPatch("sellers", current.id, patch).catch(async (e: unknown) => {
+      setSeller(current);
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Seller update failed — reverted.");
+    });
   }
 
   async function logAudit(action: string, note: string) {
@@ -418,8 +425,13 @@ export default function SellerDetailPage({ params }: { params: Promise<{ id: str
                       value={seller.category ?? ""}
                       onChange={(e) => {
                         const next = e.target.value;
+                        const prev = seller.category;
                         setSeller((s) => (s ? { ...s, category: next || undefined } : s));
-                        void apiPatch("sellers", seller.id, { category: next });
+                        void apiPatch("sellers", seller.id, { category: next }).catch(async (err: unknown) => {
+                          setSeller((s) => (s ? { ...s, category: prev } : s));
+                          const { toast } = await import("@/components/ui/toast");
+                          toast.error(err instanceof Error ? err.message : "Category change failed — reverted.");
+                        });
                       }}
                       className="mt-1 w-full max-w-xs rounded-lg border border-[#E4E4E7] bg-white px-3 py-2 text-sm font-medium text-[#18181B] focus:border-[#6C3BFF] focus:outline-none"
                     >

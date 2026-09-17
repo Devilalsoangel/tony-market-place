@@ -35,6 +35,7 @@ export type HomeManagementAction =
   | { type: 'UPDATE_STOREFRONT_BANNER'; payload: { id: string; changes: Partial<StorefrontBanner> } }
   | { type: 'DELETE_STOREFRONT_BANNER'; payload: string }
   | { type: 'SET_LAYOUT'; payload: HomeSection[] }
+  | { type: 'ADD_LAYOUT_ITEM'; payload: HomeSection }
   | { type: 'UPDATE_LAYOUT_ITEM'; payload: { id: string; changes: Partial<HomeSection> } }
   | { type: 'REORDER_LAYOUT'; payload: HomeSection[] };
 
@@ -120,6 +121,13 @@ function homeManagementReducer(state: HomeManagementState, action: HomeManagemen
       };
     case 'SET_LAYOUT':
       return { ...state, layout: action.payload };
+    case 'ADD_LAYOUT_ITEM':
+      // Upsert by name: the first-toggle create and the adopt-winner path
+      // re-dispatch the row with a new isEnabled — replacing keeps the toggle
+      // truthful instead of freezing the first-seen state.
+      return state.layout.some((s) => s.name === action.payload.name)
+        ? { ...state, layout: state.layout.map((s) => (s.name === action.payload.name ? { ...s, ...action.payload } : s)) }
+        : { ...state, layout: [...state.layout, action.payload] };
     case 'UPDATE_LAYOUT_ITEM':
       return {
         ...state,
@@ -275,6 +283,47 @@ function createHomeManagementActions(dispatch: React.Dispatch<HomeManagementActi
 
     setLayout: async (layout: HomeSection[]) => {
       dispatch({ type: "SET_LAYOUT", payload: layout });
+    },
+    // Fresh prod has zero home-sections rows: flipping a missing section
+    // CREATES the row in the chosen state (on or off) instead of dead-ending.
+    createLayoutItem: async (name: HomeSection["name"], title: string, isEnabled = true) => {
+      try {
+        const existing = (await loadRows<HomeSection>("home-sections"))?.find((s) => s.name === name);
+        if (existing) {
+          if (existing.isEnabled !== isEnabled) {
+            try {
+              const { row } = await api("home-sections", "PATCH", { id: existing.id, data: { isEnabled } });
+              const updated = (row ?? { ...existing, isEnabled }) as HomeSection;
+              dispatch({ type: "ADD_LAYOUT_ITEM", payload: updated });
+              return updated;
+            } catch {
+              dispatch({ type: "ADD_LAYOUT_ITEM", payload: existing });
+              return existing;
+            }
+          }
+          dispatch({ type: "ADD_LAYOUT_ITEM", payload: existing });
+          return existing;
+        }
+        // HomeSection.id has no DB default (schema): mint a deterministic id
+        // from the unique name so first-toggle create succeeds and retries
+        // collide on the same row instead of minting duplicates.
+        const { row } = await api("home-sections", "POST", { id: `hs-${name}`, name, title, isEnabled, position: 0 });
+        const created = (row ?? { id: `hs-${name}`, name, title, isEnabled, position: 0 }) as HomeSection;
+        dispatch({ type: "ADD_LAYOUT_ITEM", payload: created });
+        return created;
+      } catch (e) {
+        // Race-close: a concurrent first-toggle already created hs-<name>
+        // (P2002 on the deterministic id) — adopt the winner, don't 503.
+        try {
+          const existing = (await loadRows<HomeSection>("home-sections"))?.find((s) => s.name === name);
+          if (existing) {
+            dispatch({ type: "ADD_LAYOUT_ITEM", payload: existing });
+            return existing;
+          }
+        } catch {}
+        fail("createLayoutItem", e);
+        return null;
+      }
     },
     updateLayoutItem: async (id: string, changes: Partial<HomeSection>) => {
       try {

@@ -31,6 +31,8 @@ export interface PostVariant {
 
 export interface Post {
   id: string;
+  /** Buyer-facing listing title (indexed, searched). Falls back to first description line for legacy rows. */
+  title?: string;
   sellerName: string;
   sellerUsername: string;
   sellerLocation: string;
@@ -102,7 +104,7 @@ interface PostContextType {
   addComment: (postId: string, comment: { author: string; text: string }) => void;
   toggleLike: (postId: string) => boolean;
   isLiked: (postId: string) => boolean;
-  updatePost: (id: string, patch: Partial<Post>) => void;
+  updatePost: (id: string, patch: Partial<Post>, opts?: { localOnly?: boolean }) => Promise<boolean>;
   toggleSold: (id: string) => void;
   hiddenPostIds: string[];
   hidePost: (id: string) => void;
@@ -118,6 +120,14 @@ interface PostContextType {
   reports: PostReport[];
   /** Re-fetch + reconcile server posts (pull-to-refresh). Cache wins on failure. */
   refresh: () => Promise<void>;
+  /**
+   * Server search (cross-device truth): queries title/description server-side
+   * and merges hits ADDITIVELY into the cache (upsert by id, tombstones
+   * respected). Never replaces the feed — a q-scoped response is not the full
+   * truth. Resolves the server hits; [] on offline/failure (callers keep
+   * their local filter, never a blanked screen).
+   */
+  searchServer: (query: string) => Promise<Post[]>;
 }
 
 const PostContext = createContext<PostContextType | null>(null);
@@ -133,6 +143,12 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const likedRef = useRef<Record<string, boolean>>({});
+  // Snapshot ref for optimistic-rollback: server rejections (offline/403)
+  // restore the pre-mutation list instead of silently diverging.
+  const postsRef = useRef<Post[]>([]);
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
   const [tombstones, setTombstones] = useState<string[]>([]);
   const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([]);
   const [mutedSellers, setMutedSellers] = useState<string[]>([]);
@@ -291,6 +307,9 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
     return {
       type: (p.type as Post["type"]) ?? 'product',
       id: String(p.id),
+      // Server title is the buyer-facing truth (indexed); legacy rows without
+      // one fall back to the first description line, exactly like placement.
+      title: String(p.title ?? '').trim() || String(p.description ?? '').split('\n')[0].slice(0, 200) || 'New listing',
       description: String(p.description ?? p.title ?? 'Untitled'),
       price: Number(p.price ?? 0),
       mrp: p.mrp != null && Number(p.mrp) > Number(p.price ?? 0) ? Number(p.mrp) : undefined,
@@ -389,6 +408,38 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
       return [...visible, ...localOnly];
     });
   }, [normalizeServerPost, user?.username, tombstones, getLikedKey, persistMod]);
+
+  // Server search (cross-device truth): q-scoped fetch merged ADDITIVELY.
+  // refresh() semantics would be wrong here — a search response must never
+  // delete feed posts the query didn't match.
+  const searchServer = useCallback(async (query: string): Promise<Post[]> => {
+    const q = query.trim().slice(0, 100);
+    if (!q) return [];
+    const res = await serverApi.getPosts({ q }).catch(() => null);
+    if (!res?.ok) return [];
+    const rawPosts = (((res.data as unknown as { posts?: unknown })?.posts ?? []) as any[]);
+    const hits = rawPosts
+      .map((p) => normalizeServerPost(p))
+      .filter((p) => p !== null) as Post[];
+    const visible = hits.filter((h) => !tombstones.includes(h.id));
+    if (visible.length) {
+      // Order-preserving upsert: refresh hits in place, append brand-new rows.
+      // Prepending would reorder the buyer's feed on every keystroke.
+      setPosts((prev) => {
+        const byId = new Map<string, Post>(visible.map((h) => [h.id, h]));
+        const found = new Set<string>();
+        const next = prev.map((p) => {
+          const h = byId.get(p.id);
+          if (!h) return p;
+          found.add(p.id);
+          return h;
+        });
+        for (const h of visible) if (!found.has(h.id)) next.push(h);
+        return next;
+      });
+    }
+    return visible;
+  }, [normalizeServerPost, tombstones]);
  
   const hidePost = useCallback(
     (id: string) => {
@@ -460,10 +511,16 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
       // real server id so likes/comments/delete all hit the same row.
       serverApi
         .createPost({
-          title: String(input.description ?? '').split('\n')[0].slice(0, 200) || 'New listing',
+          title:
+            typeof (input as { title?: unknown }).title === 'string' &&
+            ((input as { title?: string }).title ?? '').trim().length >= 3
+              ? ((input as { title?: string }).title ?? '').trim().slice(0, 200)
+              : String(input.description ?? '').split('\n')[0].slice(0, 200) || 'New listing',
           price: input.price,
           description: input.description,
           category: input.category,
+          subCategories: (input as { subCategories?: unknown }).subCategories as string[] | undefined,
+          variants: (input as { variants?: unknown }).variants as { name: string; values: string[] }[] | undefined,
           image: input.image,
           images: input.images,
           hashtags: input.hashtags,
@@ -483,19 +540,36 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
           if (res.ok && res.data?.post?.id) {
             const serverId = String(res.data.post.id);
             setPosts((prev) => prev.map((p) => (p.id === localId ? { ...p, id: serverId } : p)));
+          } else if (!res.ok && res.error !== 'offline') {
+            // Server rejected (validation/entitlement) — remove the optimistic
+            // ghost so the seller never sees a listing buyers can't see.
+            setPosts((prev) => prev.filter((p) => p.id !== localId));
           }
+          // Offline: keep local-only (syncs on next launch via seed path).
         })
-        .catch(() => {});
+        .catch(() => {
+          // Transport threw mid-flight (ambiguous) — keep; seed path preserves
+          // localOnly rows and the next successful sync reconciles.
+        });
     },
     []
   );
 
   const removePost = useCallback(
     (id: string) => {
+      const snapshot = postsRef.current;
       setPosts((prev) => prev.filter((p) => p.id !== id));
       setTombstones((prev) => (prev.includes(id) ? prev : [...prev, id]));
       if (isServerPostId(id)) {
-        serverApi.deletePost(id).catch(() => {});
+        serverApi.deletePost(id).then((res) => {
+          if (!res.ok && res.error !== 'offline') {
+            setPosts(snapshot);
+            setTombstones((prev) => prev.filter((t) => t !== id));
+          }
+        }).catch(() => {
+          setPosts(snapshot);
+          setTombstones((prev) => prev.filter((t) => t !== id));
+        });
       }
     },
     []
@@ -503,22 +577,43 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
 
   const deletePost = useCallback(
     (id: string) => {
+      const snapshot = postsRef.current;
       setPosts((prev) => prev.filter((p) => p.id !== id));
       setTombstones((prev) => (prev.includes(id) ? prev : [...prev, id]));
       if (isServerPostId(id)) {
-        serverApi.deletePost(id).catch(() => {});
+        serverApi.deletePost(id).then((res) => {
+          if (!res.ok && res.error !== 'offline') {
+            setPosts(snapshot);
+            setTombstones((prev) => prev.filter((t) => t !== id));
+          }
+        }).catch(() => {
+          setPosts(snapshot);
+          setTombstones((prev) => prev.filter((t) => t !== id));
+        });
       }
     },
     []
   );
 
+  // Edit screens that await the server themselves pass { localOnly: true }:
+  // optimistic paint + caller-managed revert, no second PATCH in flight.
+  // Returns true when the server acked (or the change is local/pending);
+  // false when the server refused and the optimistic paint was reverted —
+  // callers with per-row honesty needs (bulk hide/show) await this.
   const updatePost = useCallback(
-    (id: string, patch: Partial<Post>) => {
+    (id: string, patch: Partial<Post>, opts?: { localOnly?: boolean }): Promise<boolean> => {
+      const snapshot = postsRef.current;
       setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+      if (opts?.localOnly) return Promise.resolve(true);
       if (isServerPostId(id)) {
         const sp: Record<string, unknown> = {};
+        if (patch.title !== undefined) {
+          sp.title = String(patch.title).trim().slice(0, 200);
+        }
         if (patch.description !== undefined) {
-          sp.title = String(patch.description).split('\n')[0].slice(0, 200);
+          if (patch.title === undefined) {
+            sp.title = String(patch.description).split('\n')[0].slice(0, 200);
+          }
           sp.description = patch.description;
         }
         if (patch.price !== undefined) sp.price = patch.price;
@@ -538,24 +633,40 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         if (patch.condition !== undefined) sp.condition = patch.condition;
         if (patch.deliveryMode !== undefined) sp.deliveryMode = patch.deliveryMode;
         if (patch.shippingFee !== undefined) sp.shippingFee = patch.shippingFee;
-        if (Object.keys(sp).length) serverApi.updatePost(id, sp).catch(() => {});
+        if (Object.keys(sp).length) {
+          return serverApi.updatePost(id, sp).then((res) => {
+            if (!res.ok && res.error !== 'offline') {
+              setPosts(snapshot);
+              return false;
+            }
+            return true;
+          }).catch(() => {
+            setPosts(snapshot);
+            return false;
+          });
+        }
       }
+      return Promise.resolve(true);
     },
     []
   );
 
   const toggleSold = useCallback(
     (id: string) => {
+      const snapshot = postsRef.current;
+      const current = snapshot.find((p) => p.id === id);
+      const nextSold = !(current?.isSold ?? false);
       setPosts((prev) =>
         prev.map((p) => {
           if (p.id !== id) return p;
-          const nextSold = !p.isSold;
-          if (isServerPostId(id)) {
-            serverApi.updatePost(id, { isSold: nextSold }).catch(() => {});
-          }
           return { ...p, isSold: nextSold };
         })
       );
+      if (isServerPostId(id)) {
+        serverApi.updatePost(id, { isSold: nextSold }).then((res) => {
+          if (!res.ok && res.error !== 'offline') setPosts(snapshot);
+        }).catch(() => setPosts(snapshot));
+      }
     },
     []
   );
@@ -616,7 +727,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
   const isLiked = useCallback((postId: string) => !!liked[postId], [liked]);
 
   return (
-    <PostContext.Provider value={{ posts, loaded, refresh, addPost, removePost, deletePost, addComment, toggleLike, isLiked, updatePost, toggleSold, hiddenPostIds, hidePost, mutedSellers, toggleMuteSeller, reportPost, reports }}>
+    <PostContext.Provider value={{ posts, loaded, refresh, searchServer, addPost, removePost, deletePost, addComment, toggleLike, isLiked, updatePost, toggleSold, hiddenPostIds, hidePost, mutedSellers, toggleMuteSeller, reportPost, reports }}>
       {children}
     </PostContext.Provider>
   );

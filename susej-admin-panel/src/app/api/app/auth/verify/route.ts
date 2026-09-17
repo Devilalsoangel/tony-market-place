@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getPrisma } from "@/lib/db";
-import { createAppSession, findUserByPhone, toAppUser } from "@/lib/app-auth";
+import { createAppSession, createUserByPhone, findUserByPhone, toAppUser } from "@/lib/app-auth";
 
 // Consumes the hashed OTP stored by POST /api/app/auth:
 // expiry check, attempt cap (5), single-use (record deleted on success).
@@ -13,6 +13,25 @@ const MAX_ATTEMPTS = 5;
 const VERIFY_WINDOW_MS = 60_000;
 const VERIFY_MAX = 30;
 const verifyHits = new Map<string, { count: number; resetAt: number }>();
+// Creation bucket (mirrors email register: 5/hour/IP). Each OTP creation
+// mints a 500 welcome bonus, so uncapped create = farmable money. Sign-in
+// (existing user) is never throttled by this — only minting is.
+const CREATE_WINDOW_MS = 60 * 60 * 1000;
+const CREATE_MAX = 5;
+const createHits = new Map<string, { count: number; resetAt: number }>();
+function throttleCreateIp(req: NextRequest): boolean {
+  const forwarded = req.headers.get("x-forwarded-for");
+  const ip = (forwarded ? forwarded.split(",")[0] : req.headers.get("x-real-ip") ?? "unknown").trim() || "unknown";
+  const now = Date.now();
+  const cur = createHits.get(ip);
+  if (!cur || now >= cur.resetAt) {
+    createHits.set(ip, { count: 1, resetAt: now + CREATE_WINDOW_MS });
+    return true;
+  }
+  cur.count += 1;
+  if (cur.count > CREATE_MAX) return false;
+  return true;
+}
 function throttleVerifyIp(req: NextRequest): boolean {
   const forwarded = req.headers.get("x-forwarded-for");
   const ip = (forwarded ? forwarded.split(",")[0] : req.headers.get("x-real-ip") ?? "unknown").trim() || "unknown";
@@ -28,12 +47,16 @@ function throttleVerifyIp(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { phone?: string; code?: string };
+  let body: { phone?: string; code?: string; create?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
+  // Explicit signup intent only: the client sends create:true solely from a
+  // signup screen. Sign-in screens omit it, so a typo'd number can never
+  // mint a ghost account + welcome money (was silent auto-create before).
+  const wantCreate = body.create === true;
   const phone = (body.phone ?? "").replace(/\D/g, "");
   const code = String(body.code ?? "").replace(/\D/g, "");
   // Align with POST /api/app/auth (>=10 digits): shorter strings can never
@@ -82,7 +105,28 @@ export async function POST(req: NextRequest) {
   // Success -> single use.
   await prisma.appSetting.delete({ where: { key: `otp:${phone}` } }).catch(() => undefined);
 
-  const user = await findUserByPhone(phone);
+  const existing = await findUserByPhone(phone);
+  if (existing) {
+    const token = await createAppSession(existing.id, existing.username!);
+    const fresh = await prisma.user
+      .findUnique({ where: { id: existing.id } })
+      .catch(() => null);
+    return NextResponse.json({ token, user: toAppUser(fresh ?? existing) });
+  }
+  // Unknown number + correct code: sign-in must NOT create. Tell the client
+  // it is a signup case so it can ask for explicit consent (industry split,
+  // same as email login 401 vs register). Creation mints 500 welcome money,
+  // so it additionally passes the per-IP creation bucket.
+  if (!wantCreate) {
+    return NextResponse.json(
+      { error: "No account found for this number. Create one to continue.", needsSignup: true },
+      { status: 404 }
+    );
+  }
+  if (!throttleCreateIp(req)) {
+    return NextResponse.json({ error: "Too many accounts from this network — try again later" }, { status: 429 });
+  }
+  const user = await createUserByPhone(phone);
   if (!user) return NextResponse.json({ error: "Could not create account" }, { status: 500 });
 
   const token = await createAppSession(user.id, user.username!);

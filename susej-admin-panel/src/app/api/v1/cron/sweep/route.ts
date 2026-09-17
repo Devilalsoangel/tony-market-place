@@ -8,10 +8,14 @@ import { sweepExpiredPromotions } from "@/lib/promotions/activate";
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
 
 export async function POST(request: NextRequest) {
-  // Prefer dedicated cron secret when configured; fall back to app key for backwards compat.
+  // Prefer dedicated cron secret when configured; fail CLOSED in production
+  // when it is missing (never let the widely-distributed app-key expire paid
+  // promotions). Local dev keeps the app-key fallback for operability.
   if (CRON_SECRET) {
     const provided = request.headers.get("x-cron-secret");
     if (!provided || provided !== CRON_SECRET) return unauthorized();
+  } else if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Cron secret not configured" }, { status: 503 });
   } else {
     if (!checkAppKey(request)) return unauthorized();
   }

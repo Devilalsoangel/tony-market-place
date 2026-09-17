@@ -107,7 +107,7 @@ const tabs = [
 
 export default function SellersPage() {
   const router = useRouter();
-  const { data: sellers, refresh } = useDbResource<Seller>("sellers", { take: 500 });
+  const { data: sellers, total: sellersTotal, refresh } = useDbResource<Seller>("sellers", { take: 100 });
   const allSellers = sellers ?? [];
   const pendingCount = allSellers.filter((s) => s.kycStatus === "pending").length;
   const verifiedCount = allSellers.filter((s) => s.kycStatus === "approved").length;
@@ -132,6 +132,7 @@ export default function SellersPage() {
                   <DataTable
                     columns={baseColumns}
                     data={allSellers}
+                    totalCount={sellersTotal ?? allSellers.length}
                     searchable
                     searchKey="businessName"
                     filename="sellers"
@@ -145,15 +146,20 @@ export default function SellersPage() {
                     selectable
                     onBulkDelete={async (rows) => {
                       const ids = (rows as any[]).map((r) => r.id);
-                      if (!confirm(`Soft-delete ${ids.length} seller(s)?`)) return;
-                      let failed = 0;
+                      if (!confirm(`Delete ${ids.length} seller(s)? Sellers with live data or review evidence are protected and will be skipped.`)) return;
+                      const failures: string[] = [];
                       for (const id of ids) {
                         try {
                           const res = await fetch(`/api/data/sellers`, { method: "DELETE", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ id }) });
-                          if (!res.ok) failed++;
-                        } catch { failed++; }
+                          // Surface the server's exact 409 reason (live data /
+                          // review evidence) — never a generic permissions shrug.
+                          if (!res.ok) {
+                            const body = await res.json().catch(() => null);
+                            failures.push(`${id}: ${body?.error ?? `HTTP ${res.status}`}`);
+                          }
+                        } catch (e) { failures.push(`${id}: ${e instanceof Error ? e.message : "network error"}`); }
                       }
-                      if (failed > 0) alert(`${failed} delete(s) failed — check permissions`);
+                      if (failures.length > 0) alert(`${failures.length} delete(s) refused:\n${failures.slice(0, 5).join("\n")}${failures.length > 5 ? `\n…+${failures.length - 5} more` : ""}`);
                       refresh();
                     }}
                     onRowClick={(row) => router.push(`/dashboard/sellers/${row.id}`)}

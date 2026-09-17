@@ -106,6 +106,9 @@ export interface Order {
   id: string;
   buyerName: string;
   sellerName: string;
+  /** Attribution join keys (server-authoritative; absent on legacy rows). */
+  buyerUsername?: string;
+  sellerUsername?: string;
   amount: number;
   status: "placed" | "confirmed" | "preparing" | "out_for_delivery" | "delivered" | "cancelled";
   deliveryStatus: DeliveryStatus;
@@ -144,6 +147,9 @@ export interface WithdrawalRequest {
   status: "requested" | "approved" | "rejected" | "completed";
   requestedAt: string;
   respondedAt?: string;
+  /** Resolved by the data plane (read-time join): verified KYC account for
+   *  bank, per-request VPA for UPI. The finance clerk pays TO this. */
+  destination?: string;
 }
 
 export type CommunityStatus = "active" | "suspended" | "banned";
@@ -342,7 +348,7 @@ export interface AuditLog {
 }
 
 export type NotificationChannel = "push" | "email" | "banner";
-export type NotificationStatus = "sent" | "draft" | "scheduled";
+export type NotificationStatus = "sent" | "logged" | "draft" | "scheduled";
 export type AudienceSegment = "all" | "buyers" | "sellers" | "verified_sellers" | "selected_users";
 
 export interface NotificationTemplate {
@@ -431,7 +437,9 @@ export interface CommissionSettings {
 export interface Coupon {
   id: string;
   code: string;
-  type: "percentage" | "fixed";
+  // Settlement vocab is percent|flat|fixed|free_delivery (orders route);
+  // "percentage" is the legacy desk spelling, still readable, never written.
+  type: "percent" | "percentage" | "fixed" | "flat" | "free_delivery";
   value: number;
   usageLimit: number;
   usedCount: number;
@@ -466,11 +474,13 @@ export interface AdminUser {
 export interface KPIData {
   totalUsers: number;
   newUsersToday: number;
-  onlineUsers: number;
+  /** New signups in the last 7 days (no presence source exists for "online"). */
+  newUsers7d: number;
   verifiedSellers: number;
   pendingSellerRequests: number;
   totalProducts: number;
-  pendingProducts: number;
+  /** Moderator-taken-down products (no pending queue exists). */
+  hiddenProducts: number;
   communities: number;
   ordersToday: number;
   revenue: number;

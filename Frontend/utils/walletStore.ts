@@ -93,69 +93,11 @@ export async function saveWallet(state: WalletState): Promise<void> {
   }
 }
 
-/**
- * Debit the wallet. Returns null when the amount exceeds the balance
- * (callers show an insufficient-balance message) — never a negative balance.
- * Also mirrors the debit to the shared backend (real per-user wallet).
- *
- * Timeout discipline (industry: never retry a money call blind): when the
- * server REJECTS (4xx/5xx with a reason) nothing was charged and the local
- * debit reverts safely. But on AMBIGUOUS failure (timeout/offline) the debit
- * may already have committed server-side — blind revert + user retry would
- * double-charge. So on ambiguous failure we reconcile: pull server truth and
- * adopt it when our exact intent (unique ref in detail) landed; only revert
- * when the server proves it didn't. The revert itself is guarded: a
- * concurrent writer that moved the balance since is never clobbered.
- */
-export async function debitWallet(
-  amount: number,
-  tx: { title: string; detail: string }
-): Promise<WalletState | null> {
-  if (amount <= 0) return null;
-  const state = await getWallet();
-  if (state.balance < amount) return null;
-  const ref = Math.random().toString(36).slice(2, 8);
-  const detail = `${tx.detail} · ref ${ref}`;
-  const next: WalletState = {
-    balance: state.balance - amount,
-    transactions: [
-      { id: `w${Date.now()}`, title: tx.title, detail, amount: -amount, ts: Date.now() },
-      ...state.transactions,
-    ],
-  };
-  await saveWallet(next);
-  const res: any = await serverApi.walletTx(-amount, tx.title, detail);
-  if (res?.ok) {
-    // Server is truth: adopt its balance (kills local/server drift), keep
-    // the local row (it carries our ref for history continuity).
-    const synced: WalletState = {
-      balance: Number((res as { balance?: unknown }).balance ?? next.balance),
-      transactions: next.transactions,
-    };
-    await saveWallet(synced);
-    return synced;
-  }
-  if (res?.error !== 'offline') {
-    // Certain server reject (insufficient funds, reserved title, …):
-    // nothing was charged — guarded revert, then report failure.
-    const cur = await getWallet();
-    if (cur.balance === next.balance) await saveWallet(state);
-    return null;
-  }
-  // AMBIGUOUS (timeout/offline after send): reconcile before deciding.
-  try {
-    if (await syncWalletFromServer()) {
-      const after = await getWallet();
-      if (after.transactions.some((t) => t.amount === -amount && t.title === tx.title && t.detail.includes(ref))) {
-        return after; // committed server-side — adopt truth, no retry needed.
-      }
-    }
-  } catch {}
-  const cur = await getWallet();
-  if (cur.balance === next.balance) await saveWallet(state);
-  // Return null so caller can show failure instead of phantom debit.
-  return null;
-}
+// NOTE: a client-side debitWallet() used to live here. It was deleted (zero
+// callers — the server owns all debits atomically; a client debit lane would
+// re-open the chat-pin double-charge class). Timeout discipline for the
+// remaining paths: on AMBIGUOUS failure reconcile against server truth by
+// unique ref before reverting, never revert blind.
 
 /**
  * Credit the wallet via a TOP-UP (the only client-initiated credit the server accepts).
@@ -170,7 +112,7 @@ export async function debitWallet(
  */
 export async function creditWallet(
   amount: number,
-  tx: { title: string; detail: string; dedupeByTitle?: string }
+  tx: { title: string; detail: string; dedupeByTitle?: string; ref?: string }
 ): Promise<WalletState> {
   if (amount <= 0) return getWallet();
   // Guard: client can only credit via top-up. Server rejects everything else.
@@ -183,7 +125,9 @@ export async function creditWallet(
   if (tx.dedupeByTitle && state.transactions.some((t) => t.title === tx.dedupeByTitle)) {
     return state;
   }
-  const ref = Math.random().toString(36).slice(2, 8);
+  const ref = typeof tx.ref === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(tx.ref)
+    ? tx.ref
+    : Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const detail = `${tx.detail} · ref ${ref}`;
   const next: WalletState = {
     balance: state.balance + amount,
@@ -193,7 +137,7 @@ export async function creditWallet(
     ],
   };
   await saveWallet(next);
-  const res: any = await serverApi.walletTx(amount, tx.title, detail, 'topup');
+  const res: any = await serverApi.walletTx(amount, tx.title, detail, 'topup', ref);
   if (res?.ok) {
     const synced: WalletState = {
       balance: Number((res as { balance?: unknown }).balance ?? next.balance),
@@ -202,19 +146,24 @@ export async function creditWallet(
     await saveWallet(synced);
     return synced;
   }
-  if (res?.error !== 'offline') {
-    // Certain server reject: nothing was minted — guarded revert, then throw.
+  // Certain server reject only — transport errors reconcile, never revert
+  // (a lost response after commit must not roll back local truth while the
+  // server keeps the money).
+  if (res?.error !== 'offline' && res?.error !== 'server-unreachable') {
     const cur = await getWallet();
     if (cur.balance === next.balance) await saveWallet(state);
-    throw new Error('Wallet credit failed - server did not persist');
+    // Preserve the server's reason (e.g. top-ups disabled in production) so
+    // callers can show honest copy instead of blaming the connection.
+    const reason = typeof res?.error === 'string' && res.error ? res.error : 'Wallet credit failed - server did not persist';
+    throw new Error(reason);
   }
-  // AMBIGUOUS (timeout/offline after send): a top-up may already have minted
+  // AMBIGUOUS (timeout/offline/server-down after send): a top-up may already have minted
   // server-side — retrying blind would double-mint free money. Reconcile by
   // our unique ref; only revert + throw when the server proves it didn't land.
   try {
     if (await syncWalletFromServer()) {
       const after = await getWallet();
-      if (after.transactions.some((t) => t.amount === amount && t.title === tx.title && t.detail.includes(ref))) {
+      if (after.transactions.some((t) => t.amount === amount && t.detail.includes(ref))) {
         return after;
       }
     }

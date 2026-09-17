@@ -43,6 +43,7 @@ export default function LoginScreen() {
   const [sending, setSending] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState('');
+  const [needsSignup, setNeedsSignup] = useState(false);
   const [devHint, setDevHint] = useState('');
   // Email state
   const [email, setEmail] = useState('');
@@ -61,20 +62,70 @@ export default function LoginScreen() {
 
   // Industry standard (E.164): the selected country code is part of the
   // identity — never send bare national digits (see onboarding otp.tsx).
-  const fullPhone = () => countryCode.replace(/\D/g, '') + phone.replace(/\D/g, '');
+  // FIX Sep 15 (tony 911556848908 -> user8908 ghost): users paste the full
+  // number including the country code. Strip a leading cc (+ optional trunk
+  // 0 for +91) and validate — never silently slice a longer string, because
+  // silent slicing is what masked the original double-country ghost.
+  const nationalDigits = () => {
+    const cc = countryCode.replace(/\D/g, '');
+    let digits = phone.replace(/\D/g, '');
+    // Single strip each: cc once, then one trunk 0 for +91. A second cc
+    // (14-digit 91+911556848908) must NOT strip again — it warns instead.
+    if (cc && digits.startsWith(cc) && digits.length > cc.length) digits = digits.slice(cc.length);
+    if (cc === '91' && digits.startsWith('0') && digits.length > 10) digits = digits.slice(1);
+    return digits;
+  };
+  // +91 needs exactly 10 national digits — longer/shorter warns instead of
+  // sending (a >10 entry is a typo or double-cc paste, not a valid number).
+  // Other country codes keep a permissive 6–12 window (server needs ≥10
+  // total digits including the cc and rejects the rest with a clear 400).
+  const isPhoneValid = () => {
+    const national = nationalDigits();
+    if (countryCode.replace(/\D/g, '') === '91') return national.length === 10;
+    return national.length >= 6 && national.length <= 12;
+  };
+  const phoneWarn = () =>
+    countryCode.replace(/\D/g, '') === '91'
+      ? 'Enter a valid 10-digit mobile number'
+      : 'Enter a valid mobile number';
+  const fullPhone = () => countryCode.replace(/\D/g, '') + nationalDigits();
+
+  const [devBypassing, setDevBypassing] = useState(false);
 
   const requestOtp = async () => {
-    if (phone.trim().length < 10 || sending) return;
+    if (sending) return;
+    // Length guard FIRST: >10 (or <10) national digits warns and never
+    // sends — the typo can never reach OTP, let alone mint anything.
+    if (!isPhoneValid()) {
+      setError(phoneWarn());
+      return;
+    }
     setSending(true);
     setError('');
     try {
-      const res = await serverApi.sendOtp(fullPhone());
+      const full = fullPhone();
+      // Industry split: check the account BEFORE burning an OTP. Unknown
+      // number → signup flow with the number prefilled (no OTP sent here,
+      // nothing minted). Known → OTP boxes as usual.
+      try {
+        const check = await serverApi.checkPhone(full);
+        if (check.ok && check.data && !check.data.exists) {
+          router.push({ pathname: '/(onboarding)/otp', params: { phone: nationalDigits(), cc: countryCode } });
+          return;
+        }
+        // Check unreachable/throttled → fail OPEN to send-OTP: verify still
+        // guards creation (404 needsSignup), so this never mints ghosts.
+      } catch {
+        // Probe threw (shouldn't — request() catches) → same fail-open.
+      }
+      const res = await serverApi.sendOtp(full);
       if (res.ok) {
         setCode(Array(OTP_LENGTH).fill(''));
         setResendIn(45); // match server RESEND_COOLDOWN_MS (45s)
         setOtpSent(true);
         // Dev-mode convenience: the SERVER decides whether a hint may be
-        // shown (AUTH_DEV_MODE). Production with an SMS provider sends none.
+        // shown (AUTH_DEV_MODE=1). Each request gets its own random code —
+        // the app displays exactly what the server returned for this phone.
         setDevHint(res.data?.devCode ? `Dev code: ${res.data.devCode}` : '');
       } else {
         setError(transportMessage(res.error, 'try again'));
@@ -86,11 +137,44 @@ export default function LoginScreen() {
     }
   };
 
+  // Dev bypass: send OTP + auto-verify in one tap (dev mode only)
+  const devBypassLogin = async () => {
+    if (devBypassing) return;
+    if (!isPhoneValid()) {
+      setError(phoneWarn());
+      return;
+    }
+    setDevBypassing(true);
+    setError('');
+    try {
+      const res = await serverApi.sendOtp(fullPhone());
+      if (res.ok && res.data?.devCode) {
+        const verifyRes = await serverLogin(fullPhone(), res.data.devCode);
+        if (verifyRes.ok) {
+          await completeOnboarding();
+          router.replace('/(tabs)/feed');
+        } else if (verifyRes.needsSignup) {
+          // Unknown number even in dev → signup flow, same as requestOtp.
+          router.push({ pathname: '/(onboarding)/otp', params: { phone: nationalDigits(), cc: countryCode } });
+        } else {
+          setError(transportMessage(verifyRes.error, 'Dev bypass failed'));
+        }
+      } else {
+        setError('Dev bypass unavailable — no devCode returned');
+      }
+    } catch (e) {
+      setError('Dev bypass failed. Check connection.');
+    } finally {
+      setDevBypassing(false);
+    }
+  };
+
   const handleOtpChange = (text: string) => {
     const digits = text.replace(/\D/g, '').slice(0, OTP_LENGTH).split('');
     while (digits.length < OTP_LENGTH) digits.push('');
     setCode(digits);
     if (error) setError('');
+    if (needsSignup) setNeedsSignup(false);
     // Auto-submit once all 6 digits are entered (industry standard). Pass the
     // fresh digits explicitly — state is stale inside this handler, so the
     // 6th digit never auto-submitted (only the manual button worked).
@@ -109,13 +193,17 @@ export default function LoginScreen() {
     if (finalCode.length !== OTP_LENGTH || verifying) return;
     setVerifying(true);
     setError('');
+    setNeedsSignup(false);
     try {
+      // Sign-in only: no create flag, so an unknown/typo'd number gets 404
+      // needsSignup — never a silently minted ghost account.
       const res = await serverLogin(fullPhone(), finalCode);
       if (res.ok) {
         await completeOnboarding();
         router.replace('/(tabs)/feed');
       } else if (res.error) {
         setError(transportMessage(res.error, 'try again'));
+        if (res.needsSignup) setNeedsSignup(true);
       } else {
         Alert.alert('Sign-in unavailable', 'Sign-in is unavailable offline. Please try again once you are back online.');
       }
@@ -209,7 +297,7 @@ export default function LoginScreen() {
                         placeholderTextColor="rgba(70,69,85,0.4)"
                         keyboardType="phone-pad"
                         value={phone}
-                        onChangeText={(t) => { setPhone(t); if (error) setError(''); }}
+                        onChangeText={(t) => { setPhone(t); if (error) setError(''); if (needsSignup) setNeedsSignup(false); }}
                       />
                     </View>
                   </View>
@@ -220,11 +308,11 @@ export default function LoginScreen() {
                   ) : null}
                   <TouchableOpacity
                     className="w-full h-14 items-center justify-center rounded-figma-16 mb-2"
-                    style={{ backgroundColor: phone.trim().length >= 10 && !sending ? colors.primary : 'rgba(93,95,239,0.2)' }}
+                    style={{ backgroundColor: isPhoneValid() && !sending ? colors.primary : 'rgba(93,95,239,0.2)' }}
                     onPress={requestOtp}
                     disabled={sending}
                   >
-                    <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: !sending ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}>
+                    <Text className="font-inter-600" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: isPhoneValid() && !sending ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}>
                       {sending ? 'Sending...' : 'Send code'}
                     </Text>
                   </TouchableOpacity>
@@ -249,6 +337,13 @@ export default function LoginScreen() {
                     <Text className="font-inter-500 mb-3" style={{ fontSize: 13, lineHeight: 18, color: colors.error }}>
                       {error}
                     </Text>
+                  ) : null}
+                  {needsSignup ? (
+                    <TouchableOpacity className="mb-3 items-center" onPress={() => router.replace('/(onboarding)/auth')}>
+                      <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 18, color: colors.primary }}>
+                        No account yet? Create one
+                      </Text>
+                    </TouchableOpacity>
                   ) : null}
                   <View className="flex-row mb-5" style={{ gap: 8 }}>
                     {code.map((d, i) => (
@@ -290,6 +385,17 @@ export default function LoginScreen() {
                   <TouchableOpacity disabled={resendIn > 0} onPress={requestOtp} className="items-center">
                     <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 18, color: resendIn > 0 ? colors.textSecondary : colors.primary }}>
                       {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                    </Text>
+                  </TouchableOpacity>
+                  {/* Dev bypass: one-tap login (always visible for testing) */}
+                  <TouchableOpacity
+                    className="w-full h-12 items-center justify-center rounded-figma-16 mt-4"
+                    style={{ backgroundColor: 'rgba(34,197,94,0.15)' }}
+                    onPress={devBypassLogin}
+                    disabled={!isPhoneValid() || devBypassing}
+                  >
+                    <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: '#22c55e' }}>
+                      {devBypassing ? 'Logging in...' : 'Dev: Login instantly'}
                     </Text>
                   </TouchableOpacity>
                 </>

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatTile } from "@/components/shared/stat-tile";
 import { useDbResource } from "@/hooks/use-db-resource";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import type { Transaction, LedgerEntry } from "@/types";
+import type { Transaction, LedgerEntry, WithdrawalRequest, RefundRequest } from "@/types";
 
 const tColumn = createColumnHelper<Transaction>();
 
@@ -18,7 +18,7 @@ const tColumns = [
   tColumn.accessor("userName", { header: "User" }),
   tColumn.accessor("type", {
     header: "Type",
-    cell: (info) => <Badge variant={info.getValue() === "withdrawal" ? "warning" : "info"} className="capitalize">{info.getValue()}</Badge>,
+    cell: (info) => <Badge variant={info.getValue() === "withdrawal" ? "warning" : info.getValue() === "refund" ? "danger" : info.getValue() === "settlement" ? "success" : "info"} className="capitalize">{info.getValue()}</Badge>,
   }),
   tColumn.accessor("amount", { header: "Amount", cell: (info) => <span className="font-medium tabular-nums">{formatCurrency(info.getValue())}</span> }),
   tColumn.accessor("status", {
@@ -51,15 +51,21 @@ const lColumns = [
 ];
 
 export default function WalletPage() {
-  const { data: txns, loading: txnsLoading } = useDbResource<Transaction>("transactions", { take: 500 });
-  const { data: ledger, loading: ledgerLoading } = useDbResource<LedgerEntry>("ledger", { take: 500 });
+  const { data: txns, total: txnsTotal, loading: txnsLoading } = useDbResource<Transaction>("transactions", { take: 100 });
+  const { data: ledger, total: ledgerTotal, loading: ledgerLoading } = useDbResource<LedgerEntry>("ledger", { take: 100 });
+  // Pending money lives in the decision queues (the transactions projection
+  // is settled-only, status success) — requested withdrawals + refunds.
+  const { data: pendingWd } = useDbResource<WithdrawalRequest>("withdrawals", { status: "requested", take: 100 });
+  const { data: pendingRf } = useDbResource<RefundRequest>("refunds", { status: "requested", take: 100 });
 
   const totals = useMemo(() => {
     const inTotal = (ledger ?? []).filter((l) => l.direction === "in").reduce((s, l) => s + l.amount, 0);
     const outTotal = (ledger ?? []).filter((l) => l.direction === "out").reduce((s, l) => s + l.amount, 0);
-    const pending = (txns ?? []).filter((t) => t.status === "pending").reduce((s, t) => s + t.amount, 0);
+    const pending =
+      (pendingWd ?? []).reduce((s, w) => s + Math.max(0, Number(w.amount) || 0), 0) +
+      (pendingRf ?? []).reduce((s, r) => s + Math.max(0, Number(r.amount) || 0), 0);
     return { inTotal, outTotal, net: inTotal - outTotal, pending };
-  }, [ledger, txns]);
+  }, [ledger, pendingWd, pendingRf]);
 
   return (
     <div className="space-y-6">
@@ -69,10 +75,10 @@ export default function WalletPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Credits (in)" value={formatCurrency(totals.inTotal)} tone="green" />
-        <StatTile label="Debits (out)" value={formatCurrency(totals.outTotal)} tone="red" />
-        <StatTile label="Net balance" value={formatCurrency(totals.net)} tone={totals.net >= 0 ? "default" : "red"} />
-        <StatTile label="Pending" value={formatCurrency(totals.pending)} tone="amber" />
+        <StatTile label={`Credits (in)${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.inTotal)} tone="green" />
+        <StatTile label={`Debits (out)${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.outTotal)} tone="red" />
+        <StatTile label={`Net balance${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.net)} tone={totals.net >= 0 ? "default" : "red"} />
+        <StatTile label="Pending (requested payouts + refunds)" value={formatCurrency(totals.pending)} tone="amber" />
       </div>
 
       <Tabs
@@ -91,7 +97,8 @@ export default function WalletPage() {
                 <CardContent>
                   <DataTable
                     columns={tColumns}
-                    data={(txns ?? []).filter((t) => t.type === "withdrawal" || t.type === "settlement")}
+                    data={txns ?? []}
+                    totalCount={txnsTotal ?? (txns ?? []).length}
                     loading={txnsLoading}
                     searchable
                     searchKey="userName"
@@ -118,6 +125,7 @@ export default function WalletPage() {
                   <DataTable
                     columns={lColumns}
                     data={ledger ?? []}
+                    totalCount={ledgerTotal ?? (ledger ?? []).length}
                     loading={ledgerLoading}
                     searchable
                     searchKey="partyName"

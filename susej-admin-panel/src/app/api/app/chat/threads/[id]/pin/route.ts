@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // Only sellers can purchase pinned-chat VAS - buyers never see the feature.
   if (!auth.user.isSeller) return NextResponse.json({ error: "Only sellers can pin chats" }, { status: 403 });
 
-  let body: { days?: number };
+  let body: { days?: number; ref?: string };
   try {
     body = await req.json();
   } catch {
@@ -48,11 +48,28 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const row: any = await prisma.appSetting.findUnique({ where: { key: "promoPrices" } });
     const overrides = row?.value as Record<string, unknown> | null;
     const raw = overrides?.chatPin;
-    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) pinPrice = Math.round(raw);
+    // Upper clamp: an admin typo (extra zero) must never drain a wallet —
+    // pins are micro-purchases, capped like the payout fee.
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) pinPrice = Math.min(1000, Math.round(raw));
   } catch {}
   // Allow 0-price pins in dev/test; otherwise enforce wallet debit.
   if (pinPrice > 0) {
-    const priceTitle = `Chat Pin · ${days} days · ${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
+    const rawRef = String(body?.ref ?? "").trim().slice(0, 64);
+    const hasRef = /^[A-Za-z0-9_-]{8,64}$/.test(rawRef);
+    const priceTitle = hasRef
+      ? `Chat Pin · ${days}d · ${rawRef}`
+      : `Chat Pin · ${days} days · ${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
+    // Idempotent retry: the same ref returns the live pin without re-debiting.
+    if (hasRef) {
+      const dup = await prisma.walletTransaction.findFirst({
+        where: { username, title: priceTitle },
+        select: { title: true },
+      });
+      if (dup) {
+        const cur = await prisma.chatThread.findUnique({ where: { id: thread.id }, select: { pinnedUntil: true } });
+        return NextResponse.json({ pinnedUntil: cur?.pinnedUntil?.getTime() ?? Date.now() + days * 864e5, days, charged: 0, deduped: true }, { status: 200 });
+      }
+    }
     let debited: Date | null = null;
     try {
       debited = await prisma.$transaction(async (tx) => {
@@ -76,6 +93,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.startsWith("LIMIT:")) return NextResponse.json({ error: `Pinned-chat limit reached (${MAX_CONCURRENT_PINS}). Wait for one to expire or unpurchase.` }, { status: 403 });
       if (msg === "BALANCE") return NextResponse.json({ error: "Insufficient wallet balance" }, { status: 400 });
+      // Concurrent retry already committed (UNIQUE username+title): report the winner.
+      if ((e as { code?: string })?.code === "P2002") {
+        const cur = await prisma.chatThread.findUnique({ where: { id: thread.id }, select: { pinnedUntil: true } });
+        return NextResponse.json({ pinnedUntil: cur?.pinnedUntil?.getTime() ?? Date.now() + days * 864e5, days, charged: 0, deduped: true }, { status: 200 });
+      }
       throw e;
     }
     if (!debited) return NextResponse.json({ error: "Insufficient wallet balance" }, { status: 400 });

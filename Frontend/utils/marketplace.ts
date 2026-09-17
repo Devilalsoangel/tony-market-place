@@ -155,13 +155,15 @@ export function getCommissionRate(): number {
 /** Seller net for delivered orders: sums the SETTLED per-line legs the server
  *  persisted at placement (netPrice + commission per line, category-aware).
  *  Falls back to base-rate math only for legacy rows predating settled legs.
- *  SINGLE definition: every seller surface (hub, dashboard, seller-orders,
- *  wallet) must use this — three hardcoded variants previously disagreed on
- *  identical orders, and a re-derived flat rate disagreed with the server
- *  whenever admin category overrides exist. */
+ *  Refunded rows are EXCLUDED (clawed back — never earnings, exactly like the
+ *  server payout guard). SINGLE definition: every seller surface (hub,
+ *  dashboard, seller-orders, wallet) must use this — three hardcoded variants
+ *  previously disagreed on identical orders, and a re-derived flat rate
+ *  disagreed with the server whenever admin category overrides exist. */
 export function sellerNetForOrders(
   orders: {
     status: string;
+    paymentStatus?: string;
     items: {
       price: number;
       quantity: number;
@@ -172,7 +174,7 @@ export function sellerNetForOrders(
 ): number {
   const rate = getCommissionRate();
   return orders
-    .filter((o) => o.status === 'delivered')
+    .filter((o) => o.status === 'delivered' && o.paymentStatus !== 'refunded')
     .reduce((sum, o) => {
       const net = o.items.reduce((t, i) => {
         const qty = Math.max(1, Math.round(Number(i.quantity ?? 1)));
@@ -184,6 +186,22 @@ export function sellerNetForOrders(
       }, 0);
       return sum + Math.max(0, Math.round(net));
     }, 0);
+}
+
+/** Seller goods basis for delivered orders (pre-commission merchandise,
+ *  price×qty per line). Single definition with sellerNetForOrders: the wallet
+ *  used to re-filter/re-sum inline, so the next status-vocab or freeze-rule
+ *  change had to land in two places. Refunded rows excluded, same as net. */
+export function sellerGoodsForOrders(
+  orders: {
+    status: string;
+    paymentStatus?: string;
+    items: { price: number; quantity: number }[];
+  }[]
+): number {
+  return orders
+    .filter((o) => o.status === 'delivered' && o.paymentStatus !== 'refunded')
+    .reduce((s, o) => s + o.items.reduce((t, i) => t + i.price * i.quantity, 0), 0);
 }
 
 export function getListingFee(): number {

@@ -1,0 +1,126 @@
+[1] Logging in...
+[2] At 2FA - filling code...
+    OTP boxes: 6
+    Code filled
+    Clicked Verify
+[3] Auth expired - retrying...
+Final URL: https://susej-admin-panel.vercel.app/dashboard
+Screenshot saved
+{
+  "url": "https://susej-admin-panel.vercel.app/dashboard",
+  "navLinks": [
+    {
+      "text": "Dashboard",
+      "href": "https://susej-admin-panel.vercel.app/dashboard"
+    },
+    {
+      "text": "Home Management",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/home-management"
+    },
+    {
+      "text": "Products",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/products"
+    },
+    {
+      "text": "Categories",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/categories"
+    },
+    {
+      "text": "Orders",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/orders"
+    },
+    {
+      "text": "Auctions",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/auctions"
+    },
+    {
+      "text": "Bundles",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/bundles"
+    },
+    {
+      "text": "Food Hub",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/food-hub"
+    },
+    {
+      "text": "Bookings & Services",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/bookings"
+    },
+    {
+      "text": "Offers & Coupons",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/offers"
+    },
+    {
+      "text": "Shipping",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/shipping"
+    },
+    {
+      "text": "Users",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/users"
+    },
+    {
+      "text": "Seller Verification",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/sellers"
+    },
+    {
+      "text": "Blocked & Banned",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/blocked"
+    },
+    {
+      "text": "Address Book",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/address-book"
+    },
+    {
+      "text": "Payments",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/payments"
+    },
+    {
+      "text": "Promotions & Ads",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/promotions"
+    },
+    {
+      "text": "Commission & Fees",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/commission"
+    },
+    {
+      "text": "Wallet",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/wallet"
+    },
+    {
+      "text": "Refunds",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/refunds"
+    },
+    {
+      "text": "Disputes",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/disputes"
+    },
+    {
+      "text": "Loyalty & Referrals",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/loyalty"
+    },
+    {
+      "text": "Payment Methods",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/payment-methods"
+    },
+    {
+      "text": "View all →",
+      "href": "https://susej-admin-panel.vercel.app/dashboard/orders"
+    },
+    {
+      "text": "Privacy Policy",
+      "href": "https://susej-admin-panel.vercel.app/dashboard#"
+    },
+    {
+      "text": "Terms of Service",
+      "href": "https://susej-admin-panel.vercel.app/dashboard#"
+    }
+  ],
+  "headings": [
+    "Overview",
+    "Revenue",
+    "Latest orders",
+    "User & seller growth",
+    "Top categories",
+    "Recent activity"
+  ],
+  "bodyText": "S\nSUSEJ\n\nOVERVIEW\n\nDashboard\nHome Management\nCOMMERCE\nProducts\nCategories\nOrders\nAuctions\nBundles\nFood Hub\nBookings & Services\nOffers & Coupons\nShipping\nPEOPLE\nUsers\nSeller Verification\nBlocked & Banned\nAddress Book\nSOCIAL & CONTENT\nFINANCE\nPayments\nPromotions & Ads\nCommission & Fees\nWallet\nRefunds\nDisputes\nLoyalty & Referrals\nPayment Methods\nOPERATIONS & SUPPORT\nANALYTICS\nSYSTEM\nLogout\nAdmin Panel\nSearch\n⌘K\nAR\nOverview\n\nKey metrics and recent activity across SUSEJ.\n\nTuesday, 8 September 2026\n\nNet Revenue\n\n₹0.00\n\nGross ₹0.00 · refunds ₹0.00\n\nTotal Users\n\n10\n\nOrders Today\n\n0\n\nOpen Support Tickets\n\n0\n\nRevenue\nLatest orders\nView all →\n\nNo orders yet.\n\nUser & seller growth\nSellersUsers\nSep 26\n0\n3\n6\n9\n12\nTop categories\nRecent activity\n\nSigned in (2FA)\n\nalexrivera — Today\n\nPassword verified, awaiting 2FA code\n\nalexrivera — Today\n\nPassword verified, awaiting 2FA code\n\nalexrivera — Today\n\nSigned in (2FA)\n\nalexrivera — Today\n\nPassword verified, awaiting 2FA code\n\nalexrivera — Today\n\nSigned in (2FA)\n\nalexrivera — Today\n\n© 2026 SUSEJ. All rights reserved.\nPrivacy Policy\nTerms of Service\n0"
+}

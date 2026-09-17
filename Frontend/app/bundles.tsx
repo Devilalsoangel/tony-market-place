@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon } from '../utils/icons';
@@ -95,11 +95,11 @@ export default function BundlesScreen() {
           })
           .filter((u): u is string => !!u);
         while (thumbs.length < Math.min(3, Math.max(items.length, 1))) thumbs.push('');
-        const originalPrice = b.discount > 0 ? Math.round(Number(b.price) / (1 - Number(b.discount) / 100)) : Number(b.price);
+        const originalPrice = b.discount > 0 && b.discount < 100 ? Math.round(Number(b.price) / (1 - Number(b.discount) / 100)) : Number(b.price);
         return {
           id: b.id,
           title: b.title,
-          tagline: `${b.sellerName} · ${b.discount}% off combo`,
+          tagline: `${b.sellerName ?? 'Combo'} · ${b.discount}% off combo`,
           originalPrice,
           bundlePrice: Number(b.price),
           thumbnails: thumbs.slice(0, 3).map((u, i) => (u || `__listing_${items[i]?.listingId ?? b.id}_${i}`)),
@@ -109,19 +109,58 @@ export default function BundlesScreen() {
     [serverBundles, postById]
   );
 
-  const addBundle = (bundle: Bundle) => {
-    const n = bundle.items.length;
+  const addBundle = async (bundle: Bundle) => {
+    // Resolve owners for listings missing from the local cache (cached first,
+    // server per missing id): '' sellerUsernames sail past the single-seller
+    // guard and die as server 400s. Unresolvable stays out with an explanation.
+    const missing = [...new Set(bundle.items.filter((i) => !i.sellerUsername).map((i) => i.listingId))];
+    const resolved = new Map<string, string>();
+    await Promise.all(
+      missing.map(async (lid) => {
+        try {
+          const res = await serverApi.getPost(lid);
+          const p = (res.data as { post?: { authorUsername?: unknown; sellerUsername?: unknown } } | null)?.post;
+          const owner = String(p?.authorUsername ?? p?.sellerUsername ?? '');
+          if (res.ok && owner) resolved.set(lid, owner);
+        } catch {}
+      })
+    );
+    const items = bundle.items.map((i) => ({ ...i, sellerUsername: i.sellerUsername || resolved.get(i.listingId) || '' }));
+    const unknown = items.filter((i) => !i.sellerUsername);
+    if (unknown.length > 0) {
+      Alert.alert('Seller unavailable', 'One item in this combo could not be linked to its seller. Check your connection and try again.');
+      return;
+    }
+    // Atomicity pre-check: every line must belong to ONE seller BEFORE the
+    // first addToCart — otherwise a cross-seller row leaves a partial combo
+    // (split pricing for n items, only k landed) with no undo.
+    const owners = [...new Set(items.map((i) => i.sellerUsername.toLowerCase()))];
+    if (owners.length > 1) {
+      Alert.alert('Combo unavailable', 'The items in this combo belong to different sellers. This bundle needs a fix — try another one.');
+      return;
+    }
+    const n = items.length;
     const share = n > 0 ? Math.floor(bundle.bundlePrice / n) : 0;
-    bundle.items.forEach((item, i) => {
-      addToCart({
+    let rejected = false;
+    items.forEach((item, i) => {
+      const ok = addToCart({
         listingId: item.listingId,
         type: 'product',
         name: item.name,
         price: i === 0 ? bundle.bundlePrice - share * (n - 1) : share,
         seller: item.seller,
         sellerUsername: item.sellerUsername,
+        // Bundle membership rides to the server, which re-prices from the
+        // Bundle row — the split here is the buyer's preview, never the charge.
+        bundleId: bundle.id,
       });
+      if (!ok) rejected = true;
     });
+    // Single-seller guard surfaced (never a silent no-op + blind navigate).
+    if (rejected) {
+      Alert.alert('Different seller', 'Your cart has items from another seller. Checkout or clear it first to add this combo.');
+      return;
+    }
     router.push('/cart');
   };
 

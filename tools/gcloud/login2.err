@@ -1,0 +1,6 @@
+open failed: browserType.connectOverCDP: Timeout 20000ms exceeded.
+Call log:
+[2m  - <ws preparing> retrieving websocket url from http://127.0.0.1:9222[22m
+[2m  - <ws connecting> ws://127.0.0.1:9222/devtools/browser/c2fce73d-591c-47ec-a831-75a176220e9e[22m
+[2m  - <ws connected> ws://127.0.0.1:9222/devtools/browser/c2fce73d-591c-47ec-a831-75a176220e9e[22m
+

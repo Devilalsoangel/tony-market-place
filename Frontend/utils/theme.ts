@@ -566,9 +566,11 @@ export const getCategoryColor = (category: string): string => {
 
 // ─── HELPER: FORMAT PRICE ───────────────────────────────────
 export const formatPrice = (price: number): string => {
-  if (price >= 100000) return `₹${(price / 100000).toFixed(1)}L`;
-  if (price >= 1000) return `₹${price.toLocaleString('en-IN')}`;
-  return `₹${price}`;
+  if (!Number.isFinite(price) || price < 0) return '₹0';
+  const rounded = Math.round(price);
+  if (rounded >= 100000) return `₹${(rounded / 100000).toFixed(1)}L`;
+  if (rounded >= 1000) return `₹${rounded.toLocaleString('en-IN')}`;
+  return `₹${rounded}`;
 };
 
 // ─── HELPER: FORMAT COUNT ───────────────────────────────────

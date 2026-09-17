@@ -127,9 +127,12 @@ export default function CreateScreen() {
   const [price, setPrice] = useState('');
   // Optional was-price (MRP): enables strikethrough + % off + price-drop alerts.
   const [mrp, setMrp] = useState('');
+  // Simple quantity (stock) for non-variant listings. Empty = single unique
+  // item (OLX pattern, defaults to 1 at publish); variants carry per-value
+  // stock instead and ignore this field.
+  const [quantity, setQuantity] = useState('');
   const [negotiable, setNegotiable] = useState(false);
   const [delivery, setDelivery] = useState<DeliveryKey | null>(null);
-  const [shippingFee, setShippingFee] = useState('');
   const [city, setCity] = useState('');
   // Optional per-listing SELLING spot on the live map (separate from the
   // seller's mandatory store location). Prefilled from the store pick so the
@@ -352,7 +355,17 @@ export default function CreateScreen() {
         .map((k) => [k, extra[k]])
     );
     const localUris = selectedImages.filter((s): s is string => typeof s === 'string');
-    const feeNum = shippingFee.trim() ? Math.max(0, Math.min(100000, Math.floor(Number(shippingFee)))) : undefined;
+    // NOTE: the platform delivery fee (flat, server-authoritative) is charged
+    // at checkout — the wizard no longer asks sellers for a figure that never
+    // charges (bait). Mode + area still travel.
+    // Simple-quantity stock: explicit number when typed (0..100000, 0 = out
+    // of stock); when the listing has no variants and no quantity typed,
+    // default to 1 (single unique item — OLX pattern) so scarcity/inventory
+    // is never dead on arrival. An explicit 0 is honored, never coerced to 1.
+    const qtyNum = quantity.trim() ? Math.max(0, Math.min(100000, Math.floor(Number(quantity)))) : NaN;
+    const stockNum = cleanVariants.length > 0
+      ? undefined
+      : Number.isFinite(qtyNum) ? qtyNum : 1;
     // Upload FIRST (industry standard: DB stores hosted http(s) URLs only —
     // the server now rejects file://, content:// and data: references, which
     // previously leaked into the feed as broken images on every other device).
@@ -365,6 +378,7 @@ export default function CreateScreen() {
       return;
     }
     addPost({
+      title: title.trim().slice(0, 80),
       sellerName: user?.businessName || user?.name || 'My Store',
       sellerUsername: user?.username || 'user',
       sellerLocation: city.trim() ? `${city.trim()}, India` : (user?.location || 'India'),
@@ -379,13 +393,13 @@ export default function CreateScreen() {
       image: hostedImages[0] || undefined,
       images: hostedImages.length > 1 ? hostedImages : undefined,
       variants: cleanVariants.length > 0 ? cleanVariants : undefined,
+      stockLeft: stockNum,
       // Fulfillment data the wizard collects — previously dropped before the
       // order (buyer never saw condition, delivery mode, or shipping fee).
       condition: condition || undefined,
       negotiable,
       delivery: delivery !== null,
       deliveryMode: delivery ?? undefined,
-      shippingFee: delivery === 'shipping' && feeNum !== undefined && Number.isFinite(feeNum) ? feeNum : undefined,
       ...extraPayload,
       ...(sellLoc && sellLoc.label && sellLoc.label !== 'Resolving address…'
         ? { listingLat: sellLoc.lat, listingLng: sellLoc.lng, listingLocation: sellLoc.label }
@@ -825,6 +839,20 @@ export default function CreateScreen() {
                   )}
                 </View>
               )}
+              <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginTop: 16, marginBottom: 8 }}>
+                Quantity in stock (optional — defaults to 1)
+              </Text>
+              <View className="bg-surfaceContainerLow rounded-figma-16 px-5 py-4 flex-row items-center">
+                <TextInput
+                  className="flex-1"
+                  style={{ fontSize: 18, lineHeight: 24, fontWeight: '700', color: colors.textPrimary, fontFamily: 'Inter' }}
+                  placeholder="e.g. 10 (leave empty for a single item)"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="numeric"
+                  value={quantity}
+                  onChangeText={(t) => setQuantity(t.replace(/[^0-9]/g, '').slice(0, 6))}
+                />
+              </View>
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => setNegotiable(!negotiable)}
@@ -1021,18 +1049,13 @@ export default function CreateScreen() {
               </View>
               {delivery === 'shipping' && (
                 <View style={{ marginTop: 16 }}>
-                  <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                    Shipping fee (₹)
+                  {/* The buyer is charged the PLATFORM delivery fee at checkout
+                      (flat per order, server-authoritative) — a seller-typed
+                      figure here never charges, so asking for one baits both
+                      sides. Mode is kept; the fee input is retired. */}
+                  <Text style={{ fontSize: 13, lineHeight: 18, fontWeight: '400', color: colors.textSecondary }}>
+                    Buyers pay the platform delivery fee at checkout. You don't need to set shipping — the seller's dispatch is covered by the order.
                   </Text>
-                  <TextInput
-                    className="bg-surfaceContainerLow rounded-figma-16 px-4 py-3"
-                    style={{ fontSize: 14, color: colors.textPrimary, fontFamily: 'Inter' }}
-                    placeholder="e.g. 99"
-                    placeholderTextColor={colors.textTertiary}
-                    keyboardType="numeric"
-                    value={shippingFee}
-                    onChangeText={(t) => setShippingFee(t.replace(/[^0-9]/g, ''))}
-                  />
                 </View>
               )}
             </View>
@@ -1185,7 +1208,6 @@ export default function CreateScreen() {
                       <View className="px-3 py-1 rounded-full" style={{ backgroundColor: colors.surfaceContainerLow }}>
                         <Text style={{ fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.textPrimary }}>
                           {DELIVERY_OPTIONS.find((d) => d.key === delivery)?.label}
-                          {delivery === 'shipping' && shippingFee ? ` · ₹${shippingFee}` : ''}
                         </Text>
                       </View>
                     )}

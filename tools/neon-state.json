@@ -1,0 +1,26 @@
+{
+  "url": "https://console.neon.tech/app/org-long-sea-58955915/projects",
+  "title": "Neon Console",
+  "bodyText": "/\nAntony ff\nFree\nSearch...\nCtrlK\n\nAll OK\nAsk AI\nUpgrade\nORGANIZATION\nProjects\nPeople\nBilling\nIntegrations\nSettings\nOnboard your agent\nInstall Neon skills to give your agent safe access to your Neon projects\nCopy command\nFeedback\nCollapse menu\nAntony ff's projects\nNew project\nImport data\nCompute\n0.04\nCU-hrs\nStorage\n0.11\nGB\nHistory\n0\nGB\nNetwork transfer\n0\nGB\nUsage since Sep 1, 2026. Metrics may be delayed by an hour and are not updated for inactive projects. Learn more.\n3 Projects\nName\n\t\nRegion\n\t\nCreated at\n\t\nStorage\n\t\nCompute last active at\n\t\nBranches\n\t\nIntegrations\n\t\n\n\nsusej-team\n\tAWS Asia Pacific 1 (Singapore)\t10 hours ago\t\n34.33 MB\n\t9 hours ago\t\n\t\nAdd\n\t\n\n\nproject1\n\tAWS Asia Pacific 1 (Singapore)\t2 months ago\t\n41.89 MB\n\t2 months ago\t\n\t\nAdd\n\t\n\n\ncreator-auto-poster\n\tAWS Asia Pacific 1 (Singapore)\t10 months ago\t\n53.24 MB\n\t10 months ago\t\n\t\nAdd\n\t\nPasswordless connect with psql:\n$psql -h pg.neon.tech\nNeon AI Assistant",
+  "buttonsNew": [
+    "",
+    "Antony ffFree",
+    "",
+    "Search...CtrlK",
+    "All OK",
+    "Ask AI",
+    "",
+    "Upgrade",
+    "",
+    "Projects",
+    "People",
+    "Billing"
+  ],
+  "inputs": [
+    {
+      "ph": "Search...",
+      "type": "text",
+      "val": ""
+    }
+  ]
+}

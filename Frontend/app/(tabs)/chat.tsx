@@ -9,7 +9,7 @@ import Svg, { Path } from 'react-native-svg';
 import { SearchIcon, ChevronLeftIcon, ChevronRightIcon, SendIcon } from '../../utils/icons';
 import { colors, formatCount, formatPrice } from '../../utils/theme';
 import { useCommunities } from '../../contexts/CommunityContext';
-import { useOrders } from '../../contexts/OrderContext';
+
 import { useAuth } from '../../contexts/AuthContext';
 import { serverApi } from '../../utils/serverApi';
 import { BROADCAST_CHANNELS } from '../broadcasts';
@@ -40,7 +40,7 @@ interface ChatItem {
 // No demo chats — every conversation in the list is a REAL server thread
 // shared between actual registered users (offline shows an honest empty state).
 
-type OfferStatus = 'pending' | 'accepted' | 'declined' | 'countered';
+type OfferStatus = 'pending' | 'accepted' | 'declined' | 'countered' | 'consumed';
 
 interface ThreadOffer {
   amount: number;
@@ -78,6 +78,9 @@ const OFFER_STATUS_META: Record<OfferStatus, { label: string; bg: string; color:
   pending: { label: 'Pending', bg: colors.primaryFixed, color: colors.onPrimaryFixedVariant },
   countered: { label: 'Countered', bg: colors.tertiaryFixed, color: colors.onTertiaryFixedVariant },
   accepted: { label: 'Accepted', bg: colors.successBg, color: colors.success },
+  // Consumed = accepted deal already converted to an order (single-use).
+  // Displays as Accepted; never returns to Pending.
+  consumed: { label: 'Accepted', bg: colors.successBg, color: colors.success },
   declined: { label: 'Declined', bg: colors.errorContainer, color: colors.onErrorContainer },
 };
 
@@ -103,7 +106,7 @@ function mapServerMessage(m: any, myUsername?: string): ThreadMessage {
           amount: o.amount,
           productName: String(o.productName ?? 'Item'),
           productId: String(o.productId ?? ''),
-          status: (st === 'accepted' || st === 'declined' || st === 'countered' ? st : 'pending') as OfferStatus,
+          status: (st === 'accepted' || st === 'consumed' || st === 'declined' || st === 'countered' ? st : 'pending') as OfferStatus,
         }
       : undefined;
   return {
@@ -114,17 +117,6 @@ function mapServerMessage(m: any, myUsername?: string): ThreadMessage {
     status: (m.status === 'seen' ? 'seen' : m.status === 'delivered' ? 'delivered' : 'sent') as ThreadMessage['status'],
     ...(offer ? { offer } : {}),
   };
-}
-
-function MicIcon({ size = 18, color = colors.primary }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        fill={color}
-        d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-2z"
-      />
-    </Svg>
-  );
 }
 
 function BlockIcon({ size = 18, color = colors.textSecondary }: { size?: number; color?: string }) {
@@ -186,7 +178,6 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { user, tokenSeq } = useAuth();
   const { communities, joinedCommunities } = useCommunities();
-  const { placeOrders } = useOrders();
   const [activeChat, setActiveChat] = useState<ChatItem | null>(null);
   // Immersive thread view: hide the bottom tab bar while a DM is open and
   // make Android hardware back close the thread instead of leaving the app.
@@ -208,6 +199,9 @@ export default function ChatScreen() {
   const [offerAmount, setOfferAmount] = useState('');
   const [countering, setCountering] = useState<ThreadMessage | null>(null);
   const [creatingOrder, setCreatingOrder] = useState(false);
+  // Double-tap guard: submitOffer is fire-and-forget, so a rapid second tap
+  // used to mint a duplicate offer (two cards, two server rows, two prices).
+  const [sendingOffer, setSendingOffer] = useState(false);
   const [offerProduct, setOfferProduct] = useState<string | undefined>(undefined);
   const [offerListingId, setOfferListingId] = useState<string | undefined>(undefined);
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
@@ -361,7 +355,10 @@ export default function ChatScreen() {
       return;
     }
     const username = activeChat.username;
-    Alert.alert(`Block ${activeChat.name}?`, "They won't be able to message you.", [
+    // Device-local hide (cross-device enforcement needs a server block list
+    // that doesn't exist yet — the copy must not promise it). Abuse still
+    // reaches the platform through Support → report the conversation there.
+    Alert.alert(`Block ${activeChat.name}?`, "Their messages will be hidden on this device. To stop them everywhere, report the chat via Support.", [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Block',
@@ -372,7 +369,7 @@ export default function ChatScreen() {
               ? prev
               : [...prev, { username, name: activeChat.name, at: Date.now() }]
           );
-          Alert.alert('User blocked');
+          Alert.alert('Blocked on this device', 'Their messages are hidden here. Report via Support to stop them everywhere.');
           setActiveChat(null);
         },
       },
@@ -399,8 +396,9 @@ export default function ChatScreen() {
           text: `Pay ${formatPrice(pinPrice)}`,
           onPress: async () => {
             const threadId = chat.serverThreadId!;
+            const ref = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
             try {
-              const res = await serverApi.pinThread(threadId, pinDays);
+              const res = await serverApi.pinThread(threadId, pinDays, ref);
               if (!res.ok || !res.data?.pinnedUntil) {
                 const msg = res.error === 'offline'
                   ? 'Could not reach the server — no money was charged.'
@@ -491,10 +489,18 @@ export default function ChatScreen() {
 
   // Deep link `to=<sellerUsername>`: focus an existing thread for that seller
   // or open a fresh enquiry thread (with optional prefilled `msg`).
+  const blockedAlertRef = useRef<string | null>(null);
   useEffect(() => {
     if (!rawTo || !blockedLoaded) return;
     const normalized = rawTo.toLowerCase();
-    if (blockedUsers.some((b) => b.username.toLowerCase() === normalized)) return;
+    if (blockedUsers.some((b) => b.username.toLowerCase() === normalized)) {
+      // Blocked target: say so (was a silent dead tap — no chat, no message).
+      if (blockedAlertRef.current !== normalized) {
+        blockedAlertRef.current = normalized;
+        Alert.alert('Blocked', 'You blocked this seller. Unblock them from Blocked Users to message again.');
+      }
+      return;
+    }
     const existing = allChats.find((c) => (c.username ?? '').toLowerCase() === normalized);
     if (existing?.serverThreadId) {
       // Real thread exists on the server — open it directly.
@@ -586,6 +592,22 @@ export default function ChatScreen() {
     );
   }, [rawTo, rawMsg, blockedLoaded, blockedUsers]);
 
+  // Late upgrade: a `to=` stub opened before threads loaded swaps to the real
+  // server thread once it arrives (createThread dedupes server-side, so this
+  // is a display upgrade, never a second thread).
+  useEffect(() => {
+    if (!rawTo || !activeChat || !activeChat.id.startsWith('seller_')) return;
+    const normalized = rawTo.toLowerCase();
+    const real = allChats.find(
+      (c) => (c.username ?? '').toLowerCase() === normalized && !!c.serverThreadId
+    );
+    if (real) {
+      setActiveChat({ ...real, hasUnread: false });
+      markChatRead(real.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawTo, serverChats]);
+
   const q = search.trim().toLowerCase();
   const blockedSet = new Set(blockedUsers.map((b) => b.username.toLowerCase()));
   const allChats = serverChats;
@@ -647,13 +669,27 @@ export default function ChatScreen() {
   const sendMessage = () => {
     const text = composer.trim();
     if (!text) return;
-    const id = String(Date.now());
+    // Unique echo id (timestamp + random): same-ms double-sends used to mint
+    // one id for two echoes, and the ack-swap then fused them into one row.
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     setThreadMessages((prev) => [...prev, { id, text, mine: true, status: 'sent' }]);
     setComposer('');
     // Real thread: persist to the server (fire-and-forget, offline falls back
     // to local only). No auto-replies — sent messages keep their sent status.
+    // Ack-swap: replace the echo with the server row so the next poll can't
+    // render the same text twice.
     if (activeChat?.serverThreadId) {
-      serverApi.sendMessage(activeChat.serverThreadId, text).catch(() => {});
+      const tid = activeChat.serverThreadId;
+      const who = user?.username;
+      serverApi
+        .sendMessage(tid, text)
+        .then((res) => {
+          const msg = (res as { ok?: boolean; data?: { message?: unknown } })?.data?.message;
+          if (res.ok && msg) {
+            setThreadMessages((prev) => prev.map((m) => (m.id === id ? { ...mapServerMessage(msg, who), mine: true } : m)));
+          }
+        })
+        .catch(() => {});
     } else if (activeChat?.username) {
       // No server thread yet (e.g. product-page enquiry before upgrade
       // completes): create it now so the message reaches the seller instead
@@ -665,31 +701,93 @@ export default function ChatScreen() {
           const threadId = res.ok ? (res.data?.thread?.id as string | undefined) : undefined;
           if (!threadId) return;
           setActiveChat((cur) => (cur ? { ...cur, id: threadId, serverThreadId: threadId } : cur));
-          return serverApi.sendMessage(threadId, text);
+          return serverApi.sendMessage(threadId, text).then((sent) => {
+            // Ack-swap like the main path (twin-kill) — the fallback path
+            // never swapped, so every pre-upgrade enquiry rendered twice.
+            const msg = (sent as { ok?: boolean; data?: { message?: unknown } })?.data?.message;
+            if ((sent as { ok?: boolean })?.ok && msg) {
+              const who = user?.username;
+              setThreadMessages((prev) => prev.map((m) => (m.id === id ? { ...mapServerMessage(msg, who), mine: true } : m)));
+            }
+          });
         })
         .catch(() => {});
     }
   };
 
-  const updateStatus = (id: string, status: 'delivered' | 'seen') => {
-    setThreadMessages((prev) => prev.map((m) => (m.id === id && m.mine ? { ...m, status } : m)));
-  };
-
   // Delivery receipts: local sends stay 'sent' until real server status arrives
   // via getMessages — no simulated delivered/seen timers and no canned
   // auto-replies. Incoming messages only ever come from the real other user.
-
-  const onMicPress = () => {
-    Alert.alert('Voice notes', 'Voice notes are coming soon.');
-  };
+  // NOTE: no voice-note button is rendered — the mic action is not wired, and
+  // a dead "coming soon" tap is a trust violation on a core chat surface.
+  // Live incoming path (WhatsApp/IG parity): poll the open thread every 6s so
+  // buyer and seller staring at an open thread see each other without a
+  // manual back-and-forth. Merges by id — server rows win; acked echoes are
+  // id-swapped at send time, and an unsynced offer_ echo is dropped once the
+  // server represents the same deal (same side + amount + listing).
+  useEffect(() => {
+    const threadId = activeChat?.serverThreadId;
+    if (!threadId) return;
+    let cancelled = false;
+    const pull = () => {
+      serverApi
+        .getMessages(threadId)
+        .then((res) => {
+          if (cancelled || !res.ok || !res.data?.messages) return;
+          const mine = user?.username;
+          setThreadMessages((prev) => {
+            const server = (res.data as { messages: unknown[] }).messages.map((m) =>
+              mapServerMessage(m, mine)
+            );
+            const serverIds = new Set(server.map((s) => s.id));
+            const localOnly = prev.filter((p) => {
+              // Fresh server row replaces any local with the same id (kills
+              // the ack-race twin where the poll beat the send ack).
+              if (serverIds.has(p.id)) return false;
+              if (p.id.startsWith('offer_') && p.offer) {
+                const represented = server.some(
+                  (s) => s.mine && s.offer && s.offer.amount === p.offer!.amount && s.offer.productId === p.offer!.productId
+                );
+                // Unsynced offer echoes stay (offline/composer state); synced
+                // ones drop — the server card renders instead. Never two cards.
+                return !represented;
+              }
+              // Unacked text echoes stay visible (the send may have failed
+              // silently); ack-swapped rows carry server ids and drop above.
+              if (p.mine && !p.system && !p.offer) return true;
+              return false;
+            });
+            const merged = [...server, ...localOnly];
+            if (
+              merged.length === prev.length &&
+              merged.every(
+                (m, i) =>
+                  m.id === prev[i]?.id &&
+                  m.status === prev[i]?.status &&
+                  m.text === prev[i]?.text &&
+                  (m.offer?.status ?? null) === (prev[i]?.offer?.status ?? null) &&
+                  (m.offer?.amount ?? null) === (prev[i]?.offer?.amount ?? null)
+              )
+            )
+              return prev;
+            return merged;
+          });
+        })
+        .catch(() => {});
+    };
+    const t = setInterval(pull, 6000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [activeChat?.serverThreadId, user?.username]);
 
   const productName = offerProduct ?? 'Product offer';
 
   const submitOffer = () => {
     const amount = Number(offerAmount);
     // Offers are anchored to a REAL listing — no product attached, no negotiation.
+    // Upper bound matches the server's order-placement clamp (absurd cards rejected).
     if (!offerProduct || !offerListingId) return;
-    if (!amount || amount <= 0 || creatingOrder) return;
+    if (!amount || amount <= 0 || amount > 10000000 || creatingOrder || sendingOffer) return;
+    setSendingOffer(true);
     const now = Date.now();
     const offer: ThreadOffer = {
       amount,
@@ -710,10 +808,29 @@ export default function ChatScreen() {
     // Sync the offer to the server so the OTHER side sees and can act on it
     // (OLX-style negotiation). Fire-and-forget: the local card already renders.
     // A counter both closes the old offer server-side AND posts the new terms.
+    // The in-flight guard releases when the send settles (or after 8s so an
+    // offline tap never wedges the composer).
     if (activeChat?.serverThreadId) {
       const tid = activeChat.serverThreadId;
-      if (countering?.id && !String(countering.id).startsWith('offer_')) {
-        void serverApi.updateOfferStatus(tid, String(countering.id), 'countered').catch(() => {});
+      const who = user?.username;
+      const echoId = `offer_${now}`;
+      const counteredId = countering?.id && !String(countering.id).startsWith('offer_') ? String(countering.id) : null;
+      if (counteredId) {
+        // Revert the optimistic 'countered' flip if the server refuses
+        // (already-decided/validation) — a false countered card on both sides
+        // is a negotiation lie. Guarded to still-countered rows: the 6s poll
+        // may have flipped it to accepted meanwhile, which must never be
+        // clobbered back to pending.
+        const revertCounter = () => {
+          setThreadMessages((prev) => prev.map((m) =>
+            m.id === counteredId && m.offer && m.offer.status === 'countered'
+              ? { ...m, offer: { ...m.offer, status: 'pending' as OfferStatus } }
+              : m
+          ));
+        };
+        void serverApi.updateOfferStatus(tid, counteredId, 'countered').then((res) => {
+          if (!res.ok) revertCounter();
+        }).catch(revertCounter);
       }
       void serverApi
         .sendMessage(
@@ -721,58 +838,142 @@ export default function ChatScreen() {
           `Offer ${amount} for ${productName}`,
           { amount, productId: offerListingId, productName }
         )
-        .catch(() => {});
+        .then((res) => {
+          // Ack-swap the echo for the server row (same twin-kill as texts).
+          const msg = (res as { ok?: boolean; data?: { message?: unknown } })?.data?.message;
+          if (res.ok && msg) {
+            setThreadMessages((prev) => prev.map((m) => (m.id === echoId ? { ...mapServerMessage(msg, who), mine: true } : m)));
+          }
+        })
+        .catch(() => {})
+        .finally(() => setSendingOffer(false));
+      setTimeout(() => setSendingOffer(false), 8000);
+    } else {
+      setSendingOffer(false);
     }
     setOfferMode(false);
     setCountering(null);
     setOfferAmount('');
   };
 
-  const handleAccept = (messageId: string, offer: ThreadOffer) => {
+  // Accepted offers NEVER mint orders here (BUYER-C1: the old code created a
+  // real order with no address, no payment method, no delivery fee, and a
+  // buyer-typed price — a 1-rupee offer became a real row). Accept locks the
+  // deal server-side; then the BUYER completes address + payment + fee in
+  // checkout, where the offer lock prices the order instead of the listing.
+  const handleAccept = async (messageId: string, offer: ThreadOffer) => {
     if (creatingOrder || !activeChat) return;
     if (!activeChat.username) {
-      Alert.alert('Cannot create order', 'Seller identity missing — reopen this chat from the product page.');
+      Alert.alert('Cannot accept offer', 'Seller identity missing — reopen this chat from the product page.');
       return;
     }
-    // Close the offer server-side first so it can't be double-accepted from
-    // another device (409 if already decided — still safe to order once).
-    if (activeChat.serverThreadId && !messageId.startsWith('offer_')) {
-      void serverApi.updateOfferStatus(activeChat.serverThreadId, messageId, 'accepted').catch(() => {});
+    // Local-only echoes and missing threads can't lock a deal server-side.
+    if (!activeChat.serverThreadId || messageId.startsWith('offer_')) {
+      Alert.alert('Still syncing', 'Wait for the offer to sync, then accept.');
+      return;
     }
+    if (!offer.productId || !Number.isFinite(offer.amount) || offer.amount <= 0) return;
     setCreatingOrder(true);
-    const created = placeOrders([
-      {
-        listingId: offer.productId,
-        type: 'product',
-        name: offer.productName,
-        price: offer.amount,
-        quantity: 1,
-        seller: activeChat.name,
-        sellerUsername: activeChat.username,
-      },
-    ]);
-    const order = created[0];
-    setThreadMessages((prev) => [
-      ...prev.map((m) =>
-        m.id === messageId && m.offer
-          ? { ...m, offer: { ...m.offer, status: 'accepted' as OfferStatus } }
-          : m
-      ),
-      {
+    try {
+      // Accept FIRST so the row can't be double-accepted from another device
+      // (409 already-decided / 400 self-accept fail closed with no order).
+      const acc = await serverApi
+        .updateOfferStatus(activeChat.serverThreadId, messageId, 'accepted')
+        .catch(() => null);
+      if (!acc || !acc.ok) {
+        Alert.alert('Offer unavailable', 'This offer was already decided or could not sync. Refresh the chat.');
+        return;
+      }
+      const markAccepted = (extra?: ThreadMessage) =>
+        setThreadMessages((prev) => [
+          ...prev.map((m) =>
+            m.id === messageId && m.offer
+              ? { ...m, offer: { ...m.offer, status: 'accepted' as OfferStatus } }
+              : m
+          ),
+          ...(extra ? [extra] : []),
+        ]);
+      // Role split: only the BUYER pays. The listing owner is the seller —
+      // resolved from the server post (offers carry no owner field). The post
+      // type also rides to checkout so service offers carry no delivery fee.
+      let owner: string | null = null;
+      let postType = '';
+      try {
+        const pr = await serverApi.getPost(offer.productId);
+        const p = (pr.data as { post?: { authorUsername?: unknown; sellerUsername?: unknown; type?: unknown } } | null)?.post;
+        owner = String((p as { authorUsername?: unknown } | null)?.authorUsername ?? (p as { sellerUsername?: unknown } | null)?.sellerUsername ?? '') || null;
+        postType = String((p as { type?: unknown } | null)?.type ?? '');
+      } catch {}
+      const me = user?.username ?? '';
+      if (owner && me && owner === me) {
+        // I'm the seller: deal struck, money moves when the BUYER pays.
+        markAccepted({
+          id: `deal_${Date.now()}`,
+          mine: true,
+          system: true,
+          text: `Deal accepted at ${formatPrice(offer.amount)} — waiting for buyer payment.`,
+        });
+        return;
+      }
+      // I'm the buyer — or fail CLOSED when the role is unresolvable. Routing
+      // an unverified identity into checkout turns a seller tapping Accept on
+      // their own listing (offline/corrupt post fetch) into a buyer payment
+      // for their own item; the server would 400 it only AFTER deep-linking
+      // the user into payment. Reconnect and retry instead.
+      if (!owner || !me) {
+        Alert.alert('Could not verify listing', 'Reconnect and retry — the seller could not be verified.');
+        return;
+      }
+      markAccepted({
         id: `deal_${Date.now()}`,
         mine: true,
         system: true,
-        text: `Deal accepted — order ${order.orderNumber} created`,
-      },
-    ]);
-    setCreatingOrder(false);
-    setTimeout(() => router.push(`/track-order?id=${order.id}`), 400);
+        text: `Deal accepted at ${formatPrice(offer.amount)} — complete payment to lock it in.`,
+      });
+      router.push({
+        pathname: '/checkout',
+        params: {
+          offerListing: offer.productId,
+          offerPrice: String(Math.round(offer.amount)),
+          offerName: offer.productName,
+          offerThread: activeChat.serverThreadId,
+          offerMsg: messageId,
+          offerSeller: activeChat.username,
+          offerSellerName: activeChat.name,
+          ...(postType === 'service' || postType === 'food_item' ? { offerType: postType } : {}),
+        },
+      });
+    } finally {
+      setCreatingOrder(false);
+    }
   };
 
   const handleDecline = (messageId: string) => {
     // Sync the decision so the other side's Offers badge clears everywhere.
-    if (activeChat?.serverThreadId && !messageId.startsWith('offer_')) {
-      void serverApi.updateOfferStatus(activeChat.serverThreadId, messageId, 'declined').catch(() => {});
+    // Revert on server refusal (already-decided/offline): a declined card the
+    // server rejected is a decision that never happened.
+    const synced = !!activeChat?.serverThreadId && !messageId.startsWith('offer_');
+    if (synced) {
+      const tid = activeChat!.serverThreadId!;
+      // Only mark locally after the server confirms (prevents false-decline
+      // twins); the 6s poll renders the flipped card everywhere anyway.
+      serverApi.updateOfferStatus(tid, messageId, 'declined').then((res) => {
+        if (res.ok) {
+          setThreadMessages((prev) => [
+            ...prev.map((m) =>
+              m.id === messageId && m.offer
+                ? { ...m, offer: { ...m.offer, status: 'declined' as OfferStatus } }
+                : m
+            ),
+            { id: `declined_${Date.now()}`, mine: true, system: true, text: 'Offer declined' },
+          ]);
+        } else {
+          Alert.alert('Could not decline', 'This offer was already decided or could not sync. Refresh the chat.');
+        }
+      }).catch(() => {
+        Alert.alert('Could not decline', 'Check your connection — the decision was not recorded.');
+      });
+      return;
     }
     setThreadMessages((prev) => [
       ...prev.map((m) =>
@@ -969,8 +1170,8 @@ export default function ChatScreen() {
               </View>
               <TouchableOpacity
                 className="ml-2 h-11 px-4 items-center justify-center rounded-figma-12"
-                style={{ backgroundColor: colors.primaryContainer, opacity: creatingOrder ? 0.5 : 1 }}
-                disabled={creatingOrder}
+                style={{ backgroundColor: colors.primaryContainer, opacity: creatingOrder || sendingOffer ? 0.5 : 1 }}
+                disabled={creatingOrder || sendingOffer}
                 onPress={submitOffer}
               >
                 <Text className="font-inter-600 text-white" style={{ fontSize: 13, lineHeight: 16 }}>
@@ -1012,13 +1213,6 @@ export default function ChatScreen() {
               <RupeeIcon size={20} color={offerMode ? colors.surfaceContainerLowest : colors.primary} />
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity
-            className="mr-3 w-11 h-11 items-center justify-center rounded-figma-full"
-            style={{ backgroundColor: colors.surfaceContainer }}
-            onPress={onMicPress}
-          >
-            <MicIcon size={18} color={colors.primary} />
-          </TouchableOpacity>
           <TextInput
             className="flex-1 h-11 px-4 font-inter-400 text-textPrimary"
             style={{ backgroundColor: colors.surfaceContainerLow, borderRadius: 22 }}
@@ -1126,11 +1320,11 @@ export default function ChatScreen() {
               </View>
             )}
             {tab === 'messages' && blockedCount > 0 && (
-              <View className="mt-2">
+              <TouchableOpacity className="mt-2 self-start" onPress={() => router.push('/blocked')}>
                 <Text className="font-inter-400" style={{ fontSize: 11, lineHeight: 14, color: colors.textTertiary }}>
-                  {blockedCount} blocked conversation{blockedCount > 1 ? 's' : ''} hidden
+                  {blockedCount} blocked conversation{blockedCount > 1 ? 's' : ''} hidden — manage
                 </Text>
-              </View>
+              </TouchableOpacity>
             )}
             {tab === 'messages' && communities.length > 0 && (
               <View className="mt-4">

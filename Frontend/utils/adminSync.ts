@@ -30,14 +30,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sessionStorage } from './sessionStorage';
 
 export const ADMIN_URL_KEY = '@susej_admin_url';
-// Production default = the deployed admin panel. Dev devices that need the
-// local panel set AsyncStorage @susej_admin_url to http://<PC-IP>:3000 (or use
+// Production default = the deployed admin panel (verified live Sep 13 —
+// serves real Neon rows with the app key). The bare vercel.app domain is
+// owned by another scope (stale deploy, rejects the app key), so the app
+// MUST point at the -theta host. Dev devices that need the local panel set
+// AsyncStorage @susej_admin_url to http://<PC-IP>:3000 (or use
 // adb reverse tcp:3000 tcp:3000). The old 127.0.0.1:3000 default sent every
 // production sync to a dead localhost — seller applications never reached the
 // admin queue at all.
-// PROD BUILD: phones sync with the Railway admin (same Neon DB as Vercel,
-// plus CLOUDINARY_URL + dev-code OTP which Vercel still lacks).
-export const DEFAULT_ADMIN_URL = 'https://susej-admin-production.up.railway.app';
+// Vercel = Neon DB with all 19 users + real data. Auth works with AUTH_DEV_MODE=1.
+export const DEFAULT_ADMIN_URL = 'https://susej-admin-panel-theta.vercel.app';
 export const APP_KEY_KEY = '@susej_app_key';
 export const DEFAULT_APP_KEY = 'dev-key';
 
@@ -249,8 +251,8 @@ export async function syncSellerApplicant(applicant: {
   storeLat?: number | null;
   storeLng?: number | null;
   storeAddress?: string | null;
-  /** Business tax identity (business sellers only). taxId reaches the admin
-   *  Seller row; pan/bankAccount ride along until Seller columns land. */
+  /** Business tax identity (business sellers only). taxId/pan/bankAccount land
+   *  on their Seller columns (scrubbed from the device on sync ack). */
   taxId?: string;
   pan?: string;
   bankAccount?: string;

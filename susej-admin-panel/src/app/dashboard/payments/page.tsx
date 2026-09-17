@@ -59,8 +59,10 @@ const TYPE_FILTERS = ["all", "payment", "withdrawal", "refund", "commission", "s
 const STATUS_FILTERS = ["all", "success", "pending", "failed"];
 
 export default function PaymentsPage() {
-  const { data: txns, loading: txnsLoading } = useDbResource<Transaction>("transactions");
-  const { data: logs, loading: logsLoading } = useDbResource<GatewayLog>("gateway-logs");
+  // Bounded windows like the transactions sub-page (take:100 + total) —
+  // tiles describe the loaded window and say so.
+  const { data: txns, total: txnsTotal, loading: txnsLoading } = useDbResource<Transaction>("transactions", { take: 100 });
+  const { data: logs, loading: logsLoading } = useDbResource<GatewayLog>("gateway-logs", { take: 100 });
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -106,10 +108,10 @@ export default function PaymentsPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Success volume" value={formatCurrency(volume)} tone="green" />
-        <StatTile label="Successful" value={success.length} />
-        <StatTile label="Pending" value={pending.length} tone="amber" />
-        <StatTile label="Failed" value={failed.length} tone="red" />
+        <StatTile label={`Success volume (recent ${(txns ?? []).length}${typeof txnsTotal === "number" && txnsTotal > (txns ?? []).length ? ` of ${txnsTotal}` : ""})`} value={formatCurrency(volume)} tone="green" />
+        <StatTile label="Successful (window)" value={success.length} />
+        <StatTile label="Pending (window)" value={pending.length} tone="amber" />
+        <StatTile label="Failed (window)" value={failed.length} tone="red" />
       </div>
 
       <Tabs
@@ -151,6 +153,7 @@ export default function PaymentsPage() {
                   <DataTable
                     columns={tColumns}
                     data={filtered}
+                    totalCount={typeFilter === "all" && statusFilter === "all" ? (txnsTotal ?? filtered.length) : filtered.length}
                     loading={txnsLoading}
                     searchable
                     searchKey="userName"

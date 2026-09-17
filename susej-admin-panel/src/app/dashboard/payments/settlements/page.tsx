@@ -44,8 +44,16 @@ const columns = [
 ];
 
 export default function SettlementsPage() {
-  const { data: ledger } = useDbResource<LedgerEntry>("ledger");
-  const { data: dbOrders } = useDbResource<{ id: string; trackingNumber: string; amount: number; status: string }>("orders");
+  // Bounded windows with honest captions: the tie-out below is only as deep
+  // as the loaded window (server-side cursor export is the full-book path).
+  const { data: ledger, total: ledgerTotal } = useDbResource<LedgerEntry>("ledger", { take: 100 });
+  const { data: dbOrders, total: ordersTotal } = useDbResource<{ id: string; trackingNumber: string; amount: number; status: string }>("orders", { take: 100 });
+  const partial =
+    (typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length) ||
+    (typeof ordersTotal === "number" && ordersTotal > (dbOrders ?? []).length);
+  const windowNote = partial
+    ? ` — recent window (${(ledger ?? []).length} ledger rows, ${(dbOrders ?? []).length} orders); full-book tie-out needs the server export`
+    : "";
 
   const settlements: SettlementRow[] = useMemo(() => {
     const settled = (ledger ?? []).filter((l) => l.type === "settlement" || l.type === "payout");
@@ -124,12 +132,12 @@ export default function SettlementsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-[-0.01em] text-[#18181B]">Settlements</h1>
-        <p className="mt-0.5 text-[13px] text-[#71717A]">Seller payout settlement history: gross, commission, net.</p>
+        <p className="mt-0.5 text-[13px] text-[#71717A]">Seller payout settlement history: gross, commission, net.{windowNote}</p>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Total net paid" value={formatCurrency(totalNet)} tone="green" />
-        <StatTile label="Total commission" value={formatCurrency(totalCommission)} tone="amber" />
+        <StatTile label={`Total net paid${partial ? " (first 100)" : ""}`} value={formatCurrency(totalNet)} tone="green" />
+        <StatTile label={`Total commission${partial ? " (first 100)" : ""}`} value={formatCurrency(totalCommission)} tone="amber" />
         <StatTile label="Pending settlements" value={pendingSettlements.length} tone="amber" />
         <StatTile label="Settlements" value={settlements.length} />
       </div>
@@ -140,7 +148,7 @@ export default function SettlementsPage() {
         </CardHeader>
         <CardContent>
           {exceptions.length === 0 ? (
-            <p className="py-4 text-center text-sm text-[#16A34A]">All orders tie out — every charge balances against settlement + fee.</p>
+            <p className="py-4 text-center text-sm text-[#16A34A]">Loaded window ties out — every charge balances against settlement + fee{partial ? " (window-scoped, not full-book)" : ""}.</p>
           ) : (
             <div className="divide-y divide-[#E4E4E7]">
               {exceptions.map((x) => (

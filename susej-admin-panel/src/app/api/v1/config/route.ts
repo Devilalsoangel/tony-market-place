@@ -22,9 +22,10 @@ const FALLBACK = {
   categoryOverrides: [] as { category: string; rate: number }[],
 };
 
-/** The DB stores rates as whole percents (8 = 8%); the app expects fractions (0.08). */
+/** The DB stores rates as whole percents (8 = 8%, 0.5 = 0.5%); the app expects fractions (0.08, 0.005). */
 function asRate(n: number): number {
-  return n >= 1 ? n / 100 : n;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(n / 100, 1);
 }
 
 export async function GET(request: NextRequest) {

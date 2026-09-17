@@ -34,6 +34,7 @@ const channelIcon: Record<NotificationChannel, typeof Bell> = {
 
 const statusBadge: Record<NotificationStatus, { variant: "success" | "warning" | "primary"; label: string }> = {
   sent: { variant: "success", label: "Sent" },
+  logged: { variant: "warning", label: "Logged (no transport)" },
   draft: { variant: "warning", label: "Draft" },
   scheduled: { variant: "primary", label: "Scheduled" },
 };
@@ -96,8 +97,8 @@ export default function NotificationsPage() {
 
   // Sends are LOG-ONLY until a push/email provider is wired: this writes the
   // history row so the desk has a record, but no device/email is contacted.
-  // The header copy below says so plainly — marking rows "sent" while nothing
-  // transports would be a fabrication.
+  // Status reads "logged" (never "sent") and the POST carries the session —
+  // a 401 rolls the optimistic row back instead of faking a send.
   function sendNow(channel: NotificationChannel) {
     const selectedList =
       audience === "selected_users"
@@ -108,13 +109,14 @@ export default function NotificationsPage() {
       channel,
       title: channel === "email" ? subject : channel === "push" ? title : bannerText,
       audience: audienceOptions.find((o) => o.value === audience)?.label || audience,
-      status: "sent",
+      status: "logged",
       sentAt: new Date().toISOString(),
     };
     setHistory((prev) => [entry, ...prev]);
     fetch("/api/data/notification-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         ...entry,
         id: undefined,
@@ -123,6 +125,10 @@ export default function NotificationsPage() {
         selectedUsers: selectedList,
         transport: "log-only",
       }),
+    }).then((res) => {
+      if (!res.ok) setHistory((prev) => prev.filter((h) => h.id !== entry.id));
+    }).catch(() => {
+      setHistory((prev) => prev.filter((h) => h.id !== entry.id));
     });
   }
 
@@ -139,7 +145,12 @@ export default function NotificationsPage() {
     fetch("/api/data/notification-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ channel, title: entry.title, audience: entry.audience, status: "draft", scheduledFor: null, sentAt: null }),
+    }).then((res) => {
+      if (!res.ok) setHistory((prev) => prev.filter((h) => h.id !== entry.id));
+    }).catch(() => {
+      setHistory((prev) => prev.filter((h) => h.id !== entry.id));
     });
   }
 
@@ -164,7 +175,12 @@ export default function NotificationsPage() {
     fetch("/api/data/notification-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ channel, title: entry.title, audience, selectedUsers: audience === "selected_users" ? selectedUsers.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 200) : [], status: "scheduled", scheduledFor, sentAt: null, transport: "log-only" }),
+    }).then((res) => {
+      if (!res.ok) setHistory((prev) => prev.filter((h) => h.id !== entry.id));
+    }).catch(() => {
+      setHistory((prev) => prev.filter((h) => h.id !== entry.id));
     });
     setSchedule(false);
     setScheduleDate("");
@@ -496,7 +512,7 @@ export default function NotificationsPage() {
                                 {item.status === "scheduled" && item.scheduledFor && (
                                   <span className="text-xs text-gray-400">Scheduled for {formatDate(item.scheduledFor)}</span>
                                 )}
-                                {item.status === "sent" && item.sentAt && (
+                                {(item.status === "sent" || item.status === "logged") && item.sentAt && (
                                   <span className="text-xs text-gray-400">{formatDate(item.sentAt, "relative")}</span>
                                 )}
                                 <Badge variant={badge.variant}>{badge.label}</Badge>

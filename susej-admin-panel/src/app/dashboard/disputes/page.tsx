@@ -78,7 +78,7 @@ const makeColumns = (
 ];
 
 export default function DisputesPage() {
-  const { data: rows, refresh } = useDbResource<MockDispute>("disputes");
+  const { data: rows, total: disputesTotal, refresh } = useDbResource<MockDispute>("disputes", { take: 100 });
   const [items, setItems] = useState<MockDispute[] | null>(rows);
   const [resolving, setResolving] = useState<MockDispute | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -90,13 +90,30 @@ export default function DisputesPage() {
   }, [rows]);
 
   function review(d: MockDispute) {
+    const snapshot = items;
     setItems((prev) => (prev ?? []).map((x) => (x.id === d.id ? { ...x, status: "under_review" } : x)));
     fetch("/api/data/disputes", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ id: d.id, data: { status: "under_review" } }),
-    }).finally(refresh);
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          // Roll back the optimistic flip — refresh() below snaps the row,
+          // but not silently: the error banner names the failure.
+          setItems(snapshot);
+          const body = await res.json().catch(() => null);
+          setResolveError(
+            String((body as { error?: unknown } | null)?.error || `Could not mark ${d.id} under review (HTTP ${res.status}). Nothing changed.`)
+          );
+        }
+      })
+      .catch(() => {
+        setItems(snapshot);
+        setResolveError("Could not reach the server. Nothing changed.");
+      })
+      .finally(refresh);
   }
 
   function openResolve(d: MockDispute) {
@@ -166,7 +183,7 @@ export default function DisputesPage() {
 
       <div className="grid grid-cols-4 gap-4">
         <StatTile label="Open disputes" value={openList.length} tone="red" />
-        <StatTile label="Open amount" value={formatCurrency(openAmount)} tone="red" />
+        <StatTile label={`Open amount${typeof disputesTotal === "number" && disputesTotal > (items ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(openAmount)} tone="red" />
         <StatTile label="Under review" value={underReview} tone="amber" />
         <StatTile label="Resolved" value={resolved} tone="green" />
       </div>
@@ -179,6 +196,7 @@ export default function DisputesPage() {
           <DataTable
             columns={makeColumns(review, openResolve)}
             data={items ?? []}
+            totalCount={disputesTotal ?? (items ?? []).length}
             searchable
             searchKey="orderId"
             filename="disputes"

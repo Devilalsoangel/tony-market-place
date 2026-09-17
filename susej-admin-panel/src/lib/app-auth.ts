@@ -40,46 +40,118 @@ export async function createAppSession(userId: string, username: string): Promis
   return token;
 }
 
-/** Find a user by phone or username (used by OTP login). */
+/**
+ * Indian-number shape test (the product is India-only: INR, 91-normalized
+ * identity). 10-digit nationals, 12-digit 91-prefixed, 11-digit 0-trunk.
+ * Anything else is foreign-shaped and MUST NOT be folded into 91-space.
+ */
+export function isIndianPhoneShape(digits: string): boolean {
+  if (!/^\d+$/.test(digits)) return false;
+  return (
+    digits.length === 10 ||
+    (digits.length === 12 && digits.startsWith("91")) ||
+    (digits.length === 11 && digits.startsWith("0"))
+  );
+}
+
+/**
+ * Pure phone lookup (used by OTP verify). NEVER creates — creation is an
+ * explicit signup decision (see createUserByPhone). Silent auto-provision on
+ * a typo'd number used to mint ghost accounts + 500 welcome money each.
+ *
+ * Country lock: foreign-shaped input matches EXACT digits only. Normalizing a
+ * foreign number into 91-space (or endsWith-matching its last 10) would bind
+ * the verified session to a DIFFERENT person's Indian account — cross-country
+ * account takeover with nothing but a same-last-10 number.
+ */
 export async function findUserByPhone(phone: string) {
   const prisma = await getPrisma();
   if (!prisma) return null;
   const digits = phone.replace(/\D/g, "");
   if (digits.length < 10) return null;
-  // Match exact first, then national-significant-number (last 10 digits) so
-  // E.164 senders ("91"+"98765...") still resolve rows stored before the
-  // country-code fix, and one SIM never spawns duplicate accounts.
-  const candidate = await prisma.user.findFirst({
+  if (!isIndianPhoneShape(digits)) {
+    return prisma.user.findFirst({
+      where: { OR: [{ phone: { not: null, equals: digits } }, { phone: { not: null, equals: phone } }] },
+    });
+  }
+  // Normalize to E.164-ish India form (91 + last 10) so a paste of
+  // "911556848908" (+91 + 12-digit national) does not create a 14-digit
+  // duplicate (91911556848908) distinct from the intended 12-digit row.
+  // FIX Sep 15: tony 911556848908 was showing as user8908 because the
+  // double-country bug spawned a ghost account.
+  const national = digits.slice(-10);
+  const normalized = `91${national}`;
+  // Deterministic priority: exact normalized first, then exact raw forms,
+  // and only then the endsWith fallback. A single findFirst with OR is
+  // ambiguous when a ghost duplicate exists (tony 911556848908 vs ghost
+  // 91911556848908 both end with 1556848908) — the DB could return either.
+  const exactFirst = await prisma.user.findFirst({
     where: {
       OR: [
-        { phone: { not: null, equals: phone } },
+        { phone: { not: null, equals: normalized } },
         { phone: { not: null, equals: digits } },
-        ...(digits.length > 10 ? [{ phone: { not: null, equals: digits.slice(-10) } }] : []),
+        { phone: { not: null, equals: phone } },
+        { phone: { not: null, equals: national } },
       ],
     },
   });
+  if (exactFirst) return exactFirst;
+  const candidate = await prisma.user.findFirst({
+    where: { phone: { not: null, endsWith: national } as never },
+  });
   if (candidate) return candidate;
+  return null;
+}
+
+/**
+ * Explicit signup creation (ONLY called when the client passes create:true
+ * from a signup screen + the caller passed its creation throttle). Split
+ * from the finder so a sign-in typo can never mint an account or money.
+ */
+export async function createUserByPhone(phone: string) {
+  const prisma = await getPrisma();
+  if (!prisma) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 10) return null;
+  const national = digits.slice(-10);
+  // Foreign-shaped signups keep their own digits (never folded into 91-space,
+  // or the @unique on phone collides with the victim's Indian row and the
+  // P2002 loser-returns-winner path hands back the VICTIM account).
+  const normalized = isIndianPhoneShape(digits) ? `91${national}` : digits;
+  // Re-check under creation: a concurrent signup may have landed first.
+  const existing = await findUserByPhone(phone);
+  if (existing) return existing;
   // New phone → fresh buyer account. Username must be unique even when two
   // phones share the same last 4 digits (user0001-style collisions hard-500'd).
-  const base = `user${digits.slice(-4)}`;
+  const base = `user${national.slice(-4)}`;
   let username = base;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const taken = await prisma.user.findUnique({ where: { username } });
     if (!taken) break;
     username = `${base}${Math.floor(Math.random() * 9000 + 1000)}`;
   }
-  const created = await prisma.user.create({
-    data: {
-      name: `User ${digits.slice(-4)}`,
-      email: `user${digits.slice(-4)}_${Date.now()}@susej.app`,
-      phone: digits,
-      username,
-      role: "buyer",
-      status: "active",
-      walletBalance: 500, // welcome bonus
-      joinedAt: new Date(),
-    },
-  });
+  // Race-close (API-H3): phone is @unique, so a concurrent signup for the
+  // same number throws P2002 here even after the re-check above. Loser
+  // returns the winner — one account, one bonus, never a dup + double mint.
+  let created;
+  try {
+    created = await prisma.user.create({
+      data: {
+        name: `User ${national.slice(-4)}`,
+        email: `user${national.slice(-4)}_${Date.now()}@susej.app`,
+        phone: normalized,
+        username,
+        role: "buyer",
+        status: "active",
+        walletBalance: 500, // welcome bonus
+        joinedAt: new Date(),
+      },
+    });
+  } catch (e: unknown) {
+    if ((e as { code?: string })?.code === "P2002") return findUserByPhone(phone);
+    throw e;
+  }
+  if (!created) return null;
   // Ledger the bonus so every rupee in the wallet is traceable - an
   // unaudited balance is indistinguishable from minted money.
   try {

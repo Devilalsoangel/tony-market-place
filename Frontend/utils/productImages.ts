@@ -27,7 +27,13 @@ export function resolveListingImage(
     const first = images.find((entry): entry is string => typeof entry === 'string' && !!entry);
     if (first) return { uri: first };
   }
-  return { uri: `https://picsum.photos/seed/${encodeURIComponent(seedId)}/600/600` };
+  // No fake photo: imageless listings get a neutral 1px tile (callers render
+  // their letter-tile / empty state on top). picsum.seed photos implied real
+  // inventory that never existed — a production-integrity violation.
+  void seedId;
+  return {
+    uri: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="100%" height="100%" fill="%23EFECFF"/></svg>',
+  };
 }
 
 /**

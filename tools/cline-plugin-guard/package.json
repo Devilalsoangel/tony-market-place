@@ -1,0 +1,22 @@
+{
+  "name": "susej-guard-plugin",
+  "version": "1.0.0",
+  "description": "Cline plugin for the susej marketplace repo: tool-call guard hook + metrics observer + stack preflight tool.",
+  "type": "module",
+  "cline": {
+    "plugins": [
+      {
+        "paths": ["./index.ts"],
+        "capabilities": ["tools", "hooks"]
+      }
+    ]
+  },
+  "peerDependencies": {
+    "@cline/sdk": "*"
+  },
+  "peerDependenciesMeta": {
+    "@cline/sdk": {
+      "optional": true
+    }
+  }
+}

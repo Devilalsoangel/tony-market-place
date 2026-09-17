@@ -3,14 +3,16 @@ import { getPrisma } from "@/lib/db";
 import { getAppUser } from "@/lib/app-auth";
 
 /** Find the caller's own seller application: primary key app_<username>,
- *  falling back to a phone match for rows filed before the id clamp. */
+ *  falling back to an EXACT phone match for rows filed before the id clamp.
+ *  No endsWith fallback (cross-user last-10 collisions would leak another
+ *  seller's application + KYC state to the caller). */
 async function findMine(prisma: NonNullable<Awaited<ReturnType<typeof getPrisma>>>, username: string, phone: string | null) {
   const byId = await prisma.seller.findUnique({ where: { id: `app_${username}` } }).catch(() => null);
   if (byId) return byId;
   const digits = String(phone ?? "").replace(/\D/g, "");
   if (digits) {
     const byPhone = await prisma.seller.findFirst({
-      where: { OR: [{ phone: digits }, { phone: { endsWith: digits.slice(-10) } }] },
+      where: { phone: digits },
       orderBy: { submittedAt: "desc" },
     }).catch(() => null);
     if (byPhone) return byPhone;

@@ -1,0 +1,11 @@
+EAS project not configured. This command cannot configure it in non-interactive mode. Run one of the following, then re-run this command:
+
+To link an existing project:
+
+  eas init --id <project-id> --non-interactive
+
+To create a new project:
+
+  eas init --account toni_stann7 --non-interactive
+
+Accounts you can create projects in: toni_stann7

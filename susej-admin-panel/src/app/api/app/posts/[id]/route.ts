@@ -61,6 +61,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       condition: post.condition ?? null,
       brand: post.brand ?? null,
       variants: (post as unknown as { variants?: unknown }).variants ?? null,
+      subCategories: Array.isArray((post as unknown as { subCategories?: unknown }).subCategories) ? (post as unknown as { subCategories: string[] }).subCategories : null,
       stockLeft: typeof (post as unknown as { stockLeft?: number }).stockLeft === "number" ? (post as unknown as { stockLeft: number }).stockLeft : null,
       negotiable: typeof (post as unknown as { negotiable?: boolean }).negotiable === "boolean" ? (post as unknown as { negotiable: boolean }).negotiable : null,
       deliveryMode: typeof (post as unknown as { deliveryMode?: string }).deliveryMode === "string" ? (post as unknown as { deliveryMode: string }).deliveryMode : null,
@@ -136,9 +137,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (Array.isArray((body as unknown as { variants?: unknown }).variants)) {
     data.variants = ((body as unknown as { variants: unknown[] }).variants.slice(0, 20) as never);
   }
-  if (typeof (body as unknown as { stockLeft?: unknown }).stockLeft === "number") {
-    const sl = Math.floor(Number((body as unknown as { stockLeft: number }).stockLeft));
-    if (Number.isFinite(sl) && sl >= 0 && sl <= 100000) data.stockLeft = sl;
+  if (Array.isArray((body as unknown as { subCategories?: unknown }).subCategories)) {
+    data.subCategories = ((body as unknown as { subCategories: unknown[] }).subCategories.map((s) => String(s).slice(0, 60)).filter(Boolean).slice(0, 20) as never);
+  }
+  // Single-stock invariant (POST parity): when the incoming variants are
+  // tracked, base stockLeft is nulled — two stock truths split inventory.
+  // Variant edits arrive together with stock edits on this route, so resolve
+  // against the effective (incoming ?? stored) variant set.
+  {
+    const incomingVariants = Array.isArray((body as unknown as { variants?: unknown }).variants)
+      ? ((body as unknown as { variants: Array<{ values?: Array<{ stock?: unknown }> }> }).variants)
+      : null;
+    const effVariants = incomingVariants ?? (post as unknown as { variants?: Array<{ values?: Array<{ stock?: unknown }> }> | null }).variants ?? null;
+    const tracked = Array.isArray(effVariants) && effVariants.some((g) =>
+      Array.isArray(g?.values) && g.values.some((v) => typeof v?.stock === "number")
+    );
+    if (tracked) {
+      data.stockLeft = null;
+    } else if (typeof (body as unknown as { stockLeft?: unknown }).stockLeft === "number") {
+      const sl = Math.floor(Number((body as unknown as { stockLeft: number }).stockLeft));
+      if (Number.isFinite(sl) && sl >= 0 && sl <= 100000) data.stockLeft = sl;
+    }
   }
   if (typeof (body as unknown as { negotiable?: unknown }).negotiable === "boolean") {
     data.negotiable = (body as unknown as { negotiable: boolean }).negotiable;

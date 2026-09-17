@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { RevenueChart } from "@/components/charts/revenue-chart";
 import { GrowthChart } from "@/components/charts/growth-chart";
@@ -138,14 +138,46 @@ function ChartCard({
 }
 
 export default function AnalyticsPage() {
-  const { data: orders } = useDbResource<OrderRow>("orders");
-  const { data: users } = useDbResource<UserRow>("users");
-  const { data: products } = useDbResource<ProductRow>("products");
-  const { data: communities } = useDbResource<CommunityRow>("communities");
-  const { data: sellers } = useDbResource<SellerRow>("sellers");
-  const { data: hashtags } = useDbResource<HashtagRow>("hashtags");
+  // Bounded windows (never full-table pulls): charts bucket the recent
+  // window client-side and every caption says so — at scale these read the
+  // summary aggregates, never an OOM browser pull.
+  // Server aggregates FIRST (exact at any scale): Revenue, Growth and Top
+  // Categories come from /api/data/summary (same source as the overview).
+  // The remaining charts bucket the recent-100 window and say so.
+  const [summary, setSummary] = useState<{
+    revenueByMonth?: { month: string; revenue: number }[];
+    growthByMonth?: { month: string; users: number; sellers: number }[];
+    topCategories?: { name: string; value: number }[];
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/data/summary", { cache: "no-store", credentials: "include" })
+      .then(async (res) => {
+        if (cancelled || !res.ok) return;
+        const body = await res.json().catch(() => null);
+        if (!cancelled && body) setSummary(body);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const { data: orders, total: ordersTotal } = useDbResource<OrderRow>("orders", { take: 100 });
+  const { data: users } = useDbResource<UserRow>("users", { take: 100 });
+  const { data: products } = useDbResource<ProductRow>("products", { take: 100 });
+  const { data: communities } = useDbResource<CommunityRow>("communities", { take: 100 });
+  const { data: sellers } = useDbResource<SellerRow>("sellers", { take: 100 });
+  const { data: hashtags } = useDbResource<HashtagRow>("hashtags", { take: 100 });
+  const windowNote =
+    (typeof ordersTotal === "number" && ordersTotal > (orders ?? []).length
+      ? ` — showing recent ${(orders ?? []).length} of ${ordersTotal}`
+      : "") + " · Revenue, Growth and Categories are exact server aggregates";
 
   const revenueSeries = useMemo(() => {
+    // Server aggregate first (exact delivered GMV by month at any scale).
+    if (summary?.revenueByMonth?.length) {
+      return [...summary.revenueByMonth]
+        .sort((a, b) => (a.month < b.month ? -1 : 1))
+        .map(({ month, revenue }) => ({ name: labelOf(month), value: revenue }));
+    }
     const totals: BucketMap = new Map();
     for (const o of orders ?? []) {
       if (o.status === "cancelled") continue;
@@ -155,9 +187,21 @@ export default function AnalyticsPage() {
       totals.set(k, (totals.get(k) ?? 0) + (Number(o.amount) || 0));
     }
     return toSeries(totals);
-  }, [orders]);
+  }, [orders, summary]);
 
   const growthSeries = useMemo(() => {
+    // Server aggregate first (exact cumulative signups at any scale).
+    if (summary?.growthByMonth?.length) {
+      let cu = 0;
+      let cs = 0;
+      return [...summary.growthByMonth]
+        .sort((a, b) => (a.month < b.month ? -1 : 1))
+        .map(({ month, users, sellers }) => {
+          cu += users;
+          cs += sellers;
+          return { month: labelOf(month), users: cu, sellers: cs };
+        });
+    }
     const userDates = (users ?? []).map((u) => toDate(u.joinedAt ?? u.createdAt)).filter((d): d is Date => !!d);
     const sellerDates = (sellers ?? [])
       .map((s) => toDate(s.joinedAt ?? s.submittedAt ?? s.createdAt))
@@ -173,7 +217,7 @@ export default function AnalyticsPage() {
       s += sellersPer.get(k) ?? 0;
       return { month: labelOf(k), users: u, sellers: s };
     });
-  }, [users, sellers]);
+  }, [users, sellers, summary]);
 
   const ordersTrend = useMemo(
     () =>
@@ -262,6 +306,13 @@ export default function AnalyticsPage() {
   }, [orders, users]);
 
   const topCategories = useMemo(() => {
+    // Server aggregate first (exact counts at any scale).
+    if (summary?.topCategories?.length) {
+      return summary.topCategories
+        .slice(0, 5)
+        .map(({ name, value }) => ({ name, value }))
+        .filter((r) => r.name);
+    }
     const counts: BucketMap = new Map();
     for (const p of products ?? []) {
       const cat = String(p.category ?? "").trim();
@@ -269,7 +320,7 @@ export default function AnalyticsPage() {
       counts.set(cat, (counts.get(cat) ?? 0) + 1);
     }
     return topN(counts);
-  }, [products]);
+  }, [products, summary]);
 
   const topHashtags = useMemo(() => {
     const rows = [...(hashtags ?? [])]
@@ -283,7 +334,7 @@ export default function AnalyticsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#18181B] ">Analytics</h1>
-        <p className="mt-1 text-sm text-gray-500">In-depth platform analytics and metrics</p>
+        <p className="mt-1 text-sm text-gray-500">In-depth platform analytics and metrics{windowNote}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-6">

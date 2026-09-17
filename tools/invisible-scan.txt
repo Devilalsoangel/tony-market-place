@@ -1,0 +1,14 @@
+app\(tabs)\feed.tsx:353
+app\(tabs)\feed.tsx:363
+app\(tabs)\feed.tsx:364
+app\(tabs)\feed.tsx:902
+app\(tabs)\profile.tsx:276
+app\(tabs)\profile.tsx:291
+app\cart.tsx:408
+app\cart.tsx:413
+app\orders.tsx:66
+app\orders.tsx:130
+app\orders.tsx:141
+app\settings.tsx:1
+utils\screenImages.ts:1
+total fixed: 13

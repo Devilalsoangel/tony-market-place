@@ -49,31 +49,38 @@ interface RecentExport {
 export default function ExportCenterPage() {
   const [resource, setResource] = useState("users");
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentExport[]>([]);
 
   const resourceLabel = RESOURCES.find((r) => r.value === resource)?.label ?? resource;
 
-  const exportColumns = useMemo(() => {
+  // Preview shows the first 12 columns; the FILE carries every column (the
+  // old slice(0,12) silently dropped money/identity columns from exports).
+  const allColumns = useMemo(() => {
     if (!rows || rows.length === 0) return [];
     return Object.keys(rows[0])
       .filter((k) => !["password", "passwordHash", "twoFactorCode"].includes(k))
-      .slice(0, 12)
       .map((k) => ({ key: k, label: prettifyLabel(k) }));
   }, [rows]);
+  const exportColumns = useMemo(() => allColumns.slice(0, 12), [allColumns]);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/data/${resource}`, { cache: "no-store" });
+      // Bounded window (never a full-table browser pull); the copy below
+      // says exactly how many rows the file holds vs the table total.
+      const res = await fetch(`/api/data/${resource}?take=100`, { cache: "no-store", credentials: "include" });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error ?? "Failed to load");
       setRows(body.rows as Record<string, unknown>[]);
+      setTotal(typeof body.total === "number" ? body.total : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load data");
       setRows(null);
+      setTotal(null);
     } finally {
       setLoading(false);
     }
@@ -116,11 +123,11 @@ export default function ExportCenterPage() {
             <Button variant="secondary" onClick={load} disabled={loading}>
               {loading ? "Loading..." : "Load data"}
             </Button>
-            <Button onClick={() => { if (rows) { exportToCSV(rows as Record<string, unknown>[], `susej-${resource}`, exportColumns); record("CSV"); } }} disabled={!rows || rows.length === 0}>
+            <Button onClick={() => { if (rows) { exportToCSV(rows as Record<string, unknown>[], `susej-${resource}`, allColumns); record("CSV"); } }} disabled={!rows || rows.length === 0}>
               <Download className="h-4 w-4" />
               Export CSV
             </Button>
-            <Button variant="secondary" onClick={() => { if (rows) { exportToExcel(rows as Record<string, unknown>[], `susej-${resource}`, exportColumns); record("Excel"); } }} disabled={!rows || rows.length === 0}>
+            <Button variant="secondary" onClick={() => { if (rows) { exportToExcel(rows as Record<string, unknown>[], `susej-${resource}`, allColumns); record("Excel"); } }} disabled={!rows || rows.length === 0}>
               <FileSpreadsheet className="h-4 w-4" />
               Export Excel
             </Button>
@@ -137,7 +144,8 @@ export default function ExportCenterPage() {
           ) : (
             <>
               <p className="text-[13px] text-[#71717A]">
-                {rows.length} rows · {exportColumns.length} columns
+                {rows.length} rows{typeof total === "number" && total > rows.length ? ` of ${total} total` : ""} · {allColumns.length} columns
+                {exportColumns.length < allColumns.length ? ` (preview shows first ${exportColumns.length})` : ""}
               </p>
               <div className="overflow-x-auto rounded-[6px] bg-white">
                 <table className="w-full text-left text-sm">

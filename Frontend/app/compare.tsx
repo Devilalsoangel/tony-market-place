@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, VerifiedIcon, HeartIcon } from '../utils/icons';
 import { colors, formatPrice, getCategoryColor } from '../utils/theme';
 import { usePosts, Post } from '../contexts/PostContext';
-import { RecentlyViewedProvider } from '../contexts/RecentlyViewedContext';
 
 const MAX_COMPARE = 3;
 const LABEL_WIDTH = 96;
@@ -29,25 +28,27 @@ const imgSource = (img: string | number | undefined | null): any => {
 };
 
 const conditionOf = (post: Post): string => {
-  const d = post.description.toLowerCase();
-  if (d.includes('like new')) return 'Like New';
-  if (d.includes('new')) return 'New';
-  if (d.includes('used')) return 'Used';
-  return '—';
+  if (typeof post.condition === 'string' && post.condition.trim()) return post.condition.trim();
+  // Same word-boundary derivation as Explore — naive includes('new')
+  // mislabeled "renewed" as New on this surface only.
+  const d = (post.description ?? '').toLowerCase();
+  if (/\blike new\b/.test(d) || /\bmint\b/.test(d)) return 'Like New';
+  if (/\bnew\b/.test(d)) return 'New';
+  if (/\bused\b/.test(d) || /\bpre-owned\b/.test(d) || /\bpre owned\b/.test(d) || /\bsecond hand\b/.test(d) || /\brefurbished\b/.test(d)) return 'Used';
+  return 'Unknown';
 };
 
 const deliveryOf = (post: Post): string => {
   if (post.type === 'food_item') return '—';
   if (post.type === 'service') return 'On booking';
-  return '2-5 days';
+  // No courier/SLA source: honest estimate label, seller confirms at checkout.
+  return '~3 days (est.)';
 };
 
 export default function CompareScreen() {
-  return (
-    <RecentlyViewedProvider>
-      <CompareContent />
-    </RecentlyViewedProvider>
-  );
+  // Global RecentlyViewed store lives at the app root — a nested provider
+  // here shadowed it with an empty inner store.
+  return <CompareContent />;
 }
 
 function CompareContent() {

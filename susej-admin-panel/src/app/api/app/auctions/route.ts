@@ -39,6 +39,18 @@ export async function POST(req: NextRequest) {
     if (!auth.user.isSeller || auth.user.verification !== "approved") {
       return NextResponse.json({ error: "Only approved sellers can start auctions" }, { status: 403 });
     }
+    // Per-seller daily cap (stories 20/day, live 5/day exist; auctions had
+    // none): an uncapped script could mint 500 lots and own the 100-row rail
+    // for hours. 10/day is generous for legitimate sellers.
+    {
+      const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+      const recent = await prisma.auction.count({
+        where: { sellerUsername: auth.user.username!, startsAt: { gte: dayAgo } },
+      }).catch(() => 0);
+      if (recent >= 10) {
+        return NextResponse.json({ error: "Auction limit reached — try again tomorrow" }, { status: 429 });
+      }
+    }
     const title = body.title.trim().slice(0, 120);
     if (title.length < 3) return NextResponse.json({ error: "Title too short" }, { status: 400 });
     const startPrice = Math.floor(Number(body.startPrice ?? 0));
@@ -90,9 +102,103 @@ export async function POST(req: NextRequest) {
   if (!Number.isFinite(amount) || amount <= auction.currentBid) {
     return NextResponse.json({ error: `Bid must be above ₹${auction.currentBid.toLocaleString("en-IN")}` }, { status: 400 });
   }
+  // Server-enforced bid discipline (the app promises these; the server must
+  // hold them — client-only rules are display-only): whole rupees, minimum
+  // ₹100 increment (eBay-style proxy schedule, flat tier).
+  if (!Number.isInteger(amount)) {
+    return NextResponse.json({ error: "Bids must be whole rupees" }, { status: 400 });
+  }
+  if (amount < auction.currentBid + 100) {
+    return NextResponse.json(
+      { error: `Minimum bid is ₹${(auction.currentBid + 100).toLocaleString("en-IN")} (₹100 increments)` },
+      { status: 400 }
+    );
+  }
+  if (amount > 10000000) {
+    return NextResponse.json({ error: "Bid exceeds the ₹1,00,00,000 limit" }, { status: 400 });
+  }
+  // Anti-grief: bids need a funded wallet behind them (empty-wallet accounts
+  // could otherwise win every auction for free — no hold exists yet, so the
+  // balance check prices grief at one funded account per bid level) + a
+  // per-bidder throttle (5 bids/min) so one account can't spray an auction.
+  // Full escrow (authorize-at-bid + auto-charge/close worker) is a product
+  // build — tracked in the findings log; the winner settles via chat offer.
+  const bidderRow = await prisma.user.findUnique({
+    where: { id: auth.user.id },
+    select: { username: true, walletBalance: true },
+  });
+  if (!bidderRow || (bidderRow.walletBalance ?? 0) < amount) {
+    return NextResponse.json({ error: "Insufficient wallet balance to back this bid" }, { status: 400 });
+  }
+  const recentBids = await prisma.auctionBid.count({
+    where: { bidder: auth.user.username!, createdAt: { gte: new Date(Date.now() - 60_000) } },
+  });
+  if (recentBids >= 5) {
+    return NextResponse.json({ error: "Bidding too fast — wait a minute and try again" }, { status: 429 });
+  }
+  // Concurrent-exposure guard (escrow-bypass hardening): one ₹5,000 wallet
+  // backing unlimited simultaneous leading bids is unenforceable — the winner
+  // can only pay one. Cap total leading exposure at the wallet balance (the
+  // auction being bid on counts too unless already led by this bidder).
+  // User-scoped (this bidder's live bids, NOT a take:200 live-auction window —
+  // past-200 rows were invisible to the old guard by construction). Fail-closed
+  // past a 2000-bid window no real bidder ever hits.
+  const exposureOf = async (
+    db: { auctionBid: { findMany(a: unknown): Promise<Array<{ auctionId: string; amount: number }>> }; auction: { findMany(a: unknown): Promise<Array<{ id: string; currentBid: number }>> } },
+    skipAuctionId: string
+  ): Promise<{ exposure: number; leadingThis: number }> => {
+    const mine = await db.auctionBid.findMany({
+      where: { bidder: auth.user.username!, auctionId: { not: skipAuctionId } },
+      select: { auctionId: true, amount: true },
+      take: 2000,
+    });
+    if (mine.length >= 2000) throw new Error("exposure-cap");
+    const ids = [...new Set(mine.map((b) => b.auctionId))];
+    const others = ids.length
+      ? await db.auction.findMany({ where: { id: { in: ids }, status: "live" }, select: { id: true, currentBid: true } })
+      : [];
+    const cur = new Map(others.map((a) => [a.id, Number(a.currentBid ?? 0)]));
+    const myMax = new Map<string, number>();
+    for (const b of mine) myMax.set(b.auctionId, Math.max(myMax.get(b.auctionId) ?? 0, Number(b.amount ?? 0)));
+    let exposure = 0;
+    for (const [aid, mx] of myMax) {
+      const cb = cur.get(aid) ?? 0;
+      if (cb > 0 && mx >= cb) exposure += cb;
+    }
+    const mineThis = await db.auctionBid.findMany({
+      where: { bidder: auth.user.username!, auctionId: skipAuctionId },
+      select: { auctionId: true, amount: true },
+      take: 10,
+    });
+    const leadingThis = mineThis.reduce((m, b) => Math.max(m, Number(b.amount ?? 0)), 0);
+    return { exposure, leadingThis };
+  };
+  try {
+    const { exposure, leadingThis } = await exposureOf(prisma as never, auction.id);
+    const alreadyLeadingThis = leadingThis >= Number(auction.currentBid ?? 0);
+    const need = exposure + (alreadyLeadingThis ? Math.max(0, amount - leadingThis) : amount);
+    if (need > (bidderRow.walletBalance ?? 0)) {
+      return NextResponse.json({ error: "Insufficient wallet balance to cover all your leading bids" }, { status: 400 });
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message === "exposure-cap") {
+      return NextResponse.json({ error: "Too many live bids — settle some auctions first" }, { status: 400 });
+    }
+  }
 
-  // Atomic bid: create row + bump currentBid only if still above stored value
+  // Atomic bid: re-verify funds + exposure INSIDE the tx (TOCTOU close — a
+  // concurrent payout/debit/outbid between the pre-check and the commit used
+  // to slip through) + bump currentBid only if still above stored value.
   const result = await prisma.$transaction(async (tx) => {
+    const fresh = await tx.auction.findUnique({ where: { id: auction.id } });
+    if (!fresh || fresh.status !== "live") throw new Error("closed");
+    if (amount <= Number(fresh.currentBid ?? 0)) throw new Error("outbid");
+    const me = await tx.user.findUnique({ where: { id: auth.user.id }, select: { walletBalance: true } });
+    if (!me || (me.walletBalance ?? 0) < amount) throw new Error("funds");
+    const { exposure, leadingThis } = await exposureOf(tx as never, auction.id);
+    const alreadyLeadingThis = leadingThis >= Number(fresh.currentBid ?? 0);
+    const need = exposure + (alreadyLeadingThis ? Math.max(0, amount - leadingThis) : amount);
+    if (need > (me.walletBalance ?? 0)) throw new Error("exposure");
     const updated = await tx.auction.updateMany({
       where: { id: auction.id, currentBid: { lt: amount }, status: "live" },
       data: { currentBid: amount, bids: { increment: 1 } },
@@ -103,8 +209,18 @@ export async function POST(req: NextRequest) {
   }).catch((e: unknown) => {
     const msg = e instanceof Error ? e.message : "";
     if (msg === "outbid") return null;
+    if (msg === "closed" || msg === "funds" || msg === "exposure" || msg === "exposure-cap") return msg;
     throw e;
   });
+  if (result === "closed") {
+    return NextResponse.json({ error: "Auction is not live" }, { status: 400 });
+  }
+  if (result === "funds") {
+    return NextResponse.json({ error: "Insufficient wallet balance to back this bid" }, { status: 400 });
+  }
+  if (result === "exposure" || result === "exposure-cap") {
+    return NextResponse.json({ error: "Insufficient wallet balance to cover all your leading bids" }, { status: 400 });
+  }
   if (!result) {
     const fresh = await prisma.auction.findUnique({ where: { id: auction.id } });
     return NextResponse.json({ error: `Bid must be above ₹${(fresh?.currentBid ?? auction.currentBid).toLocaleString("en-IN")}` }, { status: 400 });

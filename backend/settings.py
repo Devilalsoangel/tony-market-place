@@ -20,8 +20,12 @@ class Settings(BaseSettings):
             AnyHttpUrl("http://127.0.0.1:8081"),
             AnyHttpUrl("http://localhost:19006"),
             AnyHttpUrl("http://127.0.0.1:19006"),
+            AnyHttpUrl("http://localhost:3000"),
+            AnyHttpUrl("http://127.0.0.1:3000"),
+            AnyHttpUrl("http://localhost:5173"),
+            AnyHttpUrl("http://127.0.0.1:5173"),
         ],
-        description="Allowed CORS origins for the FastAPI app.",
+        description="Allowed CORS origins for the FastAPI app (includes admin panel).",
     )
 
     # database paths

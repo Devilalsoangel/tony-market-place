@@ -20,13 +20,13 @@ import { randomBytes, scryptSync } from "node:crypto";
 import type { Prisma } from "../src/generated/prisma/client";
 import { getPrisma } from "../src/lib/db";
 import {
-  mockAdmins,
-  mockCategories,
-  mockCoupons,
-  mockCarriers,
-  mockDeliveryZones,
-  mockCommissionSettings,
-} from "../src/services/mock-data";
+  seedAdmins,
+  seedCategories,
+  seedCoupons,
+  seedCarriers,
+  seedDeliveryZones,
+  seedCommissionSettings,
+} from "../src/services/seed-data";
 
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -53,7 +53,7 @@ async function main() {
 
   // ---- Admin accounts ----
 
-  for (const a of mockAdmins) {
+  for (const a of seedAdmins) {
     const twoFactorEnabled = a.loginId === "alexrivera";
     await prisma.admin.upsert({
       where: { loginId: a.loginId },
@@ -72,12 +72,12 @@ async function main() {
       },
     });
   }
-  console.log(`admins: ${mockAdmins.length}`);
+  console.log(`admins: ${seedAdmins.length}`);
 
   // ---- Marketplace taxonomy ----
 
   let categoryCount = 0;
-  for (const c of mockCategories) {
+  for (const c of seedCategories) {
     await prisma.category.upsert({
       where: { id: c.id },
       update: {},
@@ -104,27 +104,27 @@ async function main() {
 
   // ---- Shipping configuration ----
 
-  for (const c of mockCarriers) {
+  for (const c of seedCarriers) {
     await prisma.carrier.upsert({
       where: { id: c.id },
       update: {},
       create: c,
     });
   }
-  console.log(`carriers: ${mockCarriers.length}`);
+  console.log(`carriers: ${seedCarriers.length}`);
 
-  for (const z of mockDeliveryZones) {
+  for (const z of seedDeliveryZones) {
     await prisma.deliveryZone.upsert({
       where: { id: z.id },
       update: {},
       create: z,
     });
   }
-  console.log(`delivery zones: ${mockDeliveryZones.length}`);
+  console.log(`delivery zones: ${seedDeliveryZones.length}`);
 
   // ---- Coupons (codes shared with the mobile app cart) ----
 
-  for (const c of mockCoupons) {
+  for (const c of seedCoupons) {
     await prisma.coupon.upsert({
       where: { id: c.id },
       update: {},
@@ -141,7 +141,7 @@ async function main() {
       },
     });
   }
-  console.log(`coupons: ${mockCoupons.length}`);
+  console.log(`coupons: ${seedCoupons.length}`);
 
   // ---- Site settings (identity + economics only - no fabricated metrics) ----
 
@@ -170,10 +170,10 @@ async function main() {
     update: {},
     create: {
       id: "global",
-      commissionRate: mockCommissionSettings.commissionRate,
-      listingFee: mockCommissionSettings.listingFee,
-      payoutFee: mockCommissionSettings.payoutFee,
-      categoryOverrides: jx(mockCommissionSettings.categoryOverrides),
+      commissionRate: seedCommissionSettings.commissionRate,
+      listingFee: seedCommissionSettings.listingFee,
+      payoutFee: seedCommissionSettings.payoutFee,
+      categoryOverrides: jx(seedCommissionSettings.categoryOverrides),
     },
   });
   console.log("commission settings: 1");

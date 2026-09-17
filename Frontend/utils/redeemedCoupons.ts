@@ -51,8 +51,40 @@ export interface AppliedPromo {
   code: string;
   amount: number;
   freeDelivery?: boolean;
+  /** Coupon face type/value (percent|flat|fixed|free_delivery) for server-mirror previews. */
+  kind?: string;
+  value?: number;
   /** true when the code came from @susej_redeemed_coupons (consumed on use). */
   redeemed?: boolean;
+}
+
+/**
+ * Server-mirror discount preview (orders route): percent applies to
+ * subtotal+delivery, flat/fixed is rupees off, free_delivery zeroes the fee.
+ * Capped at base−1 like the server (totals stay > 0). The server remains
+ * truth at placement — this is the buyer's pre-Pay estimate, computed by the
+ * SAME formula on both cart and checkout so the two screens never disagree.
+ */
+export function previewDiscount(
+  subtotal: number,
+  delivery: number,
+  promo: AppliedPromo | null,
+  offerMode = false
+): number {
+  if (!promo || offerMode) return 0;
+  const base = Math.round(subtotal) + Math.round(delivery);
+  if (!(base > 1)) return 0;
+  let discount = 0;
+  if (promo.freeDelivery || promo.kind === 'free_delivery') {
+    discount = Math.round(delivery);
+  } else if ((promo.kind === 'percent' || promo.kind === 'percentage') && typeof promo.value === 'number') {
+    discount = Math.round((base * promo.value) / 100);
+  } else if ((promo.kind === 'flat' || promo.kind === 'fixed') && typeof promo.value === 'number') {
+    discount = Math.round(promo.value);
+  } else {
+    discount = Math.max(0, Math.round(promo.amount));
+  }
+  return Math.max(0, Math.min(discount, base - 1));
 }
 
 export async function getRedeemedCoupons(): Promise<RedeemedCoupon[]> {

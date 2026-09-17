@@ -9,6 +9,7 @@ import { usePosts } from '../../contexts/PostContext';
 import { useCart } from '../../contexts/CartContext';
 import { usePromotions } from '../../contexts/PromotionContext';
 import { hasRealImage, resolveListingImage } from '../../utils/productImages';
+import { matchesCategory } from '../category/[slug]';
 import { serverApi } from '../../utils/serverApi';
 
 function PlayIcon({ size = 18, color = '#5d5fef' }: { size?: number; color?: string }) {
@@ -102,11 +103,12 @@ const CONDITIONS = ['Any', 'New', 'Like New', 'Used'];
 // Posts have no condition field — derive it from description keywords (case-insensitive).
 // Unknown when undescribed: defaulting to 'New' mislabeled used goods in the
 // condition filter. Unknown posts are skipped by any specific condition filter.
+// Word-boundary matching: naive `includes('new')` mislabeled "renewed"/"like brand new-ish".
 const deriveCondition = (description: string): string => {
   const d = (description ?? '').toLowerCase();
-  if (d.includes('like new') || d.includes('mint')) return 'Like New';
-  if (d.includes('new')) return 'New';
-  if (d.includes('used') || d.includes('pre-owned') || d.includes('pre owned')) return 'Used';
+  if (/\blike new\b/.test(d) || /\bmint\b/.test(d)) return 'Like New';
+  if (/\bnew\b/.test(d)) return 'New';
+  if (/\bused\b/.test(d) || /\bpre-owned\b/.test(d) || /\bpre owned\b/.test(d) || /\bsecond hand\b/.test(d) || /\brefurbished\b/.test(d)) return 'Used';
   return 'Unknown';
 };
 
@@ -134,8 +136,7 @@ export default function ExploreScreen() {
   const [filters, setFilters] = useState<ExploreFilters>(DEFAULT_FILTERS);
   const [filterVisible, setFilterVisible] = useState(false);
   const insets = useSafeAreaInsets();
-  const { cart: cartItems } = useCart();
-  const cartCount = cartItems.length;
+  const { cartCount } = useCart();
   const { posts, hiddenPostIds = [], mutedSellers = [] } = usePosts() as { posts: import('../../contexts/PostContext').Post[]; hiddenPostIds?: string[]; mutedSellers?: string[] };
   const [serverPromos, setServerPromos] = useState<any[]>([]);
   useFocusEffect(useCallback(() => {
@@ -195,7 +196,7 @@ export default function ExploreScreen() {
 
   const filteredPosts = useMemo(() => {
     let out = posts.filter((p) => !hiddenPostIds?.includes(p.id) && !mutedSellers?.includes(p.sellerUsername) && hasRealImage(p));
-    if (selectedCategory !== 'All') out = out.filter((p) => p.category === selectedCategory);
+    if (selectedCategory !== 'All') out = out.filter((p) => matchesCategory(p.category, selectedCategory));
     const { min, max } = pricePreset;
     if (min != null) out = out.filter((p) => p.price >= min);
     if (max != null) out = out.filter((p) => p.price <= max);

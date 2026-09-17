@@ -87,6 +87,51 @@ function ShieldIcon({ size = 24, color = colors.primaryContainer }: { size?: num
 // mirrored to storage and restored on remount instead of restarting from zero.
 const DRAFT_KEY_BASE = '@susej_seller_draft';
 
+// Identity fields that must never rest in device storage after the server
+// acknowledges the application (the Seller row + documents carry them from
+// then on). AsyncStorage is sandboxed but unencrypted — a rooted phone or a
+// backup scrape turns a forever-kept PAN/bank/ID number into a breach.
+const SENSITIVE_IDENTITY_KEYS = ['pan', 'bankAccount', 'idNumber', 'gstin', 'dob', 'nameOnId', 'aadhaar'];
+// Hosted document URLs (ID photos, selfie-with-ID, proofs, logo): the admin
+// Seller row + documents carry them server-side after ack. Keeping them in
+// device storage alongside the numbers doubles the breach value for zero
+// retry benefit (acked records are never refiled).
+const SENSITIVE_DOC_URL_KEYS = ['idDocUrl', 'idBackUrl', 'addrProofUrl', 'gstCertUrl', 'logoUrl', 'selfieUrl', 'logo'];
+const SENSITIVE_DOC_LIST_KEYS = ['documents', 'docs'];
+
+/**
+ * Scrub-on-ack: flip synced + strip sensitive identity fields from the stored
+ * record AND its retry payload. Unsynced records keep everything (the mount
+ * retry needs the full payload for first filing). A scrubbed record is never
+ * silently refiled (see identityScrubbed guard) — if the server row ever
+ * vanishes, the wizard offers a fresh application instead of filing an
+ * incomplete one. Document URLs are stripped too (server holds them); only
+ * the filed-doc labels + count stay for the tracker display.
+ */
+function scrubIdentityOnAck(a: Record<string, unknown>): Record<string, unknown> {
+  const stripUrls = (o: Record<string, unknown>) => {
+    for (const k of SENSITIVE_DOC_URL_KEYS) delete o[k];
+    for (const k of SENSITIVE_DOC_LIST_KEYS) {
+      const v = o[k];
+      if (Array.isArray(v)) {
+        o[`${k}Filed`] = v.length;
+        o[k] = v.map((d) => (d && typeof d === 'object' ? { type: (d as any).type, label: (d as any).label, fileName: (d as any).fileName } : d));
+      }
+    }
+  };
+  const next: Record<string, unknown> = { ...a, synced: true, identityScrubbed: true };
+  for (const k of SENSITIVE_IDENTITY_KEYS) delete next[k];
+  stripUrls(next);
+  const si = next.syncInput;
+  if (si && typeof si === 'object' && !Array.isArray(si)) {
+    const clean: Record<string, unknown> = { ...(si as Record<string, unknown>) };
+    for (const k of SENSITIVE_IDENTITY_KEYS) delete clean[k];
+    stripUrls(clean);
+    next.syncInput = clean;
+  }
+  return next;
+}
+
 export default function BecomeSellerScreen() {
   const insets = useSafeAreaInsets();
   const { updateUser, user } = useAuth();
@@ -101,9 +146,9 @@ export default function BecomeSellerScreen() {
   const [city, setCity] = useState('');
   const [pincode, setPincode] = useState('');
   // Business sellers (step-1 card promises GST, PAN, bank details): collected
-  // here. GSTIN has a real sink (Seller.taxId, admin-visible); PAN + bank
-  // account persist to the applicant record + sync payload until Seller
-  // columns land (migration window) — never silently dropped.
+  // here. GSTIN rides taxId to the admin Seller row; PAN + bank ride the sync
+  // payload to their Seller columns, then scrubIdentityOnAck strips every
+  // identity number from device storage on ack — never kept at rest.
   const [gstin, setGstin] = useState('');
   const [pan, setPan] = useState('');
   const [bankAccount, setBankAccount] = useState('');
@@ -204,6 +249,19 @@ export default function BecomeSellerScreen() {
         const raw = await AsyncStorage.getItem(draftKey);
         if (raw && alive) {
           const d = JSON.parse(raw);
+          // Draft TTL (abandoned PII must not rest forever): drafts older
+          // than 7 days are purged instead of restored.
+          if (typeof d.savedAt === 'number' && Date.now() - d.savedAt > 7 * 86400000) {
+            AsyncStorage.removeItem(draftKey).catch(() => {});
+            return;
+          }
+          // Self-heal legacy drafts: strip any stored identity numbers once
+          // (older builds mirrored them). From here on they are never written.
+          if (SENSITIVE_IDENTITY_KEYS.some((k) => d[k] !== undefined)) {
+            const clean: Record<string, unknown> = { ...(d as Record<string, unknown>) };
+            for (const k of SENSITIVE_IDENTITY_KEYS) delete clean[k];
+            AsyncStorage.setItem(draftKey, JSON.stringify(clean)).catch(() => {});
+          }
           if (d.sellerType) setSellerType(d.sellerType);
           if (d.businessName) setBusinessName(d.businessName);
           if (d.category && !isCategoryLocked) setCategory(d.category);
@@ -240,52 +298,21 @@ export default function BecomeSellerScreen() {
   }, [draftKey, user?.username, isCategoryLocked, lockedCategory]);
 
   // Refile applications whose admin-queue sync never acked (offline submit).
-  // Runs once per account: replays the stored payload (server upserts by
-  // app_<username>, so retries never duplicate) and flips synced on ack.
+  // SINGLE owner (this effect only): an earlier second filer on the same
+  // mount double-POSTed every offline filing. Runs once per account: replays
+  // the stored payload (server upserts by app_<username>, so retries never
+  // duplicate) and flips synced on ack.
   const [filingPending, setFilingPending] = useState(false);
-  useEffect(() => {
-    const u = user?.username;
-    if (!u) return;
-    let alive = true;
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem('@susej_seller_applicants');
-        if (!alive || !raw) return;
-        const list = JSON.parse(raw);
-        if (!Array.isArray(list)) return;
-        const mine = list.find(
-          (a: { username?: string; synced?: boolean; syncInput?: Record<string, unknown> }) =>
-            a.username === u && !a.synced && a.syncInput
-        );
-        if (!mine) return;
-        if (alive) setFilingPending(true);
-        const m = await import('../utils/adminSync');
-        const ok = await m.syncSellerApplicant(
-          mine.syncInput as Parameters<typeof m.syncSellerApplicant>[0]
-        );
-        if (!alive) return;
-        if (ok) {
-          const next = list.map((a: { username?: string }) =>
-            a.username === u ? { ...a, synced: true } : a
-          );
-          await AsyncStorage.setItem('@susej_seller_applicants', JSON.stringify(next)).catch(() => {});
-          if (alive) setFilingPending(false);
-        }
-      } catch {
-        // Offline — stays pending, retried on next launch.
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [user?.username]);
 
   // Application status is server truth: fetch on every mount (reopen-safe).
   // Self-heal: a local record marked synced that the server no longer has
   // (deleted/DB swap) is refiled once — upsert by app_<username> makes the
   // retry idempotent, so progress can never strand silently again.
+  // Username compare is lowercase: records store lowercased usernames, and a
+  // raw-case compare stranded mixed-case owners' refiles silently.
   useEffect(() => {
     if (!user?.username) return;
+    const meLower = user.username.trim().toLowerCase();
     let alive = true;
     (async () => {
       await refreshServerApp();
@@ -296,22 +323,32 @@ export default function BecomeSellerScreen() {
         if (!Array.isArray(list)) return;
         const mine = list.find(
           (a: { username?: string; synced?: boolean; syncInput?: Record<string, unknown> }) =>
-            a.username === user.username && a.syncInput
+            String(a.username ?? '').trim().toLowerCase() === meLower && a.syncInput
         );
         if (!mine) return;
         const res = await serverApi.getSellerApplication().catch(() => null);
         if (!alive) return;
         if (res?.ok && !res.data?.application) {
-          const m = await import('../utils/adminSync');
-          const ok = await m.syncSellerApplicant(
-            mine.syncInput as Parameters<typeof m.syncSellerApplicant>[0]
-          );
-          if (ok && alive) {
-            const next = list.map((a: { username?: string }) =>
-              a.username === user.username ? { ...a, synced: true } : a
+          // Scrubbed records (identity already on the server) are never
+          // silently refiled — offer a fresh application instead.
+          if (mine && !(mine as { identityScrubbed?: boolean }).identityScrubbed) {
+            if (alive) setFilingPending(true);
+            const m = await import('../utils/adminSync');
+            const ok = await m.syncSellerApplicant(
+              mine.syncInput as Parameters<typeof m.syncSellerApplicant>[0]
             );
-            await AsyncStorage.setItem('@susej_seller_applicants', JSON.stringify(next)).catch(() => {});
-            await refreshServerApp();
+            if (ok && alive) {
+              const next = list.map((a: { username?: string }) =>
+                String(a.username ?? '').trim().toLowerCase() === meLower ? scrubIdentityOnAck(a as Record<string, unknown>) : a
+              );
+              await AsyncStorage.setItem('@susej_seller_applicants', JSON.stringify(next)).catch(() => {});
+              await refreshServerApp();
+              setFilingPending(false);
+            } else if (alive) {
+              setFilingPending(true);
+            }
+          } else if (alive) {
+            setServerApp(null);
           }
         } else if (res?.ok) {
           setServerApp(res.data?.application ?? null);
@@ -369,20 +406,24 @@ export default function BecomeSellerScreen() {
     );
   };
 
-  // Mirror every field to storage so a camera/picker bounce costs seconds.
+  // Mirror every NON-SENSITIVE field to storage so a camera/picker bounce
+  // costs seconds. ID numbers (PAN / bank / Aadhaar / GSTIN / DOB / name-on-ID)
+  // are NEVER mirrored — vault rule: they live in memory only until submit
+  // (the submit-time applicant record carries them, scrubbed on server ack).
+  // A user who abandons mid-wizard leaves zero identity numbers at rest.
   useEffect(() => {
     if (!draftLoaded || !user?.username) return;
     const draft = JSON.stringify({
+      savedAt: Date.now(),
       step, sellerType, businessName, category, about, city, pincode,
-      gstin, pan, bankAccount,
-      agreeTerms, idType, aadhaar, idUri, idUploaded,
-      idBackUri, idBackUploaded, nameOnId, dob,
+      agreeTerms, idType, idUri, idUploaded,
+      idBackUri, idBackUploaded,
       useAadhaarAsAddress, addrProofUri, addrProofUploaded,
       gstCertUri, gstCertUploaded, logoUri,
       selfieUri, selfieAdded, agreeVerify, storeLoc,
     });
     AsyncStorage.setItem(draftKey, draft).catch(() => {});
-  }, [draftLoaded, draftKey, step, sellerType, businessName, category, about, city, pincode, gstin, pan, bankAccount, agreeTerms, idType, aadhaar, idUri, idUploaded, idBackUri, idBackUploaded, nameOnId, dob, useAadhaarAsAddress, addrProofUri, addrProofUploaded, gstCertUri, gstCertUploaded, logoUri, selfieUri, selfieAdded, agreeVerify, storeLoc]);
+  }, [draftLoaded, draftKey, step, sellerType, businessName, category, about, city, pincode, agreeTerms, idType, idUri, idUploaded, idBackUri, idBackUploaded, useAadhaarAsAddress, addrProofUri, addrProofUploaded, gstCertUri, gstCertUploaded, logoUri, selfieUri, selfieAdded, agreeVerify, storeLoc]);
 
   // Shared library picker for every KYC upload box (front / back / address
   // proof / GST certificate / logo). One code path, identical permission +
@@ -609,6 +650,9 @@ export default function BecomeSellerScreen() {
       setError('Please complete this step before continuing');
       return;
     }
+    // No double-fire: rapid Submit taps used to run the whole upload+file
+    // pipeline twice (duplicate hosted uploads + duplicate filings).
+    if (submitting) return;
     setError('');
     if (step === 1) setStep(2);
     else if (step === 2) setStep(3);
@@ -706,8 +750,8 @@ export default function BecomeSellerScreen() {
             syncInput: null as null | Record<string, unknown>,
             sellerType,
             // Business tax identity (step-1 card promise). GSTIN also rides
-            // taxId to the admin Seller row; PAN + bank persist here + in the
-            // sync payload until Seller columns land (migration window).
+            // taxId to the admin Seller row; PAN + bank ride the sync payload
+            // to their columns, then scrubIdentityOnAck strips them on ack.
             gstin: sellerType === 'business' ? gstin.trim().toUpperCase() : '',
             pan: sellerType === 'business' ? pan.trim().toUpperCase() : '',
             bankAccount: sellerType === 'business' ? bankAccount.trim() : '',
@@ -804,35 +848,41 @@ export default function BecomeSellerScreen() {
                 storeLng: storeLoc?.lng ?? null,
                 storeAddress: storeLoc?.label ?? '',
           };
-          // Persist the exact retry payload alongside the applicant record.
-          AsyncStorage.getItem(APPLICANTS_KEY).then((raw) => {
-            try {
-              const list = raw ? JSON.parse(raw) : [];
-              if (!Array.isArray(list)) return;
+          // Persist the exact retry payload alongside the applicant record —
+          // AWAITED before the sync below fires. The old floating promise let
+          // the ack-scrub win the race and strand a synced:true record with no
+          // payload (mount retries dead on both paths).
+          try {
+            const raw = await AsyncStorage.getItem(APPLICANTS_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            if (Array.isArray(list)) {
               const next = list.map((a: { username?: string }) =>
                 a.username === u ? { ...a, syncInput: syncPayload } : a
               );
-              AsyncStorage.setItem(APPLICANTS_KEY, JSON.stringify(next)).catch(() => {});
-            } catch {}
-          }).catch(() => {});
-          void import('../utils/adminSync').then((m) =>
-            m.syncSellerApplicant(syncPayload).then((ok) => {
-              if (!ok) {
-                setFilingPending(true);
-                return;
+              await AsyncStorage.setItem(APPLICANTS_KEY, JSON.stringify(next)).catch(() => {});
+            }
+          } catch {}
+          let syncOk = false;
+          try {
+            const m = await import('../utils/adminSync');
+            syncOk = await m.syncSellerApplicant(syncPayload).catch(() => false);
+          } catch {
+            syncOk = false;
+          }
+          if (!syncOk) {
+            setFilingPending(true);
+          } else {
+            try {
+              const raw = await AsyncStorage.getItem(APPLICANTS_KEY);
+              const list = raw ? JSON.parse(raw) : [];
+              if (Array.isArray(list)) {
+                const next = list.map((a: { username?: string }) =>
+                  a.username === u ? scrubIdentityOnAck(a as Record<string, unknown>) : a
+                );
+                await AsyncStorage.setItem(APPLICANTS_KEY, JSON.stringify(next)).catch(() => {});
               }
-              AsyncStorage.getItem(APPLICANTS_KEY).then((raw) => {
-                try {
-                  const list = raw ? JSON.parse(raw) : [];
-                  if (!Array.isArray(list)) return;
-                  const next = list.map((a: { username?: string }) =>
-                    a.username === u ? { ...a, synced: true } : a
-                  );
-                  AsyncStorage.setItem(APPLICANTS_KEY, JSON.stringify(next)).catch(() => {});
-                } catch {}
-              }).catch(() => {});
-            }).catch(() => {})
-          );
+            } catch {}
+          }
           setSubmitting(false);
           setStep(5);
           // Seed the tracker so a reopen right after submit already shows it.
@@ -1281,9 +1331,12 @@ export default function BecomeSellerScreen() {
                 <Text className="font-inter-500 text-textSecondary mb-2" style={{ fontSize: 13, lineHeight: 18 }}>
                   Bank account (for payouts, optional)
                 </Text>
-                <View className="flex-row items-center px-4 mb-5" style={{ height: 52, borderRadius: 16, backgroundColor: colors.surfaceContainer }}>
+                <View className="flex-row items-center px-4" style={{ height: 52, borderRadius: 16, backgroundColor: colors.surfaceContainer }}>
                   <TextInput className="flex-1 font-inter-400 text-textPrimary" style={{ fontSize: 14 }} placeholder="Account number" placeholderTextColor={colors.secondary} value={bankAccount} onChangeText={(t) => setBankAccount(t.replace(/[^0-9]/g, '').slice(0, 18))} keyboardType="number-pad" />
                 </View>
+                <Text className="font-inter-400 text-textSecondary mt-1 mb-5" style={{ fontSize: 11, lineHeight: 15 }}>
+                  9–18 digits. Payouts verify this account before the first transfer — a wrong number fails honestly there, not silently.
+                </Text>
               </>
             )}
 
@@ -1579,16 +1632,20 @@ export default function BecomeSellerScreen() {
                 Getting Started
               </Text>
               {[
-                { label: 'Set up your storefront', sub: 'Banner, categories and deals', done: false, route: '/storefront-editor' },
+                { label: 'Set up your storefront', sub: 'Unlocks after verification', done: false, locked: true },
                 { label: 'Verify your identity', sub: 'Under review', done: false },
-                { label: 'Publish your first product post', sub: null, done: false, route: '/(tabs)/create' },
+                { label: 'Publish your first product post', sub: 'Unlocks after verification', done: false, locked: true },
                 { label: 'Earn your first follower', sub: null, done: false },
               ].map((item, i) => (
                 <TouchableOpacity
                   key={item.label}
                   className="flex-row items-center py-3"
-                  style={{ borderTopWidth: i > 0 ? 1 : 0, borderTopColor: colors.surfaceContainer }}
-                  onPress={() => item.route && router.push(item.route as any)}
+                  style={{ borderTopWidth: i > 0 ? 1 : 0, borderTopColor: colors.surfaceContainer, opacity: (item as { locked?: boolean }).locked ? 0.6 : 1 }}
+                  disabled={!(item as { route?: string }).route || (item as { locked?: boolean }).locked}
+                  onPress={() => {
+                    const r = (item as { route?: string }).route;
+                    if (r && !(item as { locked?: boolean }).locked) router.push(r as any);
+                  }}
                 >
                   <View className="w-7 h-7 rounded-full items-center justify-center" style={{ backgroundColor: item.done ? colors.primaryContainer : colors.surfaceContainer }}>
                     {item.done ? <CheckIcon size={14} color={colors.onPrimary} /> : <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>{i + 1}</Text>}
@@ -1603,7 +1660,7 @@ export default function BecomeSellerScreen() {
                       </Text>
                     )}
                   </View>
-                  {item.route && <ArrowRightIcon size={16} color={colors.secondary} />}
+                  {(item as { route?: string }).route && !(item as { locked?: boolean }).locked && <ArrowRightIcon size={16} color={colors.secondary} />}
                 </TouchableOpacity>
               ))}
             </View>
@@ -1635,8 +1692,8 @@ export default function BecomeSellerScreen() {
         <View className="px-5 pt-3 pb-2" style={{ backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.surfaceContainer }}>
           <TouchableOpacity
             className="h-14 rounded-figma-16 items-center justify-center"
-            style={{ backgroundColor: canContinue() ? colors.primaryContainer : colors.surfaceContainer }}
-            disabled={!canContinue() && step === 4}
+            style={{ backgroundColor: canContinue() && !submitting ? colors.primaryContainer : colors.surfaceContainer }}
+            disabled={(!canContinue() && step === 4) || submitting}
             onPress={handleNext}
           >
             <Text className="font-inter-600" style={{ fontSize: 15, lineHeight: 20, color: canContinue() ? colors.onPrimary : colors.textSecondary }}>

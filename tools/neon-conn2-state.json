@@ -1,0 +1,97 @@
+{
+  "clicked": true,
+  "buttons": [
+    {
+      "txt": "",
+      "cls": "_button_1y32r_9"
+    },
+    {
+      "txt": "",
+      "cls": "_button_1y32r_9"
+    },
+    {
+      "txt": "Search...CtrlK",
+      "cls": "_trigger_37jt6_3"
+    },
+    {
+      "txt": "Ask AI",
+      "cls": "_button_1qnk4_3 _button_secondary_1qnk4_105 _button_s_1qnk4_"
+    },
+    {
+      "txt": "",
+      "cls": "_button_1qnk4_3 _button_secondary_1qnk4_105 _button_s_1qnk4_"
+    },
+    {
+      "txt": "Upgrade",
+      "cls": "_button_1qnk4_3 _button_primary_1qnk4_83 _button_s_1qnk4_59"
+    },
+    {
+      "txt": "",
+      "cls": "_button_1wujk_1 _button_neon_1wujk_19"
+    },
+    {
+      "txt": "Connect",
+      "cls": "_root_1qikd_9 _button_1qnk4_3 _button_connect_1qnk4_234 _but"
+    },
+    {
+      "txt": "production",
+      "cls": "_trigger_3tpbz_18"
+    },
+    {
+      "txt": "Postgres database",
+      "cls": "_root_2horm_1 _header_pcc1k_1"
+    },
+    {
+      "txt": "",
+      "cls": "_dismissButton_1632c_114"
+    },
+    {
+      "txt": "Copy command",
+      "cls": "_copyButton_1632c_141 _button_1qnk4_3 _button_secondary_1qnk"
+    },
+    {
+      "txt": "",
+      "cls": "_hamburgerButton_1jyut_8 _button_1qnk4_3 _button_secondary_1"
+    },
+    {
+      "txt": "Connect",
+      "cls": "_button_1qnk4_3 _button_primary_1qnk4_83 _button_m_1qnk4_49"
+    },
+    {
+      "txt": "Import data",
+      "cls": "_button_1qnk4_3 _button_secondary_1qnk4_105 _button_m_1qnk4_"
+    },
+    {
+      "txt": "Connection stringCopy your project’s con",
+      "cls": "_card_1waoq_1"
+    },
+    {
+      "txt": "Neon initSet up your local dev environme",
+      "cls": "_card_1waoq_1"
+    },
+    {
+      "txt": "IDE extensionSet up your app with the Ne",
+      "cls": "_card_1waoq_1"
+    },
+    {
+      "txt": "MCP serverConnect your app to Neon’s MCP",
+      "cls": "_card_1waoq_1"
+    },
+    {
+      "txt": "Refresh",
+      "cls": "_button_1qnk4_3 _button_secondary_1qnk4_105 _button_m_1qnk4_"
+    },
+    {
+      "txt": "",
+      "cls": "_close_1iy8v_9 _default_10iok_19 _small_10iok_5 _root_10iok_"
+    },
+    {
+      "txt": "Install an integration",
+      "cls": "_button_1qnk4_3 _button_secondary_1qnk4_105 _button_m_1qnk4_"
+    },
+    {
+      "txt": "",
+      "cls": "_closeButton_1v8bl_63"
+    }
+  ]
+}

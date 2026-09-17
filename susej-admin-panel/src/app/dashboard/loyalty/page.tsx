@@ -53,7 +53,7 @@ const makeColumns = (onAdjust: (u: MockLoyaltyUser) => void) => [
 ];
 
 export default function LoyaltyPage() {
-  const { data: rows, refresh } = useDbResource<MockLoyaltyUser>("loyalty");
+  const { data: rows, total: loyaltyTotal, refresh } = useDbResource<MockLoyaltyUser>("loyalty", { take: 100 });
   const [items, setItems] = useState<MockLoyaltyUser[] | null>(rows);
   const [target, setTarget] = useState<MockLoyaltyUser | null>(null);
   const [delta, setDelta] = useState("");
@@ -73,6 +73,9 @@ export default function LoyaltyPage() {
     if (!target) return;
     const amount = Number(delta);
     if (!Number.isFinite(amount) || amount === 0) return;
+    // Points are spendable value: the audit trail must carry the justification.
+    // The desk blocks submission until a reason is typed (footer copy promises it).
+    if (!reason.trim()) return;
     const points = Math.max(0, target.points + amount);
     const tier = tierFromPoints(points);
     setItems((prev) =>
@@ -81,7 +84,8 @@ export default function LoyaltyPage() {
     fetch("/api/data/loyalty", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: target.id, data: { points, tier } }),
+      credentials: "include",
+      body: JSON.stringify({ id: target.id, data: { points, tier }, reason: reason.trim().slice(0, 500) }),
     })
       .finally(() => {
         setTarget(null);
@@ -104,7 +108,7 @@ export default function LoyaltyPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Total points issued" value={formatNumber(totalPoints)} tone="purple" />
+        <StatTile label={`Total points issued${typeof loyaltyTotal === "number" && loyaltyTotal > (items ?? []).length ? " (first 100)" : ""}`} value={formatNumber(totalPoints)} tone="purple" />
         <StatTile label="Gold & Platinum" value={premium} tone="amber" />
         <StatTile label="Total referrals" value={totalReferrals} tone="green" />
         <StatTile label="Rewards redeemed" value={redeemed} />
@@ -118,6 +122,7 @@ export default function LoyaltyPage() {
           <DataTable
             columns={makeColumns(openAdjust)}
             data={items ?? []}
+            totalCount={loyaltyTotal ?? (items ?? []).length}
             searchable
             searchKey="userName"
             filename="loyalty"
@@ -183,7 +188,7 @@ export default function LoyaltyPage() {
               </Button>
               <Button
                 onClick={submitAdjust}
-                disabled={!delta || Number(delta) === 0}
+                disabled={!delta || Number(delta) === 0 || !reason.trim()}
               >
                 {delta.startsWith("-") ? (
                   <MinusCircle className="h-4 w-4" />

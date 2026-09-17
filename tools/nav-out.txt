@@ -1,0 +1,49 @@
+=== SIDEBAR LINKS (23) ===
+/dashboard  <- Dashboard
+/dashboard/home-management  <- Home Management
+/dashboard/products  <- Products
+/dashboard/categories  <- Categories
+/dashboard/orders  <- View all →
+/dashboard/auctions  <- Auctions
+/dashboard/bundles  <- Bundles
+/dashboard/food-hub  <- Food Hub
+/dashboard/bookings  <- Bookings & Services
+/dashboard/offers  <- Offers & Coupons
+/dashboard/shipping  <- Shipping
+/dashboard/users  <- Users
+/dashboard/sellers  <- Seller Verification
+/dashboard/blocked  <- Blocked & Banned
+/dashboard/address-book  <- Address Book
+/dashboard/payments  <- Payments
+/dashboard/promotions  <- Promotions & Ads
+/dashboard/commission  <- Commission & Fees
+/dashboard/wallet  <- Wallet
+/dashboard/refunds  <- Refunds
+/dashboard/disputes  <- Disputes
+/dashboard/loyalty  <- Loyalty & Referrals
+/dashboard/payment-methods  <- Payment Methods
+OK  /dashboard rows=0 btns=12 inputs=0 
+OK  /dashboard/home-management rows=0 btns=16 inputs=0 
+OK  /dashboard/products rows=2 btns=23 inputs=2 [EMPTY]
+OK  /dashboard/categories rows=1 btns=17 inputs=0 
+OK  /dashboard/orders rows=2 btns=32 inputs=2 [EMPTY]
+OK  /dashboard/auctions rows=2 btns=22 inputs=1 [EMPTY]
+OK  /dashboard/bundles rows=2 btns=23 inputs=1 [EMPTY]
+OK  /dashboard/food-hub rows=2 btns=21 inputs=1 [EMPTY]
+OK  /dashboard/bookings rows=2 btns=23 inputs=1 [EMPTY]
+OK  /dashboard/offers rows=7 btns=35 inputs=1 
+OK  /dashboard/shipping rows=2 btns=27 inputs=1 [EMPTY]
+OK  /dashboard/users rows=11 btns=23 inputs=12 
+OK  /dashboard/sellers rows=2 btns=25 inputs=2 [EMPTY]
+OK  /dashboard/blocked rows=2 btns=22 inputs=1 [EMPTY]
+OK  /dashboard/address-book rows=2 btns=21 inputs=1 [EMPTY]
+OK  /dashboard/payments rows=2 btns=24 inputs=3 [EMPTY]
+OK  /dashboard/promotions rows=2 btns=29 inputs=1 [EMPTY]
+OK  /dashboard/commission rows=7 btns=21 inputs=23 
+OK  /dashboard/wallet rows=2 btns=23 inputs=1 [EMPTY]
+OK  /dashboard/refunds rows=2 btns=24 inputs=1 [EMPTY]
+OK  /dashboard/disputes rows=2 btns=25 inputs=1 [EMPTY]
+OK  /dashboard/loyalty rows=2 btns=22 inputs=1 [EMPTY]
+OK  /dashboard/payment-methods rows=2 btns=22 inputs=1 [EMPTY]
+
+=== ERRORS (0) ===

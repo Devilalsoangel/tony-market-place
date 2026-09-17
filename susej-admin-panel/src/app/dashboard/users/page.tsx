@@ -90,7 +90,7 @@ const actionMeta: Record<ReportAction, { title: string; message: (name: string) 
 
 export default function UsersPage() {
   const router = useRouter();
-  const { data: users } = useDbResource<User>("users");
+  const { data: users, total: usersTotal } = useDbResource<User>("users", { take: 100 });
   const { data: reportedRows, refresh: refreshReported } = useDbResource<MockReportedUser>("reported-users");
   const [reportedList, setReportedList] = useState<MockReportedUser[]>(reportedRows ?? []);
   const [confirmAction, setConfirmAction] = useState<{ id: string; name: string; action: ReportAction } | null>(null);
@@ -111,7 +111,14 @@ export default function UsersPage() {
       } else {
         await apiPatch("reported-users", target.id, { status: "reviewed" });
         if (action === "suspend" || action === "ban") {
-          const userId = (target as unknown as { userId?: string }).userId;
+          // ReportedUser carries no userId FK (name/email only) — resolve the
+          // real User row by email from the loaded users window so Ban/Suspend
+          // actually lands on the account instead of silently no-opping.
+          const userId =
+            (target as unknown as { userId?: string }).userId ??
+            (users ?? []).find(
+              (u) => u.email?.toLowerCase() === target.email?.toLowerCase()
+            )?.id;
           if (userId) {
             await apiPatch("users", userId, { status: action === "ban" ? "banned" : "suspended" }).catch(() => {});
           }
@@ -159,12 +166,13 @@ export default function UsersPage() {
             {active === "all" && (
               <Card>
                 <CardHeader>
-                  <CardTitle>All Users ({users?.length ?? 0})</CardTitle>
+                  <CardTitle>All Users ({users?.length ?? 0}{typeof usersTotal === "number" && usersTotal > (users?.length ?? 0) ? ` of ${usersTotal}` : ""})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <DataTable
                     columns={columns}
                     data={users ?? []}
+                    totalCount={usersTotal ?? (users ?? []).length}
                     searchable
                     searchKey="name"
                     filename="users"

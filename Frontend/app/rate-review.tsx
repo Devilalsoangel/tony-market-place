@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, Switch, Image, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, Switch, Image, ActivityIndicator, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, StarIcon, CheckIcon } from '../utils/icons';
@@ -18,13 +18,14 @@ export default function RateReviewScreen() {
   const [submitted, setSubmitted] = useState(false);
   const insets = useSafeAreaInsets();
 
-  const productName = order ? order.items[0].name : 'Your order';
+  const firstItem = order?.items?.[0];
+  const productName = firstItem ? firstItem.name : 'Your order';
   const sellerName = order ? `Seller: ${order.sellerName}` : '';
   // Real ordered-item photo — never a static stock tile.
-  const productImage = order
-    ? order.items[0]?.imageUrl
-      ? { uri: order.items[0].imageUrl }
-      : resolveListingImage(null, order.items[0]?.listingId ?? order.id)
+  const productImage = firstItem
+    ? firstItem?.imageUrl
+      ? { uri: firstItem.imageUrl }
+      : resolveListingImage(null, firstItem?.listingId ?? order.id)
     : null;
   // Reviews are delivery-gated: only delivered, unreviewed orders qualify.
   const reviewable = !!order && order.status === 'delivered' && !order.reviewed;
@@ -79,12 +80,16 @@ export default function RateReviewScreen() {
     );
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (!order || rating === 0 || submitting || !reviewable) return;
     setSubmitting(true);
     try {
-      markReviewed(order.id, rating, review, anonymous);
-      setSubmitted(true);
+      // Success renders ONLY after the server acks — a refusal (offline /
+      // already-reviewed / not-delivered) rolls back underneath, so an early
+      // success screen would lie and then lose the review on reopen.
+      const ok = await markReviewed(order.id, rating, review, anonymous);
+      if (ok) setSubmitted(true);
+      else Alert.alert('Review not saved', 'Could not save your review. Check your connection and try again.');
     } finally {
       setSubmitting(false);
     }

@@ -29,7 +29,9 @@ export default function OrdersScreen() {
   type StatusTab = (typeof STATUS_TABS)[number];
   const [statusTab, setStatusTab] = useState<StatusTab>('All');
   const data = orders
-    .filter((o) => (o.sellerUsername ?? '').toLowerCase() !== myStore)
+    // Buyer history hides own-listing sales — but never hides rows that need
+    // attention (pending/failed syncs surface here with their error card).
+    .filter((o) => o.syncFailed || o.syncPending || (o.sellerUsername ?? '').toLowerCase() !== myStore)
     .filter((o) => {
       if (statusTab === 'All') return true;
       if (statusTab === 'Delivered') return o.status === 'delivered';
@@ -96,7 +98,7 @@ export default function OrdersScreen() {
               activeOpacity={0.85}
               accessibilityRole="button"
               accessibilityLabel={`View order ${item.orderNumber ?? item.id}`}
-              onPress={() => router.push(`/track-order?id=${item.id}`)}
+              onPress={() => router.push(`/order/${item.id}`)}
             >
               <View className="flex-row gap-4">
                 {/* Product thumbnail — Figma Order History 96x96 */}
@@ -174,15 +176,27 @@ export default function OrdersScreen() {
                         </TouchableOpacity>
                       )}
                       <TouchableOpacity
-                        onPress={(e) => { e.stopPropagation(); router.push(`/track-order?id=${item.id}`); }}
+                        onPress={(e) => { e.stopPropagation(); router.push(`/order/${item.id}`); }}
                         hitSlop={{ top: 8, bottom:	8, left:	8, right:	8 }}
                         accessibilityRole="button"
                         accessibilityLabel={`View details for order ${item.orderNumber ?? item.id}`}
                       >
                         <Text className="font-inter-600 text-primaryContainer" style={{ fontSize: 14, lineHeight: 16 }}>
-                          View Details
+                          Receipt
                         </Text>
                       </TouchableOpacity>
+                      {(item.status === 'placed' || item.status === 'confirmed' || item.status === 'preparing' || item.status === 'out_for_delivery') && (
+                        <TouchableOpacity
+                          onPress={(e) => { e.stopPropagation(); router.push(`/track-order?id=${item.id}`); }}
+                          hitSlop={{ top: 8, bottom:	8, left:	8, right:	8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Track order ${item.orderNumber ?? item.id}`}
+                        >
+                          <Text className="font-inter-600 text-primaryContainer" style={{ fontSize: 14, lineHeight: 16 }}>
+                            Track
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
                 </View>

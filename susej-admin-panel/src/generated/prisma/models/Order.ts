@@ -408,6 +408,7 @@ export type OrderOrderByWithRelationInput = {
 
 export type OrderWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  trackingNumber?: string
   AND?: Prisma.OrderWhereInput | Prisma.OrderWhereInput[]
   OR?: Prisma.OrderWhereInput[]
   NOT?: Prisma.OrderWhereInput | Prisma.OrderWhereInput[]
@@ -419,7 +420,6 @@ export type OrderWhereUniqueInput = Prisma.AtLeast<{
   items?: Prisma.IntFilter<"Order"> | number
   itemsList?: Prisma.JsonFilter<"Order">
   shippingCarrier?: Prisma.StringFilter<"Order"> | string
-  trackingNumber?: Prisma.StringFilter<"Order"> | string
   estimatedDelivery?: Prisma.StringFilter<"Order"> | string
   actualDelivery?: Prisma.StringFilter<"Order"> | string
   shippingAddress?: Prisma.StringFilter<"Order"> | string
@@ -435,7 +435,7 @@ export type OrderWhereUniqueInput = Prisma.AtLeast<{
   reviewComment?: Prisma.StringNullableFilter<"Order"> | string | null
   placedAt?: Prisma.DateTimeFilter<"Order"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Order"> | Date | string
-}, "id">
+}, "id" | "trackingNumber">
 
 export type OrderOrderByWithAggregationInput = {
   id?: Prisma.SortOrder

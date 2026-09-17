@@ -2,6 +2,8 @@ import {
   TrendingUp,
   Flame,
   Image as ImageIcon,
+  Star,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import type { HomeSection } from "@/types/home-management";
@@ -21,6 +23,9 @@ export const SECTION_CONFIG: Record<
     autoCompute?: boolean;
     /** When true, admin cannot manually add items — they sync from the seller app. */
     syncFromApp?: boolean;
+    /** When true, the desk shows a visibility kill-switch only — paid items
+     * are managed by the promo engine (Promotions desk), never here. */
+    visibilityOnly?: boolean;
   }
 > = {
   "top-sellers": {
@@ -50,5 +55,22 @@ export const SECTION_CONFIG: Record<
     icon: ImageIcon,
     count: (s) => s.storefrontBanners.length,
     syncFromApp: true,
+  },
+  // Paid rails: items are written by the promo engine on purchase (Promotions
+  // desk manages them). The home desk owns the visibility kill-switch so a
+  // wrong/fraudulent paid placement can be hidden immediately.
+  "featured-posts": {
+    title: "Featured Posts",
+    singular: "Featured Post",
+    icon: Star,
+    count: () => 0,
+    visibilityOnly: true,
+  },
+  "spotlight": {
+    title: "Spotlight",
+    singular: "Spotlight",
+    icon: Zap,
+    count: () => 0,
+    visibilityOnly: true,
   },
 };

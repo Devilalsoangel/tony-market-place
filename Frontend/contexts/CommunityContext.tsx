@@ -43,6 +43,9 @@ interface CommunityContextType {
   addCommunity: (community: Community) => void;
   messagesFor: (communityId: string) => CommunityMessage[];
   sendMessage: (communityId: string, text: string) => void;
+  /** Pull the shared room history (server truth) and merge it over local
+   *  rows — every member sees every message, on every device. */
+  refreshMessages: (communityId: string) => void;
 }
 
 const CommunityContext = createContext<CommunityContextType | null>(null);
@@ -185,7 +188,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       // Mirror to server; on failure rollback to snapshot captured above.
-      void serverApi.toggleCommunityJoin?.(id, joined).catch(() => {
+      // serverApi.request never throws on HTTP errors — it returns {ok:false}
+      // — so .catch alone only covers transport exceptions, not 403/400
+      // rejects (banned/private/logged-out stayed flipped + persisted).
+      const rollbackJoin = () => {
         if (!didChange) return;
         setCommunities((prev) => {
           const rollback = prev.map((c) =>
@@ -194,7 +200,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           persist(rollback);
           return rollback;
         });
-      });
+      };
+      void serverApi
+        .toggleCommunityJoin?.(id, joined)
+        .then((res) => {
+          if (res && (res as { ok?: unknown }).ok === false) rollbackJoin();
+        })
+        .catch(rollbackJoin);
     },
     [persist]
   );
@@ -250,6 +262,45 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const joinedCommunities = communities.filter((c) => c.joined);
 
+  const persistMessages = useCallback(
+    (next: CommunityMessage[]) => {
+      AsyncStorage.setItem(messagesKey, JSON.stringify(next)).catch(() => {});
+    },
+    [messagesKey]
+  );
+
+  // Server history merge: server rows win by id; local-only rows (optimistic
+  // sends not yet acked, or offline sends) are kept so nothing the user typed
+  // ever disappears. Runs on room open — this is what makes multi-member,
+  // multi-device rooms real instead of device-local theater.
+  const refreshMessages = useCallback(
+    (communityId: string) => {
+      void serverApi.getCommunityMessages(communityId).then((res) => {
+        const rows = res.ok && Array.isArray(res.data?.messages) ? res.data.messages : null;
+        if (!rows) return;
+        const serverRows: CommunityMessage[] = rows
+          .filter((m: any) => m && m.id)
+          .map((m: any) => ({
+            id: String(m.id),
+            communityId,
+            author: String(m.author ?? ''),
+            authorUsername: String(m.authorUsername ?? ''),
+            text: String(m.text ?? ''),
+            createdAt: Number(m.createdAt ?? Date.now()),
+          }));
+        setMessages((prev) => {
+          const serverIds = new Set(serverRows.map((m) => m.id));
+          const localOnly = prev.filter((m) => m.communityId === communityId && !serverIds.has(m.id));
+          const others = prev.filter((m) => m.communityId !== communityId);
+          const next = [...others, ...serverRows, ...localOnly];
+          persistMessages(next);
+          return next;
+        });
+      }).catch(() => {});
+    },
+    [persistMessages]
+  );
+
   const messagesFor = useCallback(
     (communityId: string) =>
       messages
@@ -276,15 +327,38 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.setItem(messagesKey, JSON.stringify(next)).catch(() => {});
         return next;
       });
-      // Real message on the shared backend for server communities.
-      serverApi.sendCommunityMessage(communityId, text).catch(() => {});
+      // Real message on the shared backend for server communities. On ack the
+      // temp id is swapped for the server id so the history merge (and every
+      // other member's device) treats it as one row, never a duplicate.
+      // Offline the local row stays (documented fallback) and merges on next
+      // refresh — the user never loses what they typed.
+      serverApi.sendCommunityMessage(communityId, text).then((res) => {
+        const s = res.ok ? res.data?.message : null;
+        if (!s?.id) return;
+        const serverId = String(s.id);
+        setMessages((prev) => {
+          const next = prev.map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  id: serverId,
+                  author: typeof s.author === 'string' ? s.author : m.author,
+                  authorUsername: typeof s.authorUsername === 'string' ? s.authorUsername : m.authorUsername,
+                  createdAt: Number(s.createdAt ?? m.createdAt),
+                }
+              : m
+          );
+          persistMessages(next);
+          return next;
+        });
+      }).catch(() => {});
     },
-    [username, user?.name, messagesKey]
+    [username, user?.name, messagesKey, persistMessages]
   );
 
   return (
     <CommunityContext.Provider
-      value={{ communities, joinedCommunities, join, leave, toggleJoin, addCommunity, messagesFor, sendMessage }}
+      value={{ communities, joinedCommunities, join, leave, toggleJoin, addCommunity, messagesFor, sendMessage, refreshMessages }}
     >
       {children}
     </CommunityContext.Provider>

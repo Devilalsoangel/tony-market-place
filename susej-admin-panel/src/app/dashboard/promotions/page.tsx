@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { StatTile } from "@/components/shared/stat-tile";
 import { Dialog } from "@/components/ui/dialog";
 import { useDbResource } from "@/hooks/use-db-resource";
-import { Megaphone, Clock3, RotateCcw, TrendingUp, MousePointerClick, Banknote } from "lucide-react";
+import { Megaphone, RotateCcw, Banknote, CalendarClock } from "lucide-react";
 import type { PromotionPurchase, PromotionKind, PromotionStatus } from "@/types";
 import { PROMOTION_KIND_LABEL } from "@/types";
 
@@ -38,7 +38,6 @@ function daysLeft(endsAt?: string): number {
 }
 
 const makeColumns = (
-  onExtend: (p: PromotionPurchase) => void,
   onRefund: (p: PromotionPurchase) => void
 ) => [
   column.display({
@@ -69,22 +68,9 @@ const makeColumns = (
     cell: (info) => <span className="font-medium tabular-nums">{inr(info.getValue())}</span>,
   }),
   column.accessor("durationDays", { header: "Duration", cell: (info) => <span className="tabular-nums text-[#71717A]">{info.getValue()}d</span> }),
-  column.display({
-    id: "performance",
-    header: "Performance",
-    cell: (info) => {
-      const p = info.row.original;
-      const views = p.views ?? 0;
-      const clicks = p.clicks ?? 0;
-      const ctr = views > 0 ? ((clicks / views) * 100).toFixed(1) : "0.0";
-      return (
-        <div className="text-[12px] text-[#71717A] tabular-nums">
-          <div>{views.toLocaleString()} views</div>
-          <div>{clicks.toLocaleString()} clicks · {ctr}% CTR</div>
-        </div>
-      );
-    },
-  }),
+  // Performance (views/clicks/CTR) intentionally NOT shown: the app emits no
+  // impression events yet, so any column here would read 0 forever — a dead
+  // metric masquerading as measurement. It returns with the event pipeline.
   column.accessor("status", {
     header: "Status",
     cell: (info) => {
@@ -122,9 +108,6 @@ const makeColumns = (
       }
       return (
         <div className="flex gap-2 justify-end">
-          <Button variant="secondary" size="sm" onClick={() => onExtend(p)}>
-            <Clock3 className="h-3.5 w-3.5" /> Extend 7d
-          </Button>
           <Button variant="ghost" size="sm" className="text-[#EF4444] hover:bg-[#EF4444]/5" onClick={() => onRefund(p)}>
             <RotateCcw className="h-3.5 w-3.5" /> Refund & unpin
           </Button>
@@ -135,7 +118,7 @@ const makeColumns = (
 ];
 
 export default function PromotionsPage() {
-  const { data: rows, refresh } = useDbResource<PromotionPurchase>("promotions");
+  const { data: rows, total: promosTotal, refresh } = useDbResource<PromotionPurchase>("promotions", { take: 100 });
   const [items, setItems] = useState<PromotionPurchase[] | null>(rows);
   const [kindFilter, setKindFilter] = useState<PromotionKind | "all">("all");
   const [refundTarget, setRefundTarget] = useState<PromotionPurchase | null>(null);
@@ -145,17 +128,21 @@ export default function PromotionsPage() {
   }, [rows]);
 
   function patch(id: string, data: Partial<PromotionPurchase>) {
+    const snapshot = items;
     setItems((prev) => (prev ?? []).map((p) => (p.id === id ? { ...p, ...data } : p)));
     fetch("/api/data/promotions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ id, data }),
-    }).finally(refresh);
-  }
-
-  function extend7d(p: PromotionPurchase) {
-    patch(p.id, { endsAt: new Date(new Date(p.endsAt ?? Date.now()).getTime() + 7 * 864e5).toISOString() });
+    })
+      .then(async (res) => {
+        // Roll back the optimistic flip when the server refuses (e.g. the
+        // money-field guard) — the row must never show a state that didn't persist.
+        if (!res.ok) setItems(snapshot);
+      })
+      .catch(() => setItems(snapshot))
+      .finally(refresh);
   }
 
   function handleRefund() {
@@ -171,10 +158,8 @@ export default function PromotionsPage() {
 
   const active = (items ?? []).filter((p) => p.status === "active");
   const pending = (items ?? []).filter((p) => p.status === "pending_payment").length;
+  const expired = (items ?? []).filter((p) => p.status === "expired").length;
   const revenue = (items ?? []).filter((p) => p.status !== "refunded" && p.status !== "expired").reduce((s, p) => s + p.amountPaid, 0);
-  const views = (items ?? []).reduce((s, p) => s + (p.views ?? 0), 0);
-  const clicks = (items ?? []).reduce((s, p) => s + (p.clicks ?? 0), 0);
-  const ctr = views > 0 ? ((clicks / views) * 100).toFixed(1) : "0.0";
 
   const counts = useMemo(() => {
     const base = items ?? [];
@@ -192,14 +177,14 @@ export default function PromotionsPage() {
         <h1 className="text-xl font-semibold tracking-[-0.01em] text-[#18181B]">Promotions & Ads</h1>
         <p className="mt-0.5 text-[13px] text-[#71717A]">
           Sellers pay to boost visibility — Top Seller Spotlight, Hot Deals and Boost Posts (IG / OLX / FB model).
-          Monitor live campaigns, extend slots, or refund & unpin.
+          Monitor live campaigns or refund & unpin. Slot extensions are re-purchases (keeps purchase and home-slot expiry in sync).
         </p>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
         <StatTile label="Active campaigns" value={active.length} tone="purple" />
-        <StatTile label="Promo revenue" value={inr(revenue)} tone="green" />
-        <StatTile label="Views generated" value={views.toLocaleString()} tone="purple" />
+        <StatTile label={`Promo revenue${typeof promosTotal === "number" && promosTotal > (items ?? []).length ? " (first 100)" : ""}`} value={inr(revenue)} tone="green" />
+        <StatTile label="Expired campaigns" value={expired} tone="default" />
         <StatTile label="Pending payment" value={pending} />
       </div>
 
@@ -246,8 +231,9 @@ export default function PromotionsPage() {
         </CardHeader>
         <CardContent>
           <DataTable
-            columns={makeColumns(extend7d, setRefundTarget)}
+            columns={makeColumns(setRefundTarget)}
             data={list}
+            totalCount={kindFilter === "all" ? (promosTotal ?? list.length) : null}
             searchable
             searchKey="sellerName"
             filename="promotions"
@@ -282,11 +268,11 @@ export default function PromotionsPage() {
 
       <div className="grid grid-cols-4 gap-4">
         <div className="flex items-center gap-2 text-[13px] text-[#71717A]">
-          <TrendingUp className="h-4 w-4" />
-          {views.toLocaleString()} total views · {clicks.toLocaleString()} clicks · {ctr}% CTR across all campaigns
+          <CalendarClock className="h-4 w-4" />
+          Impression / click tracking ships with the app event pipeline — no zeros shown until then
         </div>
         <div className="flex items-center gap-2 text-[13px] text-[#71717A]">
-          <MousePointerClick className="h-4 w-4" />
+          <CalendarClock className="h-4 w-4" />
           Expired campaigns unpin automatically (lazy sweep on every data read)
         </div>
         <div className="flex items-center gap-2 text-[13px] text-[#71717A]">

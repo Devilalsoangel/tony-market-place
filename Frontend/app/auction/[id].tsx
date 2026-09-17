@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, TextInput } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Image, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import Svg, { Path, Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, CloseIcon, VerifiedIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
 import { serverApi } from '../../utils/serverApi';
+import { usePosts } from '../../contexts/PostContext';
+import { hasRealImage, resolveListingImage } from '../../utils/productImages';
 
 const AUCTIONS_KEY = '@susej_auctions';
 const MIN_INCREMENT = 100;
@@ -72,7 +74,10 @@ function findAuction(data: string | null, auctionId: string): Auction | null {
 }
 
 function auctionImage(key: string) {
-  return { uri: `https://picsum.photos/seed/${key}/600/600` };
+  // Honest tile: resolved to the linked listing photo below via PostContext.
+  // Never a stock/fake photo presented as the auction item.
+  void key;
+  return { uri: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="%23EFECFF"/></svg>' };
 }
 
 function formatCountdown(ms: number): string {
@@ -104,6 +109,17 @@ export default function AuctionDetailScreen() {
   const [now, setNow] = useState(Date.now());
   const [showBidInput, setShowBidInput] = useState(false);
   const [bidAmount, setBidAmount] = useState('');
+  const { posts } = usePosts();
+  // The auction photo IS the linked listing photo — resolved live so the
+  // hammer price always shows the real item, never a stock photo.
+  const listingPost = useMemo(
+    () => posts.find((p) => p.id === auction?.imageKey),
+    [posts, auction?.imageKey]
+  );
+  const heroSource = listingPost && hasRealImage(listingPost)
+    ? resolveListingImage(listingPost, listingPost.id)
+    : auctionImage(auction?.imageKey ?? auctionId);
+  const heroHasPhoto = !!(listingPost && hasRealImage(listingPost));
 
   useEffect(() => {
     AsyncStorage.getItem(AUCTIONS_KEY)
@@ -125,6 +141,30 @@ export default function AuctionDetailScreen() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Server truth on every focus (price/outbid/ended refresh): local cache is
+  // the offline fallback, never money truth. Local bid thread preserved.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      serverApi.getAuctions().then((res) => {
+        if (!active || !res.ok || !res.data?.auctions) return;
+        const row = (res.data.auctions as any[]).find((a: any) => a && String(a.id) === auctionId);
+        if (!row) return;
+        setAuction((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            currentBid: Number(row.currentBid ?? prev.currentBid),
+            status: (row.status === 'live' || row.status === 'upcoming' || row.status === 'ended' ? row.status : prev.status) as typeof prev.status,
+            bidsCount: Number(row.bidsCount ?? row.bids ?? prev.bidsCount),
+            endTime: typeof row.endTime === 'string' ? Date.parse(row.endTime) : Number(row.endTime ?? prev.endTime),
+          };
+        });
+      }).catch(() => {});
+      return () => { active = false; };
+    }, [auctionId])
+  );
 
   const endTime = auction?.endTime ?? 0;
   const remaining = Math.max(0, endTime - now);
@@ -165,9 +205,17 @@ export default function AuctionDetailScreen() {
     setShowBidInput(true);
   };
 
+  const [placingBid, setPlacingBid] = useState(false);
+  // Synchronous double-tap guard (state lags a render — two taps before
+  // re-render both saw false and double-fired placeBid, the loser's rollback
+  // clobbering the winner's optimistic row).
+  const placingRef = useRef(false);
+
   const confirmBid = () => {
-    if (!auction || !bidValid || !canBid) return;
+    if (!auction || !bidValid || !canBid || placingRef.current) return;
+    placingRef.current = true;
     const amount = Number(bidAmount);
+    const prev = auction;
     const updated: Auction = {
       ...auction,
       currentBid: amount,
@@ -176,12 +224,27 @@ export default function AuctionDetailScreen() {
     };
     setAuction(updated);
     setShowBidInput(false);
-    persistAuction(updated);
-    // Real bid on the shared backend for server auctions (cuid ids) — the
-    // seller + all bidders see the same current price.
-    if (!auction.id.startsWith('auc_')) {
-      serverApi.placeBid(auction.id, amount).catch(() => {});
+    // Local auctions (auc_ ids) settle locally only. Server auctions MUST be
+    // confirmed: fire-and-forget used to cache false "You won" rows across
+    // restarts when the server rejected (funds/outbid/ended/throttle).
+    if (auction.id.startsWith('auc_')) {
+      persistAuction(updated);
+      placingRef.current = false;
+      return;
     }
+    setPlacingBid(true);
+    serverApi.placeBid(auction.id, amount).then((res) => {
+      if (res.ok) {
+        persistAuction(updated);
+      } else {
+        // Server refused — roll back the optimistic row and say why.
+        setAuction(prev);
+        Alert.alert('Bid not placed', res.error || 'The auction moved — refresh and try again.');
+      }
+    }).catch(() => {
+      setAuction(prev);
+      Alert.alert('Bid not placed', 'Check your connection — nothing was charged.');
+    }).finally(() => { setPlacingBid(false); placingRef.current = false; });
   };
 
   return (
@@ -229,7 +292,14 @@ export default function AuctionDetailScreen() {
         <ScrollView className="flex-1" contentContainerClassName="pb-10">
           {/* Hero image */}
           <View className="mx-5" style={{ borderRadius: 24, overflow: 'hidden', backgroundColor: colors.surfaceContainer }}>
-            <Image source={auctionImage(auction.imageKey)} style={{ width: '100%', aspectRatio: 4 / 3 }} resizeMode="cover" />
+            <Image source={heroSource} style={{ width: '100%', aspectRatio: 4 / 3 }} resizeMode="cover" />
+            {!heroHasPhoto ? (
+              <View className="absolute inset-0 items-center justify-center">
+                <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
+                  Listing photo unavailable
+                </Text>
+              </View>
+            ) : null}
             <View
               className="absolute top-3 left-3 px-2.5 py-1 rounded-figma-full"
               style={{ backgroundColor: auction.status === 'live' ? colors.error : auction.status === 'ended' ? colors.surfaceContainer : colors.tertiary }}

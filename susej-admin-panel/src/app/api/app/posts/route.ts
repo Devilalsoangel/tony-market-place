@@ -57,6 +57,7 @@ function toAppPost(p: {
     isSold: p.isSold,
     featured: p.featured,
     variants: (p as unknown as { variants?: unknown }).variants ?? null,
+    subCategories: Array.isArray((p as unknown as { subCategories?: unknown }).subCategories) ? (p as unknown as { subCategories: string[] }).subCategories : null,
     stockLeft: typeof (p as unknown as { stockLeft?: number }).stockLeft === "number" ? (p as unknown as { stockLeft: number }).stockLeft : null,
     negotiable: typeof (p as unknown as { negotiable?: boolean }).negotiable === "boolean" ? (p as unknown as { negotiable: boolean }).negotiable : null,
     deliveryMode: typeof (p as unknown as { deliveryMode?: string }).deliveryMode === "string" ? (p as unknown as { deliveryMode: string }).deliveryMode : null,
@@ -180,8 +181,19 @@ export async function POST(req: NextRequest) {
   const description = String(body.description ?? "").slice(0, 5000);
   const categoryStr = String(body.category ?? "").trim().slice(0, 60);
   const variants = Array.isArray((body as unknown as { variants?: unknown }).variants) ? ((body as unknown as { variants: unknown[] }).variants.slice(0, 20) as never) : null;
+  const rawSubs = (body as unknown as { subCategories?: unknown }).subCategories;
+  const subCategories = Array.isArray(rawSubs) ? rawSubs.map((s) => String(s).slice(0, 60)).filter(Boolean).slice(0, 20) as never : null;
   const stockLeftRaw = (body as unknown as { stockLeft?: unknown }).stockLeft;
-  const stockLeft = typeof stockLeftRaw === "number" && Number.isFinite(stockLeftRaw) && stockLeftRaw >= 0 && stockLeftRaw <= 100000 ? Math.floor(stockLeftRaw) : null;
+  // Single-stock invariant: tracked variant stock and base stockLeft must
+  // never coexist (placement settles on exactly one leg; two truths split
+  // inventory and the gates disagree). Variant-tracked listings carry
+  // stockLeft null — per-value stock is the only truth.
+  const trackedVariants = Array.isArray(variants) && (variants as Array<{ values?: Array<{ stock?: unknown }> }>).some((g) =>
+    Array.isArray(g?.values) && g.values.some((v) => typeof v?.stock === "number")
+  );
+  const stockLeft = trackedVariants
+    ? null
+    : typeof stockLeftRaw === "number" && Number.isFinite(stockLeftRaw) && stockLeftRaw >= 0 && stockLeftRaw <= 100000 ? Math.floor(stockLeftRaw) : null;
   const negotiable = typeof (body as unknown as { negotiable?: unknown }).negotiable === "boolean" ? (body as unknown as { negotiable: boolean }).negotiable : null;
   const rawMode = (body as unknown as { deliveryMode?: unknown }).deliveryMode;
   const deliveryMode = rawMode === "pickup" || rawMode === "shipping" || rawMode === "local" ? String(rawMode) : null;
@@ -213,6 +225,7 @@ export async function POST(req: NextRequest) {
       condition: body.condition ? String(body.condition) : null,
       brand: body.brand ? String(body.brand) : null,
       variants: variants as never,
+      subCategories: subCategories as never,
       stockLeft,
       negotiable,
       deliveryMode,

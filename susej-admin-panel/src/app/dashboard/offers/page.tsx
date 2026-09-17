@@ -19,13 +19,13 @@ const makeColumns = (onToggle: (c: Coupon) => void, onDelete: (c: Coupon) => voi
   column.accessor("code", { header: "Code", cell: (info) => <span className="font-mono font-medium text-[#6C3BFF]">{info.getValue()}</span> }),
   column.accessor("type", {
     header: "Type",
-    cell: (info) => <Badge variant={info.getValue() === "percentage" ? "primary" : "info"} className="capitalize">{info.getValue()}</Badge>,
+    cell: (info) => <Badge variant={info.getValue() === "percent" || info.getValue() === "percentage" ? "primary" : "info"} className="capitalize">{info.getValue()}</Badge>,
   }),
   column.accessor("value", {
     header: "Value",
     cell: (info) => {
       const row = info.row.original;
-      return <span className="font-medium tabular-nums">{row.type === "percentage" ? `${row.value}%` : `₹${row.value}`}</span>;
+      return <span className="font-medium tabular-nums">{row.type === "percent" || row.type === "percentage" ? `${row.value}%` : `₹${row.value}`}</span>;
     },
   }),
   column.accessor("usedCount", {
@@ -80,7 +80,7 @@ const makeColumns = (onToggle: (c: Coupon) => void, onDelete: (c: Coupon) => voi
 
 interface NewCoupon {
   code: string;
-  type: "percentage" | "fixed";
+  type: "percent" | "percentage" | "flat" | "fixed" | "free_delivery";
   value: string;
   usageLimit: string;
   expiresAt: string;
@@ -91,7 +91,8 @@ export default function OffersPage() {
   const [list, setList] = useState<Coupon[] | null>(coupons);
   const [newOpen, setNewOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Coupon | null>(null);
-  const [form, setForm] = useState<NewCoupon>({ code: "", type: "percentage", value: "", usageLimit: "", expiresAt: "" });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [form, setForm] = useState<NewCoupon>({ code: "", type: "percent", value: "", usageLimit: "", expiresAt: "" });
 
   useEffect(() => {
     setList(coupons ?? null);
@@ -131,26 +132,55 @@ export default function OffersPage() {
   }
 
   function handleCreate() {
-    if (!form.code.trim() || !form.value) return;
+    if (!form.code.trim() || (!form.value && form.type !== "free_delivery")) return;
+    // Client mirrors the server money validation (route.ts coupons branch):
+    // percent/percentage 1–90, flat/fixed > 0, usageLimit >= 1. The server
+    // 400s regardless; this keeps the desk from optimistically listing a row.
+    const value = form.type === "free_delivery" ? 1 : Number(form.value);
+    if (!Number.isFinite(value) || value <= 0) {
+      setFormError("Value must be greater than 0.");
+      return;
+    }
+    if ((form.type === "percent" || form.type === "percentage") && value > 90) {
+      setFormError("Percentage coupons are capped at 90%.");
+      return;
+    }
+    const usageLimit = form.usageLimit.trim() === "" ? 100 : Number(form.usageLimit);
+    if (!Number.isInteger(usageLimit) || usageLimit < 1) {
+      setFormError("Usage limit must be a whole number of 1 or more.");
+      return;
+    }
+    setFormError(null);
     const payload = {
       code: form.code.toUpperCase(),
       type: form.type,
-      value: Number(form.value),
-      usageLimit: Number(form.usageLimit) || 0,
+      value,
+      usageLimit,
       usedCount: 0,
       expiresAt: form.expiresAt || new Date(Date.now() + 30 * 86400000).toISOString(),
       status: "active",
       createdAt: new Date().toISOString(),
     };
-    setList((prev) => [{ ...payload, id: `c_${Date.now()}` } as Coupon, ...(prev ?? [])]);
+    const ghostId = `c_${Date.now()}`;
+    setList((prev) => [{ ...payload, id: ghostId } as Coupon, ...(prev ?? [])]);
     fetch("/api/data/coupons", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }).finally(() => {
+    }).then(async (res) => {
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        // Revert the optimistic row — the coupon was NOT created.
+        setList((prev) => (prev ?? []).filter((c) => c.id !== ghostId));
+        setFormError((body as { error?: string } | null)?.error ?? "Could not create coupon. Nothing was saved.");
+        return;
+      }
       setNewOpen(false);
-      setForm({ code: "", type: "percentage", value: "", usageLimit: "", expiresAt: "" });
+      setForm({ code: "", type: "percent", value: "", usageLimit: "", expiresAt: "" });
       refresh();
+    }).catch(() => {
+      setList((prev) => (prev ?? []).filter((c) => c.id !== ghostId));
+      setFormError("Network error — coupon was not created.");
     });
   }
 
@@ -219,12 +249,16 @@ export default function OffersPage() {
               <label className="mb-1.5 block text-sm font-medium text-[#18181B]">Type</label>
               <select
                 value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value as "percentage" | "fixed" })}
+                onChange={(e) => setForm({ ...form, type: e.target.value as NewCoupon["type"] })}
                 className="h-9 w-full rounded-[6px] border border-[#E4E4E7] bg-white px-3 text-sm text-[#18181B] outline-none focus:border-[#6C3BFF]"
               >
-                <option value="percentage">Percentage</option>
+                <option value="percent">Percentage</option>
                 <option value="fixed">Fixed amount</option>
+                <option value="free_delivery">Free delivery</option>
               </select>
+              <p className="mt-1 text-[11px] text-[#71717A]">
+                Aliases percentage (= percent) and flat (= fixed) are accepted by existing rows; new rows use the canonical three.
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#18181B]">Value</label>
@@ -232,7 +266,7 @@ export default function OffersPage() {
                 type="number"
                 value={form.value}
                 onChange={(e) => setForm({ ...form, value: e.target.value })}
-                placeholder={form.type === "percentage" ? "20" : "10"}
+                placeholder={form.type === "percent" ? "20" : "10"}
                 className="h-9 w-full rounded-[6px] border border-[#E4E4E7] bg-white px-3 text-sm text-[#18181B] outline-none placeholder:text-[#A1A1AA] focus:border-[#6C3BFF]"
               />
             </div>
@@ -260,11 +294,14 @@ export default function OffersPage() {
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="secondary" onClick={() => setNewOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={!form.code.trim() || !form.value}>
+            <Button onClick={handleCreate} disabled={!form.code.trim() || (!form.value && form.type !== "free_delivery")}>
               <TicketPercent className="h-4 w-4" />
               Create coupon
             </Button>
           </div>
+          {formError && (
+            <p role="alert" className="pt-1 text-[13px] font-medium text-[#DC2626]">{formError}</p>
+          )}
         </div>
       </Dialog>
 

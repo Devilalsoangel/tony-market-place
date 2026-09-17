@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Modal, FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronLeftIcon, PhoneIcon, LockArrowIcon } from '../../utils/icons';
 import { colors } from '../../utils/theme';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,7 +22,19 @@ const OTP_LENGTH = 6;
 export default function OtpScreen() {
   const insets = useSafeAreaInsets();
   const { updateUser, login, serverLogin } = useAuth();
-  const [phone, setPhone] = useState('');
+  // Prefill when sign-in redirects an unknown number here (params phone/cc).
+  // Sanitized: digits only, cc must be a known picker code, else defaults.
+  const entryParams = useLocalSearchParams<{ phone?: string | string[]; cc?: string | string[] }>();
+  const prefillPhone = (() => {
+    const raw = Array.isArray(entryParams.phone) ? entryParams.phone[0] : entryParams.phone;
+    const digits = (raw ?? '').replace(/\D/g, '');
+    return digits ? digits : '';
+  })();
+  const prefillCc = (() => {
+    const raw = Array.isArray(entryParams.cc) ? entryParams.cc[0] : entryParams.cc;
+    return raw && COUNTRIES.some((c) => c.code === raw) ? raw : '+91';
+  })();
+  const [phone, setPhone] = useState(prefillPhone);
   const [otpSent, setOtpSent] = useState(false);
   const [code, setCode] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [verifying, setVerifying] = useState(false);
@@ -30,9 +42,10 @@ export default function OtpScreen() {
   const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState('');
   const [devHint, setDevHint] = useState('');
-  const [countryCode, setCountryCode] = useState('+91');
+  const [countryCode, setCountryCode] = useState(prefillCc);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const codeComplete = code.every((d) => d !== '');
+  const otpInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -43,12 +56,40 @@ export default function OtpScreen() {
   // Industry standard (E.164): the selected country code is part of the
   // identity. Sending bare national digits made the picker decorative and
   // let two countries' identical digits collide into one account.
-  const fullPhone = () => countryCode.replace(/\D/g, '') + phone.replace(/\D/g, '');
+  // FIX Sep 15 (user 911556848908 -> user8908 ghost): users paste the full
+  // number including the country code (e.g. 911556848908 for +91). Without
+  // stripping, fullPhone double-counts the country (91+911556848908 = 14
+  // digits) and spawns a duplicate account. Strip a leading country code
+  // (+ optional trunk 0 for +91) and validate — never silently slice a
+  // longer string; >10 warns instead (same guard as login.tsx).
+  const nationalDigits = () => {
+    const cc = countryCode.replace(/\D/g, '');
+    let digits = phone.replace(/\D/g, '');
+    // Single strip each: cc once, then one trunk 0 for +91. A second cc
+    // (14-digit 91+911556848908) must NOT strip again — it warns instead.
+    if (cc && digits.startsWith(cc) && digits.length > cc.length) digits = digits.slice(cc.length);
+    if (cc === '91' && digits.startsWith('0') && digits.length > 10) digits = digits.slice(1);
+    return digits;
+  };
+  // +91 needs exactly 10 national digits; other codes keep a 6–12 window
+  // (server needs ≥10 total digits including cc and 400s the rest).
+  const isPhoneValid = () => {
+    const national = nationalDigits();
+    if (countryCode.replace(/\D/g, '') === '91') return national.length === 10;
+    return national.length >= 6 && national.length <= 12;
+  };
+  const phoneWarn = () =>
+    countryCode.replace(/\D/g, '') === '91'
+      ? 'Enter a valid 10-digit mobile number'
+      : 'Enter a valid mobile number';
+  const fullPhone = () => countryCode.replace(/\D/g, '') + nationalDigits();
+
+  const [devBypassing, setDevBypassing] = useState(false);
 
   const handleSendOtp = async () => {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10) {
-      setError('Enter a valid 10-digit phone number');
+    // Length guard FIRST: >10 (or <10 for +91) warns and never sends.
+    if (!isPhoneValid()) {
+      setError(phoneWarn());
       return;
     }
     const full = fullPhone();
@@ -62,6 +103,9 @@ export default function OtpScreen() {
         setError(transportMessage(res.error, 'try again'));
         return;
       }
+      // Dev-mode convenience: the SERVER decides whether a hint may be
+      // shown (AUTH_DEV_MODE=1). Each request gets its own random code —
+      // the app displays exactly what the server returned for this phone.
       setDevHint(res.data?.devCode ? `Dev code: ${res.data.devCode}` : '');
       setCode(Array(OTP_LENGTH).fill(''));
       setResendIn(45); // match server RESEND_COOLDOWN_MS (45s)
@@ -94,6 +138,36 @@ export default function OtpScreen() {
     handleSendOtp();
   };
 
+  // Dev bypass: send OTP + auto-verify in one tap (dev mode only)
+  const devBypassOtp = async () => {
+    if (devBypassing) return;
+    if (!isPhoneValid()) {
+      setError(phoneWarn());
+      return;
+    }
+    setDevBypassing(true);
+    setError('');
+    try {
+      const full = fullPhone();
+      const res = await serverApi.sendOtp(full);
+      if (res.ok && res.data?.devCode) {
+        // Signup screen: explicit creation consent.
+        const verifyRes = await serverLogin(full, res.data.devCode, { create: true });
+        if (verifyRes.ok) {
+          router.push('/(onboarding)/location');
+        } else {
+          setError('Dev bypass failed');
+        }
+      } else {
+        setError('Dev bypass unavailable — server did not return a code (needs AUTH_DEV_MODE=1)');
+      }
+    } catch (e) {
+      setError('Dev bypass failed. Check connection.');
+    } finally {
+      setDevBypassing(false);
+    }
+  };
+
   // NOTE: the Verify button calls this as () => handleVerify() (never bare
   // onPress={handleVerify}) — the press event must not land in codeOverride.
   const handleVerify = async (codeOverride?: string) => {
@@ -102,8 +176,9 @@ export default function OtpScreen() {
     setVerifying(true);
     setError('');
     try {
-      // Server-first login — real user row on the shared backend.
-      const res = await serverLogin(fullPhone(), finalCode);
+      // Server-first signup — explicit create:true (this is the signup
+      // screen). Sign-in typos elsewhere get needsSignup, never ghosts.
+      const res = await serverLogin(fullPhone(), finalCode, { create: true });
       if (res.ok) {
         router.push('/(onboarding)/location');
       } else {
@@ -200,17 +275,30 @@ export default function OtpScreen() {
             {/* Send OTP Button */}
             <TouchableOpacity
               className="w-full h-14 flex-row items-center justify-center rounded-figma-16 mb-8"
-              style={{ backgroundColor: phone.replace(/\D/g, '').length >= 10 && !sending ? colors.primary : 'rgba(93,95,239,0.2)' }}
+              style={{ backgroundColor: isPhoneValid() && !sending ? colors.primary : 'rgba(93,95,239,0.2)' }}
               onPress={handleSendOtp}
               disabled={sending}
             >
               <Text
                 className="font-inter-600"
-                style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: phone.replace(/\D/g, '').length >= 10 && !sending ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}
+                style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: isPhoneValid() && !sending ? '#FFFFFF' : 'rgba(70,69,85,0.4)' }}
               >
                 {sending ? 'Sending...' : 'Send OTP'}
               </Text>
             </TouchableOpacity>
+            {/* Dev bypass: one-tap login (dev mode only) */}
+            {__DEV__ && (
+              <TouchableOpacity
+                className="w-full h-12 items-center justify-center rounded-figma-16"
+                style={{ backgroundColor: 'rgba(34,197,94,0.15)' }}
+                onPress={devBypassOtp}
+                disabled={!isPhoneValid() || devBypassing}
+              >
+                <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: '#22c55e' }}>
+                  {devBypassing ? 'Logging in...' : 'Dev: Login instantly'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </>
         ) : (
           <>
@@ -220,7 +308,12 @@ export default function OtpScreen() {
                 {error}
               </Text>
             ) : null}
-            <View className="flex-row mb-6" style={{ gap: 8 }}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => otpInputRef.current?.focus()}
+              className="flex-row mb-6"
+              style={{ gap: 8 }}
+            >
               {code.map((d, i) => (
                 <View
                   key={i}
@@ -236,8 +329,9 @@ export default function OtpScreen() {
                   </Text>
                 </View>
               ))}
-            </View>
+            </TouchableOpacity>
             <TextInput
+              ref={otpInputRef}
               value={otpCode}
               onChangeText={handleOtpChange}
               keyboardType="number-pad"
@@ -245,7 +339,7 @@ export default function OtpScreen() {
               caretHidden
               autoFocus={otpSent}
               className="absolute opacity-0"
-              style={{ width: 1, height: 1, top: -9999 }}
+              style={{ width: 1, height: 1 }}
               textContentType="oneTimeCode"
             />
 
@@ -300,6 +394,17 @@ export default function OtpScreen() {
                 {devHint}
               </Text>
             ) : null}
+            {/* Dev bypass: one-tap verify (always visible for testing) */}
+            <TouchableOpacity
+              className="w-full h-12 items-center justify-center rounded-figma-16 mt-4"
+              style={{ backgroundColor: 'rgba(34,197,94,0.15)' }}
+              onPress={devBypassOtp}
+              disabled={devBypassing}
+            >
+              <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 16, color: '#22c55e' }}>
+                {devBypassing ? 'Logging in...' : 'Dev: Login instantly'}
+              </Text>
+            </TouchableOpacity>
           </>
         )}
 

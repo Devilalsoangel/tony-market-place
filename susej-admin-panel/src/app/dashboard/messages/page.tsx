@@ -52,7 +52,7 @@ const makeColumns = (onAction: (r: ReportedMessageRow, action: "mute" | "block" 
 ];
 
 export default function MessagesPage() {
-  const { data: rows, refresh } = useDbResource<ReportedMessageRow>("reported-messages");
+  const { data: rows, total: messagesTotal, refresh } = useDbResource<ReportedMessageRow>("reported-messages", { take: 100 });
   const [items, setItems] = useState<ReportedMessageRow[] | null>(rows);
 
   useEffect(() => {
@@ -62,11 +62,27 @@ export default function MessagesPage() {
   async function act(r: ReportedMessageRow, action: "mute" | "block" | "dismiss") {
     setItems((prev) => (prev ?? []).filter((x) => x.id !== r.id));
     try {
+      // Enforcement honesty: this desk knows the THREAD, not which participant
+      // offended — so it must NOT mint BlockedUser rows keyed `thread:<id>`
+      // (they match no user ever and pollute the Blocked & Banned desk while
+      // the offender keeps chatting). Mute/Block here clears the report (audit-
+      // logged by the API) and the per-user block is taken from the Blocked &
+      // Banned desk against the real user row. Thread-level server enforcement
+      // (chat honoring bans) is the tracked follow-up.
+      if (action === "mute" || action === "block") {
+        const { toast } = await import("@/components/ui/toast");
+        toast.success(
+          action === "block"
+            ? "Report cleared and logged — place the per-user block from the Blocked & Banned desk."
+            : "Report cleared and logged — mute the user from the Blocked & Banned desk if needed."
+        );
+      }
       await apiDelete("reported-messages", r.id);
       refresh();
     } catch (e) {
       setItems(rows ?? []);
       console.error(e);
+      alert(e instanceof Error ? e.message : "Action failed — nothing was changed. Try again.");
     }
   }
 
@@ -94,6 +110,7 @@ export default function MessagesPage() {
           <DataTable
             columns={makeColumns(act)}
             data={items ?? []}
+            totalCount={messagesTotal ?? (items ?? []).length}
             searchable
             searchKey="participants"
             filename="messages"

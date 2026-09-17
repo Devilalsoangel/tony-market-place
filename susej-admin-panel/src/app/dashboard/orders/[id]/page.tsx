@@ -38,10 +38,15 @@ const REFUND_ACTIONS: Record<string, { label: string; next: Order["refundStatus"
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: orders, refresh } = useDbResource<Order>("orders");
+  // Single-row mode: exact order, never the whole table (false-negative past 100 rows).
+  const { data: orders, refresh } = useDbResource<Order>("orders", { id });
   const [cancelOpen, setCancelOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
+  const [repairOpen, setRepairOpen] = useState(false);
+  const [repairUser, setRepairUser] = useState("");
+  const [repairReason, setRepairReason] = useState("");
+  const [repairBusy, setRepairBusy] = useState(false);
 
   const fetched = useMemo(() => orders?.find((o) => o.id === id) ?? null, [orders, id]);
 
@@ -121,6 +126,44 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   function rejectRefund() {
     patchOrder({ refundStatus: "rejected" });
+  }
+
+  // Unattributed-order repair: legacy rows with no sellerUsername are invisible
+  // to seller settlements. Binds ONE seller username (server validates seller
+  // status + resolves the display name, audit carries the reason). Moves no money.
+  function submitRepair() {
+    const current = order;
+    const username = repairUser.trim();
+    const why = repairReason.trim();
+    if (!current || !username || !why || repairBusy) return;
+    setRepairBusy(true);
+    setSaveError(null);
+    void fetch("/api/data/orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id: current.id, data: { sellerUsername: username }, reason: why }),
+    })
+      .then(async (res) => {
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          setSaveError(
+            String((body as { error?: unknown } | null)?.error || `Seller repair refused (HTTP ${res.status}). Nothing changed.`)
+          );
+        } else {
+          const row = (body as { row?: Order } | null)?.row;
+          if (row) setOrder(row);
+          setRepairOpen(false);
+          setRepairUser("");
+          setRepairReason("");
+        }
+        refresh();
+      })
+      .catch(() => {
+        setSaveError("Could not reach the server. Nothing changed.");
+        refresh();
+      })
+      .finally(() => setRepairBusy(false));
   }
 
   const refundAction = order.refundStatus ? REFUND_ACTIONS[order.refundStatus] : undefined;
@@ -313,9 +356,26 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-[#6C3BFF]/10">
                     <Store className="h-4 w-4 text-[#6C3BFF]" />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className="text-xs text-gray-500">Seller</p>
                     <p className="text-sm font-medium text-[#18181B] ">{order.sellerName}</p>
+                    {order.sellerUsername ? (
+                      <p className="mt-0.5 font-mono text-xs text-gray-500">@{order.sellerUsername}</p>
+                    ) : (
+                      <div className="mt-2 rounded-xl border border-[#FCD34D]/50 bg-[#FEF9C3] px-3 py-2">
+                        <p className="text-xs font-medium text-[#92400E]">
+                          Unattributed order — no seller linked, excluded from settlements.
+                        </p>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="mt-2"
+                          onClick={() => setRepairOpen(true)}
+                        >
+                          Assign seller
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -398,6 +458,44 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </Card>
         </div>
       </div>
+
+      <Dialog open={repairOpen} onClose={() => setRepairOpen(false)} title="Assign seller (attribution repair)">
+        <p className="text-sm text-gray-500">
+          Binds <span className="font-mono font-medium text-[#18181B]">{order.id}</span> to one seller
+          username. Attribution only — moves no money and cannot be re-done. The display name resolves
+          from the seller account; the reason is written to the audit trail.
+        </p>
+        <div className="mt-4 space-y-3">
+          <div>
+            <label className="mb-1 block text-[13px] font-medium text-[#18181B]">Seller username</label>
+            <input
+              value={repairUser}
+              onChange={(e) => setRepairUser(e.target.value)}
+              placeholder="e.g. anaya.style"
+              className="h-11 w-full rounded-2xl border border-[#E4E4E7] bg-[#FAFAFA] px-4 text-sm text-[#18181B] outline-none focus:border-[#6C3BFF]"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[13px] font-medium text-[#18181B]">Reason (audit log)</label>
+            <input
+              value={repairReason}
+              onChange={(e) => setRepairReason(e.target.value)}
+              placeholder="e.g. Matched to storefront invoice #42"
+              className="h-11 w-full rounded-2xl border border-[#E4E4E7] bg-[#FAFAFA] px-4 text-sm text-[#18181B] outline-none focus:border-[#6C3BFF]"
+            />
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setRepairOpen(false)}>Cancel</Button>
+          <Button
+            variant="primary"
+            disabled={!repairUser.trim() || !repairReason.trim() || repairBusy}
+            onClick={submitRepair}
+          >
+            {repairBusy ? "Assigning…" : "Assign seller"}
+          </Button>
+        </div>
+      </Dialog>
 
       <Dialog open={cancelOpen} onClose={() => setCancelOpen(false)}>
         <div className="p-6 text-center">

@@ -41,8 +41,10 @@ interface AuthContextType {
    *  authenticated fetches (sessionSeq can fire while token is still mock). */
   tokenSeq: number;
   login: (user: User) => Promise<void>;
-  /** Real server login via OTP — falls back to local demo identity when offline. */
-  serverLogin: (phone: string, code: string) => Promise<{ ok: boolean; offline?: boolean; error?: string }>;
+  /** Real server login via OTP — falls back to local demo identity when offline.
+   *  opts.create:true = explicit signup (signup screens only); sign-in omits
+   *  it so unknown numbers get needsSignup instead of a ghost account. */
+  serverLogin: (phone: string, code: string, opts?: { create?: boolean }) => Promise<{ ok: boolean; offline?: boolean; needsSignup?: boolean; error?: string }>;
   serverEmailLogin: (action: 'login' | 'register', email: string, password: string, name?: string) => Promise<{ ok: boolean; offline?: boolean; error?: string }>;
   serverGoogleLogin: (idToken: string, devBypass?: { email: string; name?: string }) => Promise<{ ok: boolean; offline?: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -224,10 +226,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const serverLogin = useCallback(
-    async (phone: string, code: string) => {
+    async (phone: string, code: string, opts?: { create?: boolean }) => {
       const digits = phone.replace(/\D/g, '');
-      // 1. Try the real server first - creates/logs in a REAL user row.
-      const res = await serverApi.verifyOtp(digits, code);
+      // 1. Try the real server first - logs in a REAL user row, or (signup
+      //    screens only) creates one with explicit consent. Sign-in typos get
+      //    404 needsSignup, never a ghost account.
+      const res = await serverApi.verifyOtp(digits, code, opts?.create);
       if (res.ok && res.data?.token) {
         // Identity is about to change - drop the outgoing account's cached
         // money state so it can never flash as the new account's truth.
@@ -243,9 +247,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: true };
       }
       // 2. Server reachable but rejected -> surface the reason (wrong code,
-      //    expired, throttled). Only a network failure is reported as offline.
+      //    expired, throttled, unknown-number needsSignup). Only a network
+      //    failure is reported as offline.
       if (res.error && res.error !== 'offline') {
-        return { ok: false, error: res.error };
+        return { ok: false, error: res.error, ...(res.needsSignup ? { needsSignup: true } : {}) };
       }
       // 3. Offline fallback: NO local identity exists for an unknown number -
       //    sign-in simply fails honestly until connectivity returns.

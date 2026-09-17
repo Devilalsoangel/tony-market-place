@@ -19,6 +19,10 @@ import {
 } from '../utils/marketplace';
 import { getWallet, syncWalletFromServer } from '../utils/walletStore';
 import { serverApi } from '../utils/serverApi';
+import { hasRealImage } from '../utils/productImages';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isApprovedSeller } from '../utils/marketplace';
+import SellerGate from '../components/SellerGate';
 
 const MegaphoneIcon = ({ size = 18, color = '#4343d5' }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -54,6 +58,10 @@ export default function PromotionsScreen() {
   const { promotions, createPromotion, endPromotion } = usePromotions();
 
   const [balance, setBalance] = useState(0);
+  // Server purchases = cross-device truth (survives reinstall; local mirror
+  // is instant reflection only). Merged below: server rows win, uncovered
+  // local mirrors fill the gaps.
+  const [serverPromos, setServerPromos] = useState<any[]>([]);
   // Deep-link entry (e.g. storefront editor "Promote as Hot Deal"):
   // validated against the known kinds, defaults to no preselection intent.
   const entryParams = useLocalSearchParams<{ kind?: string | string[] }>();
@@ -84,18 +92,46 @@ export default function PromotionsScreen() {
 
   const promoPackages = useMemo(() => getPackages(), [configTick]);
 
-  const myPromos = useMemo(
-    () =>
-      promotions
-        .filter((p) => p.sellerUsername === (user?.username ?? ''))
-        .sort((a, b) => b.startsAt - a.startsAt),
-    [promotions, user]
-  );
+  const myPromos = useMemo(() => {
+    const me = (user?.username ?? '').trim().toLowerCase();
+    if (!me) return [];
+    // Server rows mapped to the local shape (server id rides along so
+    // End-early hits the purchase row directly, no mirror-id 404s).
+    // Cover key includes price+duration: stacked purchases (7-day then 30-day
+    // boost, same post+kind) are DISTINCT campaigns and must never cover
+    // each other's pending mirrors.
+    const coverKey = (postId: unknown, kind: unknown, amount: unknown, days: unknown) =>
+      `${postId ?? ''}|${kind}|${amount ?? ''}|${days ?? ''}`;
+    const mapped = (serverPromos ?? []).map((s: any) => ({
+      id: String(s.id ?? ''),
+      packageId: '',
+      kind: s.kind,
+      packageName: String(s.packageName ?? 'Campaign'),
+      amountPaid: Number(s.amountPaid ?? 0),
+      durationDays: Number(s.durationDays ?? 0),
+      sellerUsername: user?.username ?? '',
+      postId: s.postId ? String(s.postId) : undefined,
+      productTitle: s.postTitle ? String(s.postTitle) : undefined,
+      status: s.status,
+      startsAt: typeof s.startsAt === 'number' ? s.startsAt : Date.now(),
+      endsAt: typeof s.endsAt === 'number' ? s.endsAt : Date.now(),
+      views: 0,
+      clicks: 0,
+    }));
+    const covered = new Set(
+      mapped.map((m: any) => coverKey(m.postId, m.kind, m.amountPaid, m.durationDays))
+    );
+    const local = promotions
+      .filter((p) => (p.sellerUsername ?? '').toLowerCase() === me)
+      .filter((p) => !covered.has(coverKey(p.postId, p.kind, (p as any).amountPaid, (p as any).durationDays)));
+    return [...mapped, ...local].sort((a, b) => b.startsAt - a.startsAt);
+  }, [promotions, serverPromos, user]);
 
-  const myPosts = useMemo(
-    () => posts.filter((p) => p.sellerUsername === (user?.username ?? '')),
-    [posts, user]
-  );
+  const myPosts = useMemo(() => {
+    const me = (user?.username ?? '').trim().toLowerCase();
+    if (!me) return [];
+    return posts.filter((p) => (p.sellerUsername ?? '').toLowerCase() === me);
+  }, [posts, user]);
 
   useEffect(() => {
     if (myPosts.length > 0 && !selectedPost) setSelectedPost(myPosts[0]);
@@ -110,6 +146,13 @@ export default function PromotionsScreen() {
         const state = await getWallet();
         setBalance(state.balance);
       } catch {}
+      // Server campaign truth for My campaigns (cross-device, reinstall-safe).
+      try {
+        const res = await serverApi.getPromotions();
+        if (res.ok && Array.isArray((res.data as any)?.promotions)) {
+          setServerPromos((res.data as any).promotions);
+        }
+      } catch {}
     })();
   }, []);
 
@@ -120,6 +163,13 @@ export default function PromotionsScreen() {
     if (payingRef.current) return;
     if (!pkg || !selectedPost) {
       Alert.alert('Select a listing', 'Pick one of your listings and a package to promote.');
+      return;
+    }
+    // Imageless listings can never render a listing-placed rail (feed + PDP
+    // gates hide them) — refuse the spend here, not as a server 400. topSeller
+    // pins the seller card, not the listing — exempt.
+    if (pkg.kind !== 'topSeller' && !hasRealImage(selectedPost)) {
+      Alert.alert('Add a photo first', 'This listing has no photo, so a paid placement could never be seen. Add a photo, then promote it.');
       return;
     }
     if (balance < pkg.price) {
@@ -133,7 +183,45 @@ export default function PromotionsScreen() {
     // failed, and a double-tap charged twice — both impossible here:
     // checkoutRef makes retries idempotent (same ref returns the purchase,
     // never a second charge).
-    const checkoutRef = `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // C5: the ref persists per (package+post) until the server acks — a
+    // timeout retry used to mint a FRESH ref per tap (idempotency theater,
+    // second charge for the same intent). Now retries reuse the stored ref.
+    // TTL 24h: a ref orphaned by an app-kill between commit and cleanup must
+    // not resurrect the OLD purchase as a "new" buy forever.
+    const refKey = `@susej_promo_ref:${pkg.id}:${selectedPost.id}`;
+    const REF_TTL_MS = 24 * 3600 * 1000;
+    let checkoutRef: string | null = null;
+    try {
+      const raw = await AsyncStorage.getItem(refKey);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.ref === 'string' && typeof parsed.at === 'number' && Date.now() - parsed.at < REF_TTL_MS) {
+            checkoutRef = parsed.ref;
+          }
+          // Stale JSON falls through to a fresh ref below (never reuse an
+          // expired intent). Legacy bare-ref rows (pre-JSON builds) stay
+          // valid: the server dedupes them if committed, honors them once if
+          // not — discarding would double-charge a committed-but-unacked buy.
+          else if (typeof raw === 'string' && !raw.trim().startsWith('{')) {
+            checkoutRef = raw;
+          }
+        } catch {
+          if (typeof raw === 'string' && !raw.trim().startsWith('{')) {
+            checkoutRef = raw;
+          } else {
+            // Corrupt blob: discard, never send as an idempotency identity.
+            try { await AsyncStorage.removeItem(refKey); } catch {}
+          }
+        }
+      }
+    } catch {}
+    if (!checkoutRef) {
+      checkoutRef = `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        await AsyncStorage.setItem(refKey, JSON.stringify({ ref: checkoutRef, at: Date.now() }));
+      } catch {}
+    }
     try {
       const res = await serverApi.purchasePromotion({
         packageId: pkg.id,
@@ -143,6 +231,22 @@ export default function PromotionsScreen() {
       if (!res.ok) {
         Alert.alert('Payment failed', res.error === 'offline' ? 'Could not reach the server — no money was charged. Try again when online.' : String(res.error || 'Could not start campaign. No money was charged.'));
         getWallet().then((s) => setBalance(s.balance)).catch(() => {});
+        return;
+      }
+      // Acked: the intent is settled, the ref must never be reused.
+      try {
+        await AsyncStorage.removeItem(refKey);
+      } catch {}
+      // Idempotent replay: the server returned an EXISTING purchase for this
+      // ref (app-kill between commit and cleanup) — say so honestly instead
+      // of announcing a brand-new campaign.
+      const dup = (res.data as { purchase?: { duplicate?: boolean } } | null)?.purchase?.duplicate === true;
+      if (dup) {
+        Alert.alert('Already active', 'This exact campaign was already paid for — no new charge was made. See My campaigns above.');
+        try {
+          const rp = await serverApi.getPromotions();
+          if (rp.ok && Array.isArray((rp.data as any)?.promotions)) setServerPromos((rp.data as any).promotions);
+        } catch {}
         return;
       }
     } catch {
@@ -161,7 +265,7 @@ export default function PromotionsScreen() {
       packageId: pkg.id,
       postId: selectedPost.id,
       productTitle: selectedPost.description.slice(0, 44),
-      sellerUsername: user?.username || 'user',
+      sellerUsername: user?.username ?? '',
     });
     Alert.alert(
       'Campaign is live',
@@ -171,6 +275,10 @@ export default function PromotionsScreen() {
       [{ text: 'Done' }]
     );
   };
+
+  // Approved sellers only (SELLER-C1): buyers/pending deep-links get status,
+  // never tools. Matches server 403s. After all hooks (rules-of-hooks safe).
+  if (!isApprovedSeller(user)) return <SellerGate title="Promotions" user={user} />;
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.surface }}>
@@ -209,8 +317,8 @@ export default function PromotionsScreen() {
           <View className="mt-2" style={{ gap: 10 }}>
             {myPromos.map((p) => {
               const chip = STATUS_CHIP[p.status] ?? STATUS_CHIP.active;
-              const ctr = p.views > 0 ? ((p.clicks / p.views) * 100).toFixed(1) : '0.0';
               const daysLeft = Math.max(0, Math.ceil((p.endsAt - Date.now()) / 864e5));
+              const endsLabel = Number.isFinite(p.endsAt) ? new Date(p.endsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
               return (
                 <View key={p.id} className="p-4 rounded-figma-16" style={{ backgroundColor: colors.surfaceContainerLowest, ...shadows.card }}>
                   <View className="flex-row items-center" style={{ gap: 8 }}>
@@ -229,16 +337,15 @@ export default function PromotionsScreen() {
                       {p.productTitle}
                     </Text>
                   ) : null}
+                  {/* No impression tracking exists yet: show real slot time, never 0-view metrics. */}
                   <View className="flex-row items-center mt-2.5" style={{ gap: 14 }}>
-                    <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 11, lineHeight: 14 }}>
-                      {p.views.toLocaleString()} views
-                    </Text>
-                    <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 11, lineHeight: 14 }}>
-                      {p.clicks.toLocaleString()} clicks · {ctr}% CTR
-                    </Text>
-                    {p.status === 'active' && (
+                    {p.status === 'active' ? (
                       <Text className="font-inter-600" style={{ fontSize: 11, lineHeight: 14, color: colors.primary }}>
-                        {daysLeft}d left
+                        {daysLeft}d left{endsLabel ? ` · ends ${endsLabel}` : ''}
+                      </Text>
+                    ) : (
+                      <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 11, lineHeight: 14 }}>
+                        {p.status === 'expired' ? 'Expired — slot unpinned automatically' : 'Ended'}
                       </Text>
                     )}
                   </View>

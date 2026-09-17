@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -6,6 +6,7 @@ import { bookServiceImages } from '../utils/screenImages';
 import { BackIcon, StarIcon, MapPinIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useOrders } from '../contexts/OrderContext';
+import { serverApi } from '../utils/serverApi';
 
 const servicePackages = [
   { name: 'Starter', price: 149 },
@@ -31,6 +32,15 @@ const TIME_SLOTS = [
 // All slots honestly available — no phantom "booked" times.
 const BOOKED_TIMES = new Set<string>();
 
+/** Minutes since midnight for a 'h:MM AM/PM' slot (NaN when unparseable). */
+function slotMinutes(slot: string): number {
+  const m = slot.trim().match(/^(\d{1,2}):(\d{2})\s*([AP])M$/i);
+  if (!m) return NaN;
+  let h = Number(m[1]) % 12;
+  if (/P/i.test(m[3])) h += 12;
+  return h * 60 + Number(m[2]);
+}
+
 const DAY_MS = 86400000;
 const BOOKING_WINDOW_DAYS = 14;
 
@@ -54,12 +64,14 @@ function buildMonthGrid(now: Date): (Date | null)[] {
 export default function BookServiceScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
+    listingId?: string | string[];
     seller?: string | string[];
     sellerUsername?: string | string[];
     title?: string | string[];
     description?: string | string[];
     category?: string | string[];
   }>();
+  const listingIdParam = Array.isArray(params.listingId) ? params.listingId[0] : params.listingId;
   const sellerNameParam = Array.isArray(params.seller) ? params.seller[0] : params.seller;
   const sellerUsernameParam = Array.isArray(params.sellerUsername) ? params.sellerUsername[0] : params.sellerUsername;
   const titleParam = Array.isArray(params.title) ? params.title[0] : params.title;
@@ -73,43 +85,116 @@ export default function BookServiceScreen() {
   const { placeOrders } = useOrders();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  // Packages come from the REAL listing price (server truth) — the old
+  // hardcoded Starter/Premium/Business tiers charged invented prices for a
+  // fake 'service-photo-shoot' id the server always rejected (dead flow).
+  const [pkgs, setPkgs] = useState<{ name: string; price: number }[]>(servicePackages);
   const [selectedPackage, setSelectedPackage] = useState(servicePackages[1]);
+  const [listingLoading, setListingLoading] = useState(!!listingIdParam);
+  const [listingGone, setListingGone] = useState(false);
+  const [listingOwner, setListingOwner] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+
+  useEffect(() => {
+    if (!listingIdParam) {
+      // No listing context (category/seller entry points): nothing real to
+      // book — say so instead of minting a fake-listing order the server 400s.
+      setListingGone(true);
+      setListingLoading(false);
+      return;
+    }
+    let cancelled = false;
+    serverApi.getPost(listingIdParam).then((res) => {
+      if (cancelled) return;
+      const post = (res.data as { post?: { price?: unknown; isSold?: unknown; status?: unknown; sellerUsername?: unknown; authorUsername?: unknown; type?: unknown } } | null)?.post;
+      const price = Math.round(Number(post?.price ?? NaN));
+      const gone = !res.ok || !post || post.isSold === true || (typeof post.status === 'string' && post.status !== 'published' && post.status !== 'active');
+      if (gone || !Number.isFinite(price) || price <= 0) {
+        setListingGone(true);
+      } else {
+        const owner = String((post as { authorUsername?: unknown })?.authorUsername ?? (post as { sellerUsername?: unknown })?.sellerUsername ?? '');
+        if (owner) setListingOwner(owner);
+        const single = [{ name: 'Standard', price }];
+        setPkgs(single);
+        setSelectedPackage(single[0]);
+      }
+      setListingLoading(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setListingGone(true);
+        setListingLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [listingIdParam]);
 
   const today = startOfDay(new Date());
   const monthDays = buildMonthGrid(new Date());
   const windowStart = today.getTime();
   const windowEnd = windowStart + (BOOKING_WINDOW_DAYS - 1) * DAY_MS;
-  const canBook = !!selectedDate && !!selectedTime && !placing;
+  // Seller identity fail-closed (chat-parity): an ownerless booking skips the
+  // server's seller binding as falsy — refuse instead of minting a stroker row.
+  const bookingSeller = listingOwner || sellerUsernameParam || '';
+  const ownerless = !!listingIdParam && !listingLoading && !listingGone && !bookingSeller;
+  const canBook = !!selectedDate && !!selectedTime && !placing && !listingLoading && !listingGone && !!listingIdParam && !!bookingSeller;
+
+  // Same-day past slots are unbookable (a 10 AM slot at 9 PM used to mint a
+  // real order row in the past).
+  const slotInPast = (slot: string): boolean => {
+    if (!selectedDate || !sameDay(selectedDate, new Date())) return false;
+    const mins = slotMinutes(slot);
+    if (!Number.isFinite(mins)) return false;
+    const now = new Date();
+    return mins <= now.getHours() * 60 + now.getMinutes();
+  };
 
   const handleBook = async () => {
-    if (!selectedDate || !selectedTime || placing) return;
-    setPlacing(true);
-    try {
-      const [order] = placeOrders(
-        [
-          {
-            listingId: 'service-photo-shoot',
-            type: 'service',
-            name: serviceTitle,
-            price: selectedPackage.price,
-            quantity: 1,
-            seller: sellerNameParam || 'Service Provider',
-            sellerUsername: sellerUsernameParam || 'service_provider',
-          },
-        ],
-        undefined,
-        undefined,
-        { bookingDate: toISODate(selectedDate), bookingTime: selectedTime }
-      );
-      if (order) {
-        router.push(`/track-order?id=${order.id}`);
-      }
-    } catch {
-      Alert.alert("Couldn't place booking", 'Something went wrong. Please try again.');
-    } finally {
-      setPlacing(false);
+    if (!selectedDate || !selectedTime || placing || !listingIdParam || listingGone || !bookingSeller) return;
+    if (slotInPast(selectedTime)) {
+      Alert.alert('Slot passed', 'That time already passed today — pick a later slot.');
+      return;
     }
+    // Consent gate (Urban Company parity): one tap used to instant-charge the
+    // wallet with no total/method confirmation. Confirm price + wallet debit
+    // + slot BEFORE anything moves.
+    Alert.alert(
+      'Confirm booking',
+      `${serviceTitle}\n${summaryLine}\n${formatPrice(Math.round(selectedPackage.price))} · pays from Wallet`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Pay ${formatPrice(Math.round(selectedPackage.price))}`,
+          onPress: () => {
+            setPlacing(true);
+            try {
+              const [order] = placeOrders(
+                [
+                  {
+                    listingId: listingIdParam,
+                    type: 'service',
+                    name: serviceTitle,
+                    price: Math.round(selectedPackage.price),
+                    quantity: 1,
+                    seller: sellerNameParam || 'Service Provider',
+                    sellerUsername: bookingSeller,
+                  },
+                ],
+                undefined,
+                undefined,
+                { bookingDate: toISODate(selectedDate), bookingTime: selectedTime, deliveryFee: 0 }
+              );
+              if (order) {
+                router.push(`/track-order?id=${order.id}`);
+              }
+            } catch {
+              Alert.alert("Couldn't place booking", 'Something went wrong. Please try again.');
+            } finally {
+              setPlacing(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const summaryLine =
@@ -128,6 +213,27 @@ export default function BookServiceScreen() {
       </View>
 
       <ScrollView className="flex-1" contentContainerClassName="pb-32" contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
+        {listingLoading && (
+          <View className="mx-4 mt-4 px-4 py-3 rounded-figma-12" style={{ backgroundColor: colors.surfaceContainer }}>
+            <Text className="text-figma-13 font-inter-500 text-textSecondary">Loading service details…</Text>
+          </View>
+        )}
+        {!listingLoading && listingGone && (
+          <View className="mx-4 mt-4 px-4 py-3 rounded-figma-12" style={{ backgroundColor: colors.surfaceContainer }}>
+            <Text className="text-figma-14 font-inter-600 text-textPrimary">This service isn&apos;t bookable</Text>
+            <Text className="text-figma-13 font-inter-400 text-textSecondary mt-1">
+              Open it from the service listing to book — walk-in entries carry no real listing.
+            </Text>
+          </View>
+        )}
+        {!listingLoading && !listingGone && ownerless && (
+          <View className="mx-4 mt-4 px-4 py-3 rounded-figma-12" style={{ backgroundColor: colors.surfaceContainer }}>
+            <Text className="text-figma-14 font-inter-600 text-textPrimary">Seller unverified</Text>
+            <Text className="text-figma-13 font-inter-400 text-textSecondary mt-1">
+              This listing has no seller attached — booking is disabled until the seller verifies the listing.
+            </Text>
+          </View>
+        )}
         <View className="w-full h-48 bg-surfaceContainer overflow-hidden">
           <Image source={bookServiceImages.hero} className="w-full h-full" resizeMode="cover" />
         </View>
@@ -143,8 +249,9 @@ export default function BookServiceScreen() {
             {serviceDescription}
           </Text>
 
+          {!listingGone && (
           <View className="flex-row gap-3 mb-6">
-            {servicePackages.map((pkg) => {
+            {pkgs.map((pkg) => {
               const active = selectedPackage.name === pkg.name;
               return (
                 <TouchableOpacity
@@ -158,6 +265,7 @@ export default function BookServiceScreen() {
               );
             })}
           </View>
+          )}
 
           <Text className="text-figma-16 font-inter-600 text-textPrimary mb-3">Select Date & Time</Text>
 
@@ -226,21 +334,23 @@ export default function BookServiceScreen() {
           <View className="flex-row flex-wrap gap-3 mb-4">
             {TIME_SLOTS.map((t) => {
               const booked = BOOKED_TIMES.has(t);
+              const past = !booked && slotInPast(t);
+              const disabled = booked || past;
               const active = selectedTime === t;
               return (
                 <TouchableOpacity
                   key={t}
-                  disabled={booked}
+                  disabled={disabled}
                   onPress={() => setSelectedTime(t)}
                   className={`px-5 py-2 rounded-figma-full ${
-                    active ? 'bg-primaryContainer' : booked ? 'bg-surfaceContainer' : 'bg-surfaceContainerLow'
+                    active ? 'bg-primaryContainer' : disabled ? 'bg-surfaceContainer' : 'bg-surfaceContainerLow'
                   }`}
                 >
                   <Text
                     className={`text-figma-12 font-inter-500 ${
-                      active ? 'text-white' : booked ? 'text-textTertiary' : 'text-textSecondary'
+                      active ? 'text-white' : disabled ? 'text-textTertiary' : 'text-textSecondary'
                     }`}
-                    style={booked ? { textDecorationLine: 'line-through' } : undefined}
+                    style={disabled ? { textDecorationLine: 'line-through' } : undefined}
                   >
                     {t}
                   </Text>

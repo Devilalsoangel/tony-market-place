@@ -40,6 +40,8 @@ export interface ApiResult<T> {
   ok: boolean;
   data: T | null;
   error?: string;
+  /** Set on 404 from OTP verify: unknown number, signup consent required. */
+  needsSignup?: boolean;
 }
 
 export interface ServerComment {
@@ -83,7 +85,8 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
     }
     if (!res.ok) {
       const err = (json as { error?: string } | null)?.error ?? `HTTP ${res.status}`;
-      return { ok: false, data: null, error: err };
+      const needsSignup = (json as { needsSignup?: boolean } | null)?.needsSignup;
+      return { ok: false, data: null, error: err, ...(needsSignup ? { needsSignup: true } : {}) };
     }
     return { ok: true, data: json };
   } catch {
@@ -131,12 +134,21 @@ async function requestWithAppKey<T>(path: string, options: { method?: string; bo
 export const serverApi = {
   // ── Auth ─────────────────────────────────────────────────────────────────
   sendOtp: (phone: string) => request<{ ok: boolean; message?: string; devCode?: string; error?: string }>('/auth', { method: 'POST', body: { phone } }),
-  verifyOtp: (phone: string, code: string) =>
-    request<{ token: string; user: Record<string, unknown> }>('/auth/verify', { method: 'POST', body: { phone, code } }),
+  /** Sign-in existence probe: does this number have an account? Boolean only,
+   *  throttled server-side. Lets login redirect unknown numbers to signup. */
+  checkPhone: (phone: string) => request<{ exists: boolean }>('/auth/check', { method: 'POST', body: { phone } }),
+  // create:true = explicit signup intent (signup screens only). Sign-in
+  // screens omit it, so a typo'd number gets 404 needsSignup instead of a
+  // silently minted ghost account + welcome money.
+  verifyOtp: (phone: string, code: string, create?: boolean) =>
+    request<{ token: string; user: Record<string, unknown>; needsSignup?: boolean }>('/auth/verify', { method: 'POST', body: create ? { phone, code, create: true } : { phone, code } }),
   emailAuth: (action: 'login' | 'register', email: string, password: string, name?: string) =>
     request<{ token: string; user: Record<string, unknown> }>('/auth/email', { method: 'POST', body: { action, email, password, name } }),
   googleAuth: (idToken: string, devBypass?: { email: string; name?: string }) =>
-    devBypass
+    // Dev backdoor is DEV-ONLY: prod builds must never send devBypass (server
+    // also rejects it unless GOOGLE_DEV_BYPASS=on AND not production). Without
+    // this gate a prod client could mint sessions with any chosen email.
+    __DEV__ && devBypass
       ? request<{ token: string; user: Record<string, unknown> }>('/auth/google', { method: 'POST', body: { devBypass: true, email: devBypass.email, name: devBypass.name } })
       : request<{ token: string; user: Record<string, unknown> }>('/auth/google', { method: 'POST', body: { idToken } }),
   /** Authoritative profile for the current token - used to self-heal identity after login. */
@@ -203,6 +215,9 @@ export const serverApi = {
   // ── Orders ───────────────────────────────────────────────────────────────
   getOrders: (mine?: 'buyer' | 'seller' | 'all') =>
     request<{ orders: any[] }>(`/orders${mine ? `?mine=${mine}` : ''}`),
+  /** Ownership-scoped single order (deep links, cold cache). 404 when the
+   *  row doesn't exist OR isn't yours — same shape, no existence oracle. */
+  getOrder: (id: string) => request<{ order: any }>(`/orders/${encodeURIComponent(id)}`),
   placeOrder: (order: Record<string, unknown>) => request<{ order: any }>('/orders', { method: 'POST', body: order }),
   updateOrder: (id: string, patch: Record<string, unknown>) =>
     request<{ ok: boolean }>(`/orders/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
@@ -215,8 +230,8 @@ export const serverApi = {
   getWallet: () => request<{ balance: number; loyaltyPoints: number; transactions: any[] }>('/wallet'),
   // Positive amounts are only accepted as gated top-ups (type: 'topup');
   // debits (negative) mirror real spend from checkout/promotions/payouts.
-  walletTx: (amount: number, title: string, detail: string, type?: string) =>
-    request<{ balance: number }>('/wallet', { method: 'POST', body: { amount, title, detail, ...(type ? { type } : {}) } }),
+  walletTx: (amount: number, title: string, detail: string, type?: string, ref?: string) =>
+    request<{ balance: number }>('/wallet', { method: 'POST', body: { amount, title, detail, ...(type ? { type } : {}), ...(ref ? { ref } : {}) } }),
 
   // ── Chat ─────────────────────────────────────────────────────────────────
   getThreads: () => request<{ threads: any[] }>('/chat/threads'),
@@ -264,10 +279,10 @@ export const serverApi = {
     }),
   /** Pinned-chat VAS: the SERVER owns the debit (atomic debit + pin, server
    *  price). The client must not pre-debit — doing both charged 2x per pin. */
-  pinThread: (threadId: string, days: number) =>
+  pinThread: (threadId: string, days: number, ref?: string) =>
     request<{ pinnedUntil: number; days: number }>(`/chat/threads/${encodeURIComponent(threadId)}/pin`, {
       method: 'POST',
-      body: { days },
+      body: { days, ...(ref ? { ref } : {}) },
     }),
 
   // ── Stories (REAL 24h stories, not post-derived) ──────────────────────────
@@ -311,6 +326,9 @@ export const serverApi = {
     request<{ ok: boolean }>(`/communities/${encodeURIComponent(communityId)}/join`, { method: 'POST', body: { joined } }),
   sendCommunityMessage: (communityId: string, text: string) =>
     request<{ message: any }>('/communities', { method: 'POST', body: { communityId, text } }),
+  /** Room history (server truth — every member sees every message). */
+  getCommunityMessages: (communityId: string) =>
+    request<{ messages: any[] }>(`/communities/${encodeURIComponent(communityId)}/messages`),
   /** Create a shared community (server row — everyone sees it). Offline falls
    *  back to a local-only row in the caller. */
   createCommunity: (community: { name: string; description?: string; type?: string }) =>
@@ -358,8 +376,36 @@ export const serverApi = {
         size?: string | null;
         position?: number | null;
       }>;
+      featuredPosts?: Array<{
+        id: string;
+        postId: string;
+        title: string;
+        excerpt?: string | null;
+        imageUrl?: string | null;
+        position?: number | null;
+        isPinned?: boolean | null;
+      }>;
+      spotlight?: {
+        id: string;
+        postId?: string | null;
+        productId?: string | null;
+        sellerId: string;
+        sellerName: string;
+        sellerLogo?: string | null;
+        title: string;
+        imageUrl?: string | null;
+      } | null;
+      // Admin rail visibility ("Show on home page"). Missing key = ON —
+      // the server defaults every rail on; OFF hides the rail client-side.
+      sections?: Record<string, boolean>;
       degraded?: boolean;
     }>('/api/v1/home'),
+
+  // ── Address book (server truth, cross-device; device cache is offline mirror)
+  getAddresses: () =>
+    requestWithAppKey<{ addresses: { id: string; type: string; name: string; street: string; city: string; phone: string; isDefault: boolean }[] }>('/api/app/addresses'),
+  addAddress: (body: { type: string; street: string; city: string; phone: string; isDefault?: boolean }) =>
+    requestWithAppKey<{ address: { id: string } }>('/api/app/addresses', { method: 'POST', body }),
 
   // ─── Marketing banners (seller dashboard → admin sync) ─────────────────
   // Upload a banner image picked in the seller dashboard. Returns a
@@ -370,8 +416,12 @@ export const serverApi = {
   // Submit a payout request. TRANSACTIONAL on the server: the wallet debit
   // (amount + payout fee) and the desk row (status "requested") commit in one
   // database transaction — the client never orchestrates two-phase money moves.
-  requestPayout: (amount: number) =>
-    requestWithAppKey<{ ok: boolean; withdrawalId: string }>('/api/app/wallet/payout', { method: 'PUT', body: { amount } }),
+  // method travels to the server so the desk pays the chosen rail (bank/UPI).
+  // ref is a per-tap idempotency key (reused across timeout-retries): the
+  // server mints a deterministic walletTx title per ref so a retry collides
+  // instead of double-debiting.
+  requestPayout: (amount: number, method: 'bank' | 'upi' = 'bank', ref?: string, destination?: string) =>
+    requestWithAppKey<{ ok: boolean; withdrawalId: string; deduped?: boolean; destination?: string }>('/api/app/wallet/payout', { method: 'PUT', body: { amount, method, ...(ref ? { ref } : {}), ...(destination ? { destination } : {}) } }),
 
   // Upload a local image and get back a hosted /uploads/... URL (root-relative
   // — prefix with getAdminUrl()). Used by the shared media upload pipeline.

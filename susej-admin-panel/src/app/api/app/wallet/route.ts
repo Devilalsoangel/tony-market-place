@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
 
 
 
-  let body: { amount?: number; title?: string; detail?: string; type?: string };
+  let body: { amount?: number; title?: string; detail?: string; type?: string; ref?: string };
 
   try {
 
@@ -140,16 +140,34 @@ export async function POST(req: NextRequest) {
     }
 
     title = `Wallet top-up · ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    // Idempotency: when the client supplies a stable per-intent ref (one UUID
+    // per tap, reused across timeout-retries), the title is deterministic so
+    // a retry collides on UNIQUE(username,title) instead of minting twice.
+    const rawRef = String((body as { ref?: unknown }).ref ?? "").trim().slice(0, 64);
+    if (/^[A-Za-z0-9_-]{8,64}$/.test(rawRef)) {
+      title = `Wallet top-up · ${rawRef}`;
+      const dup = await prisma.walletTransaction.findFirst({
+        where: { username: auth.user.username!, title },
+        select: { title: true, amount: true, detail: true },
+      });
+      if (dup) {
+        // Echo the SETTLED row (never the request): a retry carrying a
+        // different amount must not let the caller mint the delta as credit.
+        const bal = await prisma.user.findUnique({ where: { id: auth.user.id }, select: { walletBalance: true } });
+        return NextResponse.json({ balance: bal?.walletBalance ?? 0, transaction: { title: dup.title, detail: dup.detail, amount: dup.amount }, deduped: true });
+      }
+    }
 
   } else {
 
     const rawTitle = String(body.title ?? "Wallet transaction");
 
-    // Guard: client must not be able to poison ledger titles that double as
-
-    // idempotency guards for refunds/earnings/clawbacks.
-
-    const blocked = /Order (cancelled|earnings|clawback|refund)/i.test(rawTitle);
+    // Guard (H6): client must not be able to poison ledger titles that double
+    // as idempotency guards. A pre-created "Dispute refund · X" (-1) would
+    // make the real ruling's count-guard see 1 and skip the buyer's credit;
+    // same for clawback/payout titles (seller keeps funds on refunded
+    // orders). Covers every settlement taxonomy, not just Order-*.
+    const blocked = /Order (cancelled|earnings|clawback|refund)|Dispute (refund|split)|Withdrawal rejected refund|Withdrawal to bank|Payout rejected|Wallet top-up/i.test(rawTitle);
 
     if (blocked) {
 
@@ -157,11 +175,34 @@ export async function POST(req: NextRequest) {
 
     }
 
+    // Detail spoofing closes the same hole from the other side: the payout-
+    // reject refund looks up the original debit by detail-contains-id. A
+    // client debit carrying "Payout request <id>" would be picked as the
+    // debit and refunded 1 instead of the full amount (only the payout route
+    // itself may mint those details).
+    const rawDetail = String(body.detail ?? "");
+    if (amount < 0 && /payout request|withdrawal/i.test(rawDetail)) {
+      return NextResponse.json({ error: "Reserved transaction detail" }, { status: 400 });
+    }
+
     const baseTitle = rawTitle.slice(0, 80);
     if (!body.title || baseTitle === "Wallet transaction") {
       title = `Wallet transaction · ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     } else {
       title = baseTitle;
+    }
+
+    // Race-close (hostile-audit 1a): the pre-tx ref check above can't stop two
+    // concurrent same-ref POSTs, but the UNIQUE(username,title) constraint can
+    // — iff the title is deterministic per ref. Suffix it so a retry collides
+    // into the P2002-deduped path instead of double-charging. Distinct taps
+    // mint distinct refs, so legit repeats never collide. Budget the base so
+    // the REF is never clipped (clipping the ref's last char would false-dedupe
+    // two distinct intents sharing an 80-char title prefix).
+    const rawDebitRef = String((body as { ref?: unknown }).ref ?? "").trim().slice(0, 64);
+    if (/^[A-Za-z0-9_-]{8,64}$/.test(rawDebitRef) && !title.includes(rawDebitRef)) {
+      const suffix = ` · ref-${rawDebitRef}`;
+      title = `${title.slice(0, Math.max(0, 150 - suffix.length))}${suffix}`;
     }
 
   }
@@ -177,6 +218,10 @@ export async function POST(req: NextRequest) {
   // Top-up uses atomic increment. WalletTransaction stays inside same $transaction.
 
   const result = await prisma.$transaction(async (tx) => {
+
+    // Serialize concurrent top-ups on the user row: the 24h cap reads below
+    // are non-locking, so a retry storm could slip past them together.
+    await (tx as any).$queryRawUnsafe?.(`SELECT id FROM "User" WHERE id = $1 FOR UPDATE`, auth.user.id).catch(() => {});
 
     const existing = await tx.user.findUnique({ where: { id: auth.user.id }, select: { id: true, username: true } });
 
@@ -218,7 +263,7 @@ export async function POST(req: NextRequest) {
 
     return { newBalance, bal: newBalance - amount };
 
-  }).catch((e: unknown) => {
+  }).catch(async (e: unknown) => {
 
     const msg = e instanceof Error ? e.message : String(e);
 
@@ -232,7 +277,13 @@ export async function POST(req: NextRequest) {
 
     if (msg === "User not found") return { err: "User not found" as unknown as string };
     if (msg.startsWith("Top-up limit reached")) return { err: msg as unknown as string };
-    if (msg.includes("Unique constraint") || msg.includes("P2002") || (e as { code?: string })?.code === "P2002") return { err: "Duplicate transaction — already processed" as unknown as string };
+    // Idempotency race: a concurrent retry with the same deterministic title
+    // already committed (UNIQUE username+title rolled this tx back) — report
+    // the winner as success so callers never show "failed" for landed money.
+    if (msg.includes("Unique constraint") || msg.includes("P2002") || (e as { code?: string })?.code === "P2002") {
+      const bal = await prisma.user.findUnique({ where: { id: auth.user.id }, select: { walletBalance: true } }).catch(() => null);
+      return { newBalance: bal?.walletBalance ?? 0, bal: (bal?.walletBalance ?? 0) - amount, deduped: true };
+    }
 
     throw e;
 
@@ -246,7 +297,7 @@ export async function POST(req: NextRequest) {
 
   }
 
-  return NextResponse.json({ balance: result.newBalance, transaction: { title, detail, amount } });
+  return NextResponse.json({ balance: result.newBalance, transaction: { title, detail, amount }, ...("deduped" in result && result.deduped ? { deduped: true } : {}) });
 
 }
 
@@ -271,7 +322,7 @@ export async function PUT(req: NextRequest) {
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
-  let body: { amount?: number };
+  let body: { amount?: number; method?: string; ref?: unknown; destination?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -280,6 +331,76 @@ export async function PUT(req: NextRequest) {
   const amount = Math.floor(Number(body.amount ?? 0));
   if (!Number.isFinite(amount) || amount <= 0 || amount > 500000) {
     return NextResponse.json({ error: "Amount must be between 1 and 500000" }, { status: 400 });
+  }
+  // Rail choice is real: bank vs UPI persists on the Withdrawal row and the
+  // ledger title, so the desk pays to the right destination. Default bank for
+  // legacy clients that send amount-only.
+  const method = body.method === "upi" ? "upi" : "bank";
+  // Idempotency key (P0 double-debit): per-tap client ref mints a
+  // deterministic walletTx title on UNIQUE(username,title), so a
+  // timeout-retry collides instead of debiting twice. The amount+60s window
+  // below stays as a backstop for legacy clients that send no ref.
+  // The key is METHOD-INDEPENDENT (`Withdrawal · ref-<ref>`): the old
+  // method-scoped titles let the same ref debit twice via a bank↔UPI flip.
+  // Legacy method-scoped titles are still honored as dedupe evidence (one
+  // deploy cycle of overlap) so retries across the deploy never double-debit.
+  const rawRef = String(body.ref ?? "").trim().slice(0, 64);
+  const payoutRef = /^[A-Za-z0-9_-]{8,64}$/.test(rawRef) ? rawRef : null;
+  const payoutTitle =
+    method === "upi" ? "Withdrawal to UPI" : "Withdrawal to bank";
+  const idemTitle = payoutRef ? `Withdrawal · ref-${payoutRef}` : payoutTitle;
+  const legacyIdemTitles = payoutRef
+    ? [`Withdrawal to bank · ref-${payoutRef}`, `Withdrawal to UPI · ref-${payoutRef}`]
+    : [];
+  if (payoutRef) {
+    try {
+      const dupTx = await prisma.walletTransaction.findFirst({
+        where: { username: auth.user.username!, title: { in: [idemTitle, ...legacyIdemTitles] } },
+        select: { detail: true },
+      });
+      if (dupTx) {
+        // Return the MATCHING payout (parsed from the dedupe row's detail),
+        // not the latest row — interleaved payouts made the old lookup lie.
+        let matchedId = "";
+        const m = String(dupTx.detail ?? "").match(/Payout request (\S+)/);
+        if (m) {
+          const owned = await prisma.withdrawal.findFirst({
+            where: { id: m[1], userName: auth.user.username! },
+            select: { id: true },
+          }).catch(() => null);
+          if (owned) matchedId = owned.id;
+        }
+        if (!matchedId) {
+          const prior = await prisma.withdrawal.findFirst({
+            where: { userName: auth.user.username! },
+            orderBy: { requestedAt: "desc" },
+            select: { id: true },
+          }).catch(() => null);
+          matchedId = prior?.id ?? "";
+        }
+        return NextResponse.json({ ok: true, withdrawalId: matchedId, deduped: true });
+      }
+    } catch {}
+  }
+  // Double-submit guard (SELLER-C4): legacy no-ref clients only. Ref-bearing
+  // clients dedupe by deterministic title above — the amount+60s window
+  // false-dedupes two LEGIT distinct payouts a minute apart (two suppliers,
+  // same ₹5000: second returns first's id, B never paid). Method-scoped so a
+  // bank payout never dedupes a UPI one.
+  if (!payoutRef) {
+  try {
+    const recent = await prisma.withdrawal.findFirst({
+      where: {
+        userName: auth.user.username!,
+        amount,
+        method,
+        status: "requested",
+        requestedAt: { gte: new Date(Date.now() - 60000) },
+      },
+      orderBy: { requestedAt: "desc" },
+    });
+    if (recent) return NextResponse.json({ ok: true, withdrawalId: recent.id, deduped: true });
+  } catch {}
   }
   // Payout fee resolves from CommissionSetting (admin-editable) so the
   // server never disagrees with the live fee the app shows at the gate.
@@ -290,6 +411,51 @@ export async function PUT(req: NextRequest) {
     if (Number.isFinite(f) && f >= 0 && f <= 1000) fee = Math.floor(f);
   } catch {}
   const totalDebit = amount + fee;
+
+  // Beneficiary resolution — the rail travels AND the account does (a payout
+  // request with no destination is unpayable). Bank payouts go ONLY to the
+  // KYC-verified account on the seller's file (verified-beneficiary
+  // directory, RazorpayX pattern): free-typed account numbers are a
+  // misdirection/fraud vector and are never accepted. UPI needs an explicit
+  // VPA per request — a phone number is NOT a VPA (handles change, non-UPI
+  // phones exist) — format-validated on both sides.
+  let destination = "";
+  if (method === "bank") {
+    // Stable identity first: app-filed Seller rows carry id `app_<username>`
+    // (deterministic at KYC time). Contact-keyed lookup is the legacy
+    // fallback only — an email change post-approval must not orphan payouts.
+    let acct = "";
+    const stableRow = await prisma.seller
+      .findUnique({ where: { id: `app_${auth.user.username!}` }, select: { bankAccount: true } })
+      .catch(() => null) as { bankAccount?: unknown } | null;
+    acct = String(stableRow?.bankAccount ?? "").replace(/\D/g, "");
+    if (!acct) {
+      const ors: Array<Record<string, unknown>> = [];
+      if (auth.user.email) ors.push({ email: auth.user.email });
+      if (auth.user.phone) ors.push({ phone: auth.user.phone });
+      if (ors.length) {
+        const sellerRow = await prisma.seller
+          .findFirst({ where: { OR: ors }, select: { bankAccount: true } })
+          .catch(() => null) as { bankAccount?: unknown } | null;
+        acct = String(sellerRow?.bankAccount ?? "").replace(/\D/g, "");
+      }
+    }
+    // Short/typo'd numbers (e.g. "123") are unpayable — refuse before the
+    // desk can certify them. Indian account numbers run 9–18 digits.
+    if (!acct || acct.length < 9) {
+      return NextResponse.json(
+        { error: "No verified bank account on file — complete seller verification first" },
+        { status: 400 }
+      );
+    }
+    destination = acct;
+  } else {
+    const vpa = String(body.destination ?? "").trim().slice(0, 80);
+    if (!/^[a-zA-Z0-9._-]{2,256}@[a-zA-Z]{2,64}$/.test(vpa)) {
+      return NextResponse.json({ error: "Enter a valid UPI ID (name@bank)" }, { status: 400 });
+    }
+    destination = vpa;
+  }
 
   try {
       const wdId = await prisma.$transaction(async (tx) => {
@@ -303,22 +469,66 @@ export async function PUT(req: NextRequest) {
       // the fee). Lifetime coupon-aware goods-net minus non-rejected payouts
       // = withdrawable. Matches the app's netEarnings gate, now enforced.
       const rate = await resolveCommissionRate(tx as never).catch(() => 0.08);
+      // Fail-closed (API-H2): refunded orders pay nothing withdrawable. A
+      // seller refunded in full keeps status "delivered" with paymentStatus
+      // "refunded" — counting it would let withdraw-after-refund double-spend
+      // (clawback already took the money back). Partial (split) refunds also
+      // exclude the whole order: understates withdrawable, never overstates.
       const soldRows = await tx.order.findMany({
-        where: { sellerUsername: user.username!, status: "delivered" },
-        select: { itemsList: true },
+        where: { sellerUsername: user.username!, status: "delivered", paymentStatus: { not: "refunded" } },
+        select: { itemsList: true, actualDelivery: true, trackingNumber: true },
       });
+      // Disputed-funds freeze (Amazon pattern): an open/under_review dispute
+      // freezes its order's net until ruling — otherwise the seller withdraws
+      // the full lifetimeNet and a full_refund ruling claws into negative
+      // (uncollectible receivable the platform eats). Dispute.orderId carries
+      // the trackingNumber.
+      let frozenTrackings = new Set<string>();
+      try {
+        const trackings = soldRows.map((o) => String((o as { trackingNumber?: unknown }).trackingNumber ?? "")).filter(Boolean);
+        if (trackings.length) {
+          const frozen = await tx.dispute.findMany({
+            where: { orderId: { in: trackings }, status: { in: ["open", "under_review"] } },
+            select: { orderId: true },
+          });
+          frozenTrackings = new Set(frozen.map((d) => String(d.orderId)));
+        }
+      } catch {
+        // Fail-CLOSED: a dispute-read failure must never unlock frozen money.
+        throw new PayoutError("Payout guard unavailable — try again", 503);
+      }
       // Settled per-line legs (rate AT SALE TIME) — never revalue history at
       // the CURRENT rate, or an admin rate change retroactively shrinks or
       // inflates withdrawable balances. Legacy rows fall back to the rate.
+      // 7-DAY SETTLEMENT HOLD (anti-wash, Amazon/new-seller-hold pattern):
+      // delivered legs unlock 7 days after delivery (return window), so a
+      // colluding buyer→seller pair can't spin bonus money into a withdrawal
+      // the same afternoon (throttles cap the accounts; the hold kills the
+      // velocity). Rows from the pre-hold era carry no actualDelivery stamp
+      // and count as matured — the hold only ever delays NEW money.
+      const HOLD_MS = 7 * 24 * 3600 * 1000;
+      const holdNow = Date.now();
+      let heldBack = 0;
+      let frozenBack = 0;
       let lifetimeNet = 0;
       for (const o of soldRows) {
         const itemsList = (o as { itemsList?: unknown }).itemsList;
         const b = settlementGoodsBasis(itemsList);
         if (!Number.isFinite(b) || (b as number) <= 0) continue;
         const legFee = settledFeeFromLegs(itemsList);
-        lifetimeNet += legFee !== null
+        const legNet = legFee !== null
           ? Math.max(0, Math.round(b as number) - legFee)
           : Math.max(0, Math.round((b as number) * (1 - rate)));
+        if (frozenTrackings.has(String((o as { trackingNumber?: unknown }).trackingNumber ?? ""))) {
+          frozenBack += legNet;
+          continue;
+        }
+        const stamp = Date.parse(String((o as { actualDelivery?: unknown }).actualDelivery ?? ""));
+        if (Number.isFinite(stamp) && holdNow - stamp < HOLD_MS) {
+          heldBack += legNet;
+          continue;
+        }
+        lifetimeNet += legNet;
       }
       const priorWd = await tx.withdrawal.findMany({
         where: {
@@ -329,7 +539,14 @@ export async function PUT(req: NextRequest) {
       });
       const paidOut = priorWd.reduce((s, w) => s + Math.max(0, Number((w as { amount?: unknown }).amount ?? 0)), 0);
       if (amount > lifetimeNet - paidOut) {
-        throw new PayoutError("Payout exceeds delivered earnings", 400);
+        throw new PayoutError(
+          frozenBack > 0
+            ? `Some earnings are frozen under dispute — ₹${frozenBack.toLocaleString("en-IN")} unlocks on ruling`
+            : heldBack > 0
+              ? `Only settled earnings are withdrawable — ₹${heldBack.toLocaleString("en-IN")} unlocks 7 days after delivery`
+              : "Payout exceeds delivered earnings",
+          400
+        );
       }
       // The wallet must cover amount + fee (same rule the app enforced
       // client-side; now server-authoritative). Atomic compare-and-set so
@@ -345,7 +562,7 @@ export async function PUT(req: NextRequest) {
           // "Aarav" must never see each other's payouts, and renames must not
           // orphan history. The desk renders the same identifier.
           userName: user.username!,
-          method: "bank",
+          method,
           amount,
           status: "requested",
           requestedAt: new Date(),
@@ -354,17 +571,48 @@ export async function PUT(req: NextRequest) {
       await tx.walletTransaction.create({
         data: {
           username: user.username!,
-          title: "Withdrawal to bank",
-          detail: `Payout request ${wd.id} · ₹${fee} fee`,
+          title: idemTitle,
+          // The destination rides in the immutable detail so the finance desk
+          // can always see WHERE a payout goes (read-time join on the data
+          // plane surfaces it as the Destination column). Format is parsed —
+          // keep `· to <destination>` at the end.
+          detail: `Payout request ${wd.id} · ₹${fee} fee · via ${method === "upi" ? "UPI" : "bank"} · to ${destination}`,
           amount: -totalDebit,
         },
       });
-      return wd.id;
+      return { id: wd.id, destination };
     });
-    return NextResponse.json({ ok: true, withdrawalId: wdId });
+    return NextResponse.json({ ok: true, withdrawalId: wdId.id, destination: wdId.destination });
   } catch (e: unknown) {
     if (e instanceof PayoutError) {
       return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    // Idempotency race: a concurrent same-ref retry already committed the
+    // deterministic title — the loser tx rolled back on UNIQUE(username,title).
+    // Report the MATCHING winner (parsed from its detail), not the latest row.
+    if ((e as { code?: string })?.code === "P2002" && payoutRef) {
+      const winnerTx = await prisma.walletTransaction.findFirst({
+        where: { username: auth.user.username!, title: { in: [idemTitle, ...legacyIdemTitles] } },
+        select: { detail: true },
+      }).catch(() => null);
+      let winnerId = "";
+      const wm = String(winnerTx?.detail ?? "").match(/Payout request (\S+)/);
+      if (wm) {
+        const owned = await prisma.withdrawal.findFirst({
+          where: { id: wm[1], userName: auth.user.username! },
+          select: { id: true },
+        }).catch(() => null);
+        if (owned) winnerId = owned.id;
+      }
+      if (!winnerId) {
+        const prior = await prisma.withdrawal.findFirst({
+          where: { userName: auth.user.username! },
+          orderBy: { requestedAt: "desc" },
+          select: { id: true },
+        }).catch(() => null);
+        winnerId = prior?.id ?? "";
+      }
+      return NextResponse.json({ ok: true, withdrawalId: winnerId, deduped: true });
     }
     throw e;
   }
