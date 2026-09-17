@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { getPrisma } from "@/lib/db";
 import { getAppUser } from "@/lib/app-auth";
 import { resolveCommissionRate } from "@/lib/commission";
+import { notifyUser } from "@/lib/notifications";
 
 /** Raised inside the placement transaction; mapped to an HTTP error response. */
 class OrderError extends Error {
@@ -825,6 +826,20 @@ export async function POST(req: NextRequest) {
 
       return order;
     });
+
+    // Seller tell (fire-and-forget, never in the money tx): a new order the
+    // seller never hears about ships late. Buyer needs no row (just paid).
+    if (created.sellerUsername) {
+      notifyUser(prisma, {
+        username: created.sellerUsername,
+        type: "order",
+        userName: auth.user.name,
+        userHandle: username,
+        action: `placed a new order (${created.trackingNumber})`,
+        target: `₹${Math.round(Number(created.amount ?? 0)).toLocaleString("en-IN")}`,
+        targetId: created.trackingNumber,
+      });
+    }
 
     return NextResponse.json(
       {

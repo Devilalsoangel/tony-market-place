@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { getAppUser } from "@/lib/app-auth";
 import { resolveCommissionRate, settlementGoodsBasis, settledFeeFromLegs } from "@/lib/commission";
+import { notifyUser } from "@/lib/notifications";
 
 class OrderError extends Error {
   status: number;
@@ -613,6 +614,55 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ((updated as { __dedupedRace?: boolean }).__dedupedRace) {
     const winner = await prisma.order.findUnique({ where: { id } });
     return NextResponse.json({ ok: true, status: winner?.status ?? order.status, reviewed: winner?.reviewed ?? order.reviewed, deduped: true });
+  }
+
+  // Money-event tells (fire-and-forget, post-commit only — never inside the
+  // money tx). Identity fields come from the pre-tx snapshot (immutable).
+  {
+    const t = order.trackingNumber;
+    if (typeof body.refundReason === "string" && body.refundReason.trim() && order.sellerUsername) {
+      notifyUser(prisma, {
+        username: order.sellerUsername, type: "order", userName: order.buyerName, userHandle: order.buyerUsername ?? undefined,
+        action: `requested a refund on ${t}`, targetId: t,
+      });
+    }
+    if (typeof body.refundDecision === "string" && order.buyerUsername) {
+      const approved = body.refundDecision.trim().toLowerCase() === "approved";
+      notifyUser(prisma, {
+        username: order.buyerUsername, type: "order", userName: order.sellerName, userHandle: order.sellerUsername ?? undefined,
+        action: approved ? `approved your refund on ${t}` : `declined your refund on ${t}`, targetId: t,
+      });
+    }
+    if (next && next !== "cancelled" && order.buyerUsername) {
+      // Seller advances (adjacent-only, enforced above) → buyer hears it.
+      const legible: Record<string, string> = {
+        confirmed: `confirmed your order ${t}`,
+        preparing: `started packing your order ${t}`,
+        out_for_delivery: `shipped your order ${t}`,
+        delivered: `delivered your order ${t}`,
+      };
+      if (legible[next]) {
+        notifyUser(prisma, {
+          username: order.buyerUsername, type: "order",
+          userName: order.sellerName, userHandle: order.sellerUsername ?? undefined,
+          action: legible[next], targetId: t,
+        });
+      }
+    }
+    if (next === "cancelled") {
+      // Cancel by either side → the OTHER side hears it (buyer cancel also
+      // tells the seller to stop packing; seller decline tells the buyer).
+      const other = isBuyer ? order.sellerUsername : order.buyerUsername;
+      if (other) {
+        notifyUser(prisma, {
+          username: other, type: "order",
+          userName: isBuyer ? order.buyerName : order.sellerName,
+          userHandle: isBuyer ? (order.buyerUsername ?? undefined) : (order.sellerUsername ?? undefined),
+          action: isBuyer ? `cancelled order ${t} (refund issued)` : `declined order ${t} (refund issued)`,
+          targetId: t,
+        });
+      }
+    }
   }
 
   return NextResponse.json({ ok: true, status: updated.status, reviewed: updated.reviewed });

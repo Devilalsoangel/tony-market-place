@@ -59,7 +59,10 @@ export function signSession(admin: { id: string; name: string; role: string; log
     name: admin.name,
     role: admin.role,
     loginId: admin.loginId,
-    exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    // 24h (was 7d): stolen-cookie replay, logout gap, and stale-privilege
+    // windows all shrink to a day. Writes re-check the Admin row per request
+    // (getActiveAdmin) so ban/demote bites immediately, not at next login.
+    exp: Date.now() + 24 * 60 * 60 * 1000,
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = hmac(body).toString("base64url");
@@ -83,7 +86,8 @@ export function verifySessionToken(token: string | undefined): SessionPayload | 
 }
 
 export const SESSION_COOKIE = "susej_session";
-export const SESSION_MAX_AGE = 7 * 24 * 60 * 60;
+export const SESSION_MAX_AGE = 24 * 60 * 60;
+export const MAX_PASSWORD_LEN = 128;
 
 export const CHALLENGE_COOKIE = "susej_challenge";
 export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -128,7 +132,47 @@ export function generateResetToken(): { raw: string; hash: string } {
 }
 
 export function getClientIp(request: NextRequest): string {
+  // Trust order matters: clients can inject arbitrary X-Forwarded-For entries
+  // and Vercel appends the real client IP AFTER them — so the FIRST entry is
+  // attacker-controlled while x-real-ip (set by the edge) is authoritative.
+  // Old code took the first XFF entry: rotating the header per request gave a
+  // fresh throttle bucket every time (all IP throttles + audit IPs defeated).
+  const real = request.headers.get("x-real-ip")?.trim();
+  if (real) return real;
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
+  if (forwarded) {
+    const parts = forwarded.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1];
+  }
   return "unknown";
+}
+
+/**
+ * Fresh admin identity for request handling: verifies the signature, then
+ * re-reads the Admin row (status + role are LIVE, never frozen at login).
+ * Returns null for bad/expired tokens, missing rows, and non-active accounts —
+ * so ban/deactivate/demote take effect on the NEXT request, not next login.
+ * Fail-closed (null) when the DB is unreachable: a panel that cannot read its
+ * own admin table must not serve stale-privilege sessions.
+ */
+export async function getActiveAdmin(
+  request: NextRequest
+): Promise<{ id: string; name: string; role: string; loginId: string } | null> {
+  const session = verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+  if (!session) return null;
+  try {
+    const { getPrisma } = await import("./db");
+    const prisma = await getPrisma();
+    if (!prisma) return null;
+    const admin = await prisma.admin.findUnique({ where: { id: session.sub } });
+    if (!admin || (admin as { status?: unknown }).status !== "active") return null;
+    return {
+      id: (admin as { id: string }).id,
+      name: String((admin as { name?: unknown }).name ?? ""),
+      role: String((admin as { role?: unknown }).role ?? ""),
+      loginId: String((admin as { loginId?: unknown }).loginId ?? ""),
+    };
+  } catch {
+    return null;
+  }
 }

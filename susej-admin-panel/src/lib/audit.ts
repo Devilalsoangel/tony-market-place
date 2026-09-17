@@ -9,21 +9,29 @@ export interface AuditEntry {
   ip?: string;
 }
 
+/** Strip control characters (CR/LF) from audit free-text: raw loginIds and
+ *  details land in this trail, and an embedded newline forges rows in CSV
+ *  exports and log viewers (CRLF injection). One choke point for all writers. */
+function scrubAuditText(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").slice(0, 4000);
+}
+
 export async function writeAudit(entry: AuditEntry): Promise<void> {
   try {
     const prisma = await getPrisma();
     if (!prisma) return;
-    // details is TEXT (unbounded) — never truncate the before/after diff the
-    // route builds. Auditing stays non-blocking, but a failure is LOUD in the
+    // details is TEXT (unbounded) — callers cap their own diffs; the 4000-char
+    // bound here is injection hygiene, not truncation of real content.
+    // Auditing stays non-blocking, but a failure is LOUD in the
     // server log instead of a silent compliance gap.
     await prisma.auditLog.create({
       data: {
-        action: entry.action,
-        entity: entry.entity ?? "system",
-        entityId: entry.entityId ?? "",
-        details: entry.details ?? "",
-        adminName: entry.adminName ?? "system",
-        ip: entry.ip ?? "",
+        action: scrubAuditText(entry.action),
+        entity: scrubAuditText(entry.entity ?? "system"),
+        entityId: scrubAuditText(entry.entityId ?? ""),
+        details: scrubAuditText(entry.details ?? ""),
+        adminName: scrubAuditText(entry.adminName ?? "system"),
+        ip: scrubAuditText(entry.ip ?? ""),
         timestamp: new Date(),
       },
     });

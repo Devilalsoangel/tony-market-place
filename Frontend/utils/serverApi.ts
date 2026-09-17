@@ -195,6 +195,9 @@ export const serverApi = {
   },
   createReel: (body: { mediaUrl: string; caption?: string }) =>
     request<{ reel: { id: string } }>('/reels', { method: 'POST', body }),
+  /** Count one watch (server increments; throttled per IP). Fire-and-forget. */
+  viewReel: (id: string) =>
+    request<{ ok: boolean }>('/reels', { method: 'PATCH', body: { id, action: 'view' } }),
   endPromotion: (id: string, postId?: string) =>
     request<{ ok: boolean; status: string }>('/promotions', {
       method: 'PATCH',
@@ -335,7 +338,10 @@ export const serverApi = {
     request<{ community: any }>('/communities', { method: 'POST', body: community }),
 
   // ── Notifications ────────────────────────────────────────────────────────
-  getNotifications: () => request<{ notifications: any[]; unreadCount: number }>('/notifications'),
+  getNotifications: (before?: number) =>
+    request<{ notifications: any[]; unreadCount: number }>(
+      typeof before === 'number' && Number.isFinite(before) ? `/notifications?before=${before}` : '/notifications'
+    ),
   markNotificationsRead: (id?: string) =>
     request<{ ok: boolean }>('/notifications', { method: 'POST', body: id ? { id } : {} }),
 

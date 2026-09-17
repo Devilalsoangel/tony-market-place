@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon, HeartIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
 import { useNotifications, AppNotification, NotifType } from '../contexts/NotificationContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { resolveAvatar } from '../utils/productImages';
 
 type Tab = 'All' | 'Orders' | 'Social';
@@ -12,6 +13,8 @@ const tabs: Tab[] = ['All', 'Orders', 'Social'];
 
 const ORDER_TYPES: NotifType[] = ['order'];
 const SOCIAL_TYPES: NotifType[] = ['follower', 'like', 'comment', 'bookmark', 'promotion'];
+// System warnings (imageless listings, etc.) surface under BOTH tabs: they
+// are the one notification class that must never hide behind a filter.
 
 const timeAgo = (ts: number): string => {
   const diff = Date.now() - ts;
@@ -27,11 +30,13 @@ const timeAgo = (ts: number): string => {
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<Tab>('All');
-  const { notifications, markAsRead, markAllAsRead } = useNotifications();
+  const { notifications, markAsRead, markAllAsRead, loadMore, hasMore } = useNotifications();
+  const { settings } = useSettings();
+  const pushOff = settings.pushNotifications === false;
 
   const filtered = useMemo(() => {
-    if (activeTab === 'Orders') return notifications.filter((n) => ORDER_TYPES.includes(n.type));
-    if (activeTab === 'Social') return notifications.filter((n) => SOCIAL_TYPES.includes(n.type));
+    if (activeTab === 'Orders') return notifications.filter((n) => n.type === 'warning' || ORDER_TYPES.includes(n.type));
+    if (activeTab === 'Social') return notifications.filter((n) => n.type === 'warning' || SOCIAL_TYPES.includes(n.type));
     return notifications;
   }, [notifications, activeTab]);
 
@@ -77,6 +82,11 @@ export default function NotificationsScreen() {
         break;
       case 'promotion':
         router.push('/(tabs)/explore');
+        break;
+      case 'warning':
+        // Imageless-listing warnings carry the listing id: land on the
+        // listing that needs the photo, not the generic feed.
+        router.push(targetId ? `/product/${targetId}` : '/(tabs)/feed');
         break;
       case 'like':
       case 'comment':
@@ -238,6 +248,22 @@ export default function NotificationsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingTop: 14, paddingBottom: insets.bottom + 80 }}
         renderItem={({ item }) => renderRow(item)}
+        ListHeaderComponent={
+          pushOff ? (
+            <Text className="font-inter-400 px-5 pb-2 text-secondary" style={{ fontSize: 12, lineHeight: 16 }}>
+              Push is off in Settings — showing your saved list. New activity will not arrive until it is back on.
+            </Text>
+          ) : null
+        }
+        ListFooterComponent={
+          !pushOff && hasMore ? (
+            <TouchableOpacity onPress={loadMore} className="items-center py-4">
+              <Text className="font-inter-600 text-primary" style={{ fontSize: 13, lineHeight: 16 }}>
+                Load older
+              </Text>
+            </TouchableOpacity>
+          ) : null
+        }
         ListEmptyComponent={
           <View className="items-center py-16 px-4">
             <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 15, lineHeight: 20 }}>

@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomInt } from "crypto";
 import { getPrisma } from "@/lib/db";
 import { getAppUser, isIndianPhoneShape } from "@/lib/app-auth";
+import { getClientIp } from "@/lib/auth";
+
+// Per-IP send throttle: the per-phone 45s cooldown alone lets one IP pump
+// SMS cost / harass victims / bloat otp rows across distinct numbers.
+const SEND_WINDOW_MS = 60_000;
+const SEND_MAX = 20;
+const sendHits = new Map<string, { count: number; resetAt: number }>();
+function throttleSendIp(ip: string): boolean {
+  const now = Date.now();
+  const cur = sendHits.get(ip);
+  if (!cur || now >= cur.resetAt) {
+    sendHits.set(ip, { count: 1, resetAt: now + SEND_WINDOW_MS });
+    return true;
+  }
+  cur.count += 1;
+  if (cur.count > SEND_MAX) return false;
+  return true;
+}
 
 // Production OTP request flow:
 // - 6-digit random code, stored as SHA-256 hash with 5-minute expiry,
@@ -51,6 +69,9 @@ export async function POST(req: NextRequest) {
   // binds sessions by phone, and cross-country issuance is account takeover.
   if (!isIndianPhoneShape(phone)) {
     return NextResponse.json({ error: "Only Indian (+91) mobile numbers are supported" }, { status: 400 });
+  }
+  if (!throttleSendIp(getClientIp(req))) {
+    return NextResponse.json({ error: "Too many codes requested — try again in a minute" }, { status: 429 });
   }
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });

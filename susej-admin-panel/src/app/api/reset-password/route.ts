@@ -1,9 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { sha256Hex, hashPassword, SESSION_COOKIE, getClientIp } from "@/lib/auth";
+import { sha256Hex, hashPassword, SESSION_COOKIE, MAX_PASSWORD_LEN, getClientIp } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 
 const MIN_PASSWORD_LENGTH = 8;
+
+// Per-IP throttle (brute-force cost on the 900k code space) + uniform failure
+// delay (timing uniformity: success and failure take the same time).
+const RESET_WINDOW_MS = 60_000;
+const RESET_MAX = 10;
+const resetHits = new Map<string, { count: number; resetAt: number }>();
+function throttleResetIp(ip: string): boolean {
+  const now = Date.now();
+  const cur = resetHits.get(ip);
+  if (!cur || now >= cur.resetAt) {
+    resetHits.set(ip, { count: 1, resetAt: now + RESET_WINDOW_MS });
+    return true;
+  }
+  cur.count += 1;
+  if (cur.count > RESET_MAX) return false;
+  return true;
+}
+const FAIL_DELAY_MS = 300;
+const slowFail = (body: Record<string, unknown>, status: number) =>
+  new Promise<NextResponse>((resolve) => setTimeout(() => resolve(NextResponse.json(body, { status })), FAIL_DELAY_MS));
 
 async function resolveToken(token: string) {
   if (!token) return null;
@@ -33,6 +53,9 @@ export async function POST(request: NextRequest) {
   }
 
   const ip = getClientIp(request);
+  if (!throttleResetIp(ip)) {
+    return slowFail({ error: "Too many attempts — try again in a minute." }, 429);
+  }
 
   if (action === "verify") {
     const prisma = await getPrisma();
@@ -43,19 +66,22 @@ export async function POST(request: NextRequest) {
       );
     }
     const row = await resolveToken(token);
-    return NextResponse.json(row ? { ok: true, adminName: row.admin.name } : { ok: false, error: "This reset code is invalid or has expired." });
+    // No adminName on success (it leaked valid-token confirmation); uniform
+    // timing on failure (see slowFail on the reset branch).
+    if (!row) return slowFail({ ok: false, error: "This reset code is invalid or has expired." }, 200);
+    return NextResponse.json({ ok: true });
   }
 
   if (action === "reset") {
-    if (password.length < MIN_PASSWORD_LENGTH) {
+    if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LEN) {
       return NextResponse.json(
-        { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
+        { error: `Password must be ${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LEN} characters.` },
         { status: 400 }
       );
     }
     const row = await resolveToken(token);
     if (!row) {
-      return NextResponse.json({ error: "This reset code is invalid or has expired." }, { status: 400 });
+      return slowFail({ error: "This reset code is invalid or has expired." }, 400);
     }
 
     const prisma = await getPrisma();

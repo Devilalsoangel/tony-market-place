@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { getAppUser } from "@/lib/app-auth";
+import { notifyUser } from "@/lib/notifications";
 
 /** GET /api/app/disputes — my disputes (raised by or against me). */
 export async function GET(req: NextRequest) {
@@ -83,6 +84,20 @@ export async function POST(req: NextRequest) {
       raisedAt: new Date(),
     } as never,
   });
+  // Counterparty tell (fire-and-forget): disputes otherwise sit silent until
+  // someone polls the list.
+  {
+    const counterparty = order.buyerUsername === username ? order.sellerUsername : order.buyerUsername;
+    const counterName = order.buyerUsername === username ? order.sellerName : order.buyerName;
+    if (counterparty) {
+      notifyUser(prisma, {
+        username: counterparty, type: "order",
+        userName: auth.user.name, userHandle: username,
+        action: `opened a dispute on ${order.trackingNumber} (${reason})`,
+        target: counterName, targetId: order.trackingNumber,
+      });
+    }
+  }
   return NextResponse.json(
     {
       dispute: {

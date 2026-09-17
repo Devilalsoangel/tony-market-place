@@ -1,8 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { createAppSession, toAppUser } from "@/lib/app-auth";
+import { getClientIp } from "@/lib/auth";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Per-IP throttle (minting side): every new Google email mints ₹500, so the
+// endpoint is a money printer without a bucket. In-memory per isolate.
+const GOOGLE_WINDOW_MS = 60_000;
+const GOOGLE_MAX = 30;
+const googleHits = new Map<string, { count: number; resetAt: number }>();
+function throttleGoogleIp(ip: string): boolean {
+  const now = Date.now();
+  const cur = googleHits.get(ip);
+  if (!cur || now >= cur.resetAt) {
+    googleHits.set(ip, { count: 1, resetAt: now + GOOGLE_WINDOW_MS });
+    return true;
+  }
+  cur.count += 1;
+  if (cur.count > GOOGLE_MAX) return false;
+  return true;
+}
 
 export async function POST(req: NextRequest) {
   let body: { idToken?: string; devBypass?: boolean; email?: string; name?: string };
@@ -14,6 +32,10 @@ export async function POST(req: NextRequest) {
 
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
+
+  if (!throttleGoogleIp(getClientIp(req))) {
+    return NextResponse.json({ error: "Too many attempts — try again in a minute" }, { status: 429 });
+  }
 
   // ── DEV BYPASS ──────────────────────────────────────────────────────────
   // CRITICAL SECURITY: this must default to DISABLED. The gate is
@@ -100,9 +122,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Google login not configured" }, { status: 503 });
   }
 
-  let info: { aud?: string; email?: string; email_verified?: string | boolean; name?: string; picture?: string; sub?: string; error_description?: string; error?: string };
+  let info: { aud?: string; email?: string; email_verified?: string | boolean; name?: string; picture?: string; sub?: string; exp?: string | number; iat?: string | number; iss?: string; error_description?: string; error?: string };
   try {
-    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, {
+    // POST body (never URL query): id_tokens in URLs land in proxy/CDN logs.
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ id_token: idToken }).toString(),
       signal: AbortSignal.timeout(8000),
     });
     const text = await res.text();
@@ -121,6 +147,20 @@ export async function POST(req: NextRequest) {
   if (info.aud !== clientId) {
     return NextResponse.json({ error: "Invalid Google token" }, { status: 401 });
   }
+  // Issuer + expiry: an aud-valid but expired (or foreign-issuer) token must
+  // not mint sessions — expired-token replay was accepted before.
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (info.iss !== "accounts.google.com" && info.iss !== "https://accounts.google.com") {
+    return NextResponse.json({ error: "Invalid Google token" }, { status: 401 });
+  }
+  const exp = Number(info.exp);
+  if (!Number.isFinite(exp) || exp <= nowSec) {
+    return NextResponse.json({ error: "Invalid Google token" }, { status: 401 });
+  }
+  const iat = Number(info.iat);
+  if (Number.isFinite(iat) && (iat > nowSec + 300 || exp - iat > 3600 * 5)) {
+    return NextResponse.json({ error: "Invalid Google token" }, { status: 401 });
+  }
 
   const emailVerified = info.email_verified === true || info.email_verified === "true";
   if (!emailVerified) {
@@ -132,8 +172,54 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid Google token" }, { status: 401 });
   }
   const name = (info.name ?? "").trim() || email.split("@")[0];
+  const sub = typeof info.sub === "string" && info.sub ? info.sub : null;
+
+  // Subject binding (email-recycling protection): the Google `sub` is the
+  // stable identity; email alone hands the susej account + wallet to the
+  // address's next owner. Rows carry googleSub once the column migration
+  // lands; until then every access is guarded to degrade to email-only.
+  // Banned accounts never mint, on either branch.
+  async function findBySub(s: string) {
+    try {
+      return await (prisma as any).user.findFirst({ where: { googleSub: s } });
+    } catch {
+      return undefined;
+    }
+  }
+  if (sub) {
+    const bound = await findBySub(sub);
+    if (bound && bound !== undefined) {
+      if (bound.status !== "active") {
+        return NextResponse.json({ error: "Account disabled. Contact support." }, { status: 403 });
+      }
+      const token = await createAppSession(bound.id, bound.username!);
+      const fresh = await prisma.user.findUnique({ where: { id: bound.id } }).catch(() => null);
+      return NextResponse.json({ token, user: toAppUser(fresh ?? bound) });
+    }
+  }
 
   let user = await prisma.user.findFirst({ where: { email } });
+  if (user) {
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account disabled. Contact support." }, { status: 403 });
+    }
+    // Recycling tripwire: this email is bound to a DIFFERENT Google subject —
+    // the address changed hands. Never hand over the account + wallet.
+    const boundSub = (user as unknown as { googleSub?: unknown }).googleSub;
+    if (sub && typeof boundSub === "string" && boundSub && boundSub !== sub) {
+      return NextResponse.json({ error: "Google account mismatch. Contact support." }, { status: 403 });
+    }
+    // Adopt the subject on first sub-aware login (NULL → sub is safe: no
+    // existing binding can conflict with an empty one).
+    if (sub) {
+      try {
+        await (prisma as any).user.updateMany({
+          where: { id: user.id, googleSub: null },
+          data: { googleSub: sub },
+        });
+      } catch {}
+    }
+  }
   if (!user) {
     let username = email.split("@")[0].replace(/[^a-z0-9_]/g, "").slice(0, 20) || "user";
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -161,6 +247,15 @@ export async function POST(req: NextRequest) {
           joinedAt: new Date(),
         },
       });
+      // Bind subject at birth (guarded: no-op until the column migration lands).
+      if (sub) {
+        try {
+          await (prisma as any).user.updateMany({
+            where: { id: user.id, googleSub: null },
+            data: { googleSub: sub },
+          });
+        } catch {}
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("Unique constraint") || (e as { code?: string })?.code === "P2002") {

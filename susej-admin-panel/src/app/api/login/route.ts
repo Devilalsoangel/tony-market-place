@@ -9,10 +9,28 @@ import {
   CHALLENGE_TTL_MS,
   MAX_LOGIN_ATTEMPTS,
   LOCKOUT_MINUTES,
+  MAX_PASSWORD_LEN,
   getClientIp,
 } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { PrismaClient } from "@/generated/prisma/client";
+
+// Per-IP login throttle (in-memory per isolate — raises spray cost alongside
+// the account lockout; serverless fan-out residual is standing-noted).
+const LOGIN_WINDOW_MS = 60_000;
+const LOGIN_MAX = 30;
+const loginHits = new Map<string, { count: number; resetAt: number }>();
+function throttleLoginIp(ip: string): boolean {
+  const now = Date.now();
+  const cur = loginHits.get(ip);
+  if (!cur || now >= cur.resetAt) {
+    loginHits.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return true;
+  }
+  cur.count += 1;
+  if (cur.count > LOGIN_MAX) return false;
+  return true;
+}
 
 type AdminLike = {
   id: string;
@@ -64,8 +82,16 @@ export async function POST(request: NextRequest) {
   if (!loginId || !password) {
     return NextResponse.json({ error: "Admin ID and password are required." }, { status: 400 });
   }
+  // CPU-DoS guard: scrypt is synchronous — an unbounded password blocks the
+  // event loop per attempt. 128 chars is far beyond any human password.
+  if (password.length > MAX_PASSWORD_LEN) {
+    return NextResponse.json({ error: "Invalid Admin ID or password." }, { status: 401 });
+  }
 
   const ip = getClientIp(request);
+  if (!throttleLoginIp(ip)) {
+    return NextResponse.json({ error: "Too many attempts — try again in a minute." }, { status: 429 });
+  }
   const prisma = await getPrisma();
 
   // FAIL CLOSED: no DB connection means no login — no mock credential fallback.
@@ -89,18 +115,20 @@ export async function POST(request: NextRequest) {
   }
 
   if (db.lockedUntil && db.lockedUntil > new Date()) {
-    const minutes = Math.max(1, Math.ceil((db.lockedUntil.getTime() - Date.now()) / 60000));
     await writeAudit({
       action: "auth.login.locked",
       entity: "admins",
       entityId: db.id,
-      details: `Blocked for ${minutes} more minute(s)`,
+      details: "Blocked attempt on locked account",
       adminName: loginId,
       ip,
     });
+    // Uniform 401 (no 423, no minutes): distinct locked responses hand out a
+    // valid-loginId oracle and confirm lockout-DoS success to the attacker.
+    // Legit owners see the same message and retry after the window.
     return NextResponse.json(
-      { error: `Too many failed attempts. Try again in ${minutes} minute(s).`, locked: true },
-      { status: 423 }
+      { error: "Invalid Admin ID or password." },
+      { status: 401 }
     );
   }
 

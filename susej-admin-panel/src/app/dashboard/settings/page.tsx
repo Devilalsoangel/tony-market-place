@@ -207,6 +207,68 @@ function SecuritySettings() {
         <Switch label="Rate Limit API Requests" checked={rateLimit} onChange={setRateLimit} />
       </div>
       <SaveChangesButton onSave={save} />
+      <Rotate2faCard />
+    </div>
+  );
+}
+
+function Rotate2faCard() {
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function rotate() {
+    if (!password || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/login/rotate-2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ password }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.code) {
+        setError(body?.error ?? "Rotation failed.");
+        return;
+      }
+      setCode(String(body.code));
+      setPassword("");
+    } catch {
+      setError("Network error — code not rotated.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="rounded-2xl border border-[#E4E4E7] bg-white p-5">
+      <h3 className="text-[14px] font-semibold text-[#18181B]">My 2FA code</h3>
+      <p className="mt-1 text-[12px] text-[#71717A]">
+        Seeded accounts share a bootstrap code — rotate it to a private one. The new code shows once; write it down.
+      </p>
+      {code ? (
+        <div className="mt-3 rounded-xl bg-[#F4F4F5] p-4 text-center">
+          <p className="text-[11px] text-[#71717A]">Your new 2FA code (shown once)</p>
+          <p className="mt-1 text-[28px] font-bold tracking-[0.3em] text-[#18181B]">{code}</p>
+          <button className="mt-2 text-[12px] font-medium text-[#6C3BFF]" onClick={() => setCode(null)}>I saved it — hide</button>
+        </div>
+      ) : (
+        <div className="mt-3 flex items-end gap-3">
+          <div className="flex-1">
+            <Label>Current password</Label>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Confirm your password" />
+          </div>
+          <button
+            disabled={!password || busy}
+            onClick={rotate}
+            className="h-9 shrink-0 rounded-[6px] bg-[#18181B] px-4 text-sm font-medium text-white outline-none disabled:opacity-40"
+          >
+            {busy ? "…" : "Rotate code"}
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-2 text-[12px] text-[#EF4444]">{error}</p>}
     </div>
   );
 }

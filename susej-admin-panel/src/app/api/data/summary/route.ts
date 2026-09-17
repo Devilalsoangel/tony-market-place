@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
+import { getActiveAdmin } from "@/lib/auth";
 
 /**
  * GET /api/data/summary — server-aggregated dashboard KPIs in ONE round trip.
@@ -12,7 +12,8 @@ import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
  * bounded recent-window queries and say so.
  */
 export async function GET(req: NextRequest) {
-  const session = verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value) as { role?: unknown } | null;
+  // Live Admin row (ban/demote bites immediately) + role-gated money.
+  const session = (await getActiveAdmin(req).catch(() => null)) as { role?: unknown } | null;
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   // ACL mirror (F4): this endpoint serves revenue + recent orders/audit, so it
   // enforces the same matrix as /api/data (super_admin + manager + finance

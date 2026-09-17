@@ -33,22 +33,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!txResult) return NextResponse.json({ error: "Comment not found" }, { status: 404 });
   const { comment, already, updated } = txResult;
 
-  // Notify the comment author when someone else likes their comment (once per like).
+  // Notify the comment author when someone else likes their comment. Deduped
+  // against unread twins (unlike→like loops pinged per toggle before).
+  // targetId stays the POST id (deep-link target); the dedupe key therefore
+  // spans (actor, post, action) — two comments on one post collapse while the
+  // first is unread, which beats a misroute and beats spam.
   if (!already && comment.username && comment.username !== me) {
     const post = await prisma.post.findUnique({ where: { id }, select: { title: true } });
-    await prisma.userNotification
-      .create({
-        data: {
-          username: comment.username,
-          type: "like",
-          userName: auth.user.name,
-          userHandle: me,
-          action: "liked your comment",
-          target: post?.title ?? "",
-          targetId: id,
-        },
-      })
-      .catch(() => {});
+    const twin = await prisma.userNotification.findFirst({
+      where: { username: comment.username, type: "like", action: "liked your comment", targetId: id, userHandle: me, read: false },
+      select: { id: true },
+    }).catch(() => null);
+    if (!twin) {
+      await prisma.userNotification
+        .create({
+          data: {
+            username: comment.username,
+            type: "like",
+            userName: auth.user.name,
+            userHandle: me,
+            action: "liked your comment",
+            target: post?.title ?? "",
+            targetId: id,
+          },
+        })
+        .catch(() => {});
+    }
   }
 
   return NextResponse.json({ likes: updated.likes, likedByMe: !already });

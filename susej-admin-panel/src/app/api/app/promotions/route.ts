@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { getAppUser } from "@/lib/app-auth";
 import { applyPriceOverrides, getPackage } from "@/lib/promotions/catalog";
+import { notifyUser } from "@/lib/notifications";
 
 /** GET /api/app/promotions — ACTIVE paid campaigns only (public read-only).
  *  A campaign is live when status=active and its window (if set) still holds.
@@ -199,6 +200,14 @@ export async function POST(req: NextRequest) {
           endsAt,
         },
       });
+    });
+    // Campaign-live tell (fire-and-forget, post-commit): paid placement with
+    // no receipt row leaves sellers wondering if money burned.
+    notifyUser(prisma, {
+      username, type: "promotion",
+      userName: auth.user.name, userHandle: username,
+      action: `started “${pkg.name}” (${pkg.durationDays}d, ₹${amount.toLocaleString("en-IN")} paid)`,
+      targetId: created.id,
     });
     return NextResponse.json(
       {

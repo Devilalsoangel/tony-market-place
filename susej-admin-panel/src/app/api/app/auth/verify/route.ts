@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getPrisma } from "@/lib/db";
 import { createAppSession, createUserByPhone, findUserByPhone, toAppUser } from "@/lib/app-auth";
+import { getClientIp } from "@/lib/auth";
 
 // Consumes the hashed OTP stored by POST /api/app/auth:
 // expiry check, attempt cap (5), single-use (record deleted on success).
@@ -20,8 +21,10 @@ const CREATE_WINDOW_MS = 60 * 60 * 1000;
 const CREATE_MAX = 5;
 const createHits = new Map<string, { count: number; resetAt: number }>();
 function throttleCreateIp(req: NextRequest): boolean {
-  const forwarded = req.headers.get("x-forwarded-for");
-  const ip = (forwarded ? forwarded.split(",")[0] : req.headers.get("x-real-ip") ?? "unknown").trim() || "unknown";
+  // getClientIp (shared): x-real-ip first, else edge-appended last XFF entry.
+  // Inline first-entry parsing used to hand a fresh bucket to every spoofed
+  // header — all IP throttles in this file were bypassable per request.
+  const ip = getClientIp(req);
   const now = Date.now();
   const cur = createHits.get(ip);
   if (!cur || now >= cur.resetAt) {
@@ -33,8 +36,7 @@ function throttleCreateIp(req: NextRequest): boolean {
   return true;
 }
 function throttleVerifyIp(req: NextRequest): boolean {
-  const forwarded = req.headers.get("x-forwarded-for");
-  const ip = (forwarded ? forwarded.split(",")[0] : req.headers.get("x-real-ip") ?? "unknown").trim() || "unknown";
+  const ip = getClientIp(req);
   const now = Date.now();
   const cur = verifyHits.get(ip);
   if (!cur || now >= cur.resetAt) {
@@ -107,6 +109,10 @@ export async function POST(req: NextRequest) {
 
   const existing = await findUserByPhone(phone);
   if (existing) {
+    // Banned accounts never mint (was lazy-enforced downstream only).
+    if (existing.status !== "active") {
+      return NextResponse.json({ error: "Account disabled. Contact support." }, { status: 403 });
+    }
     const token = await createAppSession(existing.id, existing.username!);
     const fresh = await prisma.user
       .findUnique({ where: { id: existing.id } })

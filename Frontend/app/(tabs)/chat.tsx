@@ -949,7 +949,9 @@ export default function ChatScreen() {
   };
 
   const handleDecline = (messageId: string) => {
-    // Sync the decision so the other side's Offers badge clears everywhere.
+    // Sync the decision so the counterparty's thread updates everywhere
+    // (6s poll renders the flipped card; there is no tab-level Offers badge —
+    // thread-local state is the propagation path).
     // Revert on server refusal (already-decided/offline): a declined card the
     // server rejected is a decision that never happened.
     const synced = !!activeChat?.serverThreadId && !messageId.startsWith('offer_');

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { findUserByPhone } from "@/lib/app-auth";
+import { getClientIp } from "@/lib/auth";
 
 // Existence probe for the sign-in screen: "does this number have an account?"
 // Lets login redirect unknown numbers to the signup flow BEFORE any OTP is
@@ -19,8 +20,11 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const forwarded = req.headers.get("x-forwarded-for");
-  const ip = (forwarded ? forwarded.split(",")[0] : req.headers.get("x-real-ip") ?? "unknown").trim() || "unknown";
+  // Existence probe for the sign-in screen: uniform 300ms timing + shared
+  // throttle so enumeration costs real time. Residual oracle accepted
+  // (the UX needs the signup/signin fork); CAPTCHA is the full fix.
+  const startedAt = Date.now();
+  const ip = getClientIp(req);
   const now = Date.now();
   const cur = checkHits.get(ip);
   if (!cur || now >= cur.resetAt) {
@@ -36,5 +40,7 @@ export async function POST(req: NextRequest) {
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
   const user = await findUserByPhone(phone);
+  const elapsed = Date.now() - startedAt;
+  if (elapsed < 300) await new Promise((r) => setTimeout(r, 300 - elapsed));
   return NextResponse.json({ exists: !!user });
 }

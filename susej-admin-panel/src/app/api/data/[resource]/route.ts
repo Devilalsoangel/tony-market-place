@@ -5,6 +5,7 @@ import { checkAppKey } from "@/lib/promotions/api-auth";
 import { lazySweep } from "@/lib/promotions/activate";
 import { getAppUser } from "@/lib/app-auth";
 import { resolveCommissionRate, settlementGoodsBasis, settledFeeFromLegs } from "@/lib/commission";
+import { notifyUser } from "@/lib/notifications";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -306,8 +307,11 @@ function parseSession(request: NextRequest) {
  * seller by just knowing dev-key.
  */
 async function parseWriteSession(request: NextRequest) {
-  const admin = verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
-  if (admin) return admin as { sub: string; name: string; role: Role; loginId: string; appUser?: unknown };
+  // Admin cookie resolves to the LIVE Admin row (ban/deactivate/demote bite
+  // on the next request, never at next login). App-key path unchanged.
+  const { getActiveAdmin } = await import("@/lib/auth");
+  const admin = await getActiveAdmin(request).catch(() => null);
+  if (admin) return admin as unknown as { sub: string; name: string; role: Role; loginId: string; appUser?: unknown };
   if (checkAppKey(request)) {
     const app = await getAppUser(request);
     if (!app) return null;
@@ -550,7 +554,10 @@ function cleanAdminInput(
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ resource: string }> }) {
-  const session = parseSession(request);
+  // Live Admin row (same rule as writes): banned/demoted sessions lose reads
+  // on the next request, not at next login.
+  const { getActiveAdmin } = await import("@/lib/auth");
+  const session = await getActiveAdmin(request).catch(() => null);
   if (!session) return unauthorized();
   const role = normalizeRole(session.role as string);
   const { resource } = await params;
@@ -1636,6 +1643,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             return NextResponse.json({ error: "Payout rejection refund failed — status not changed" }, { status: 503 });
           }
         }
+        // Payout decision tell (fire-and-forget): approved / paid / rejected —
+        // sellers otherwise discover it by staring at the wallet.
+        {
+          const wUser = String((before as { userName?: unknown } | null)?.userName ?? "");
+          const wAmount = Number((before as { amount?: unknown } | null)?.amount ?? 0);
+          if (wUser) {
+            const copy =
+              nextStatus === "completed"
+                ? `paid out ${wAmount > 0 ? `₹${Math.round(wAmount).toLocaleString("en-IN")} ` : ""}(completed)`
+                : nextStatus === "approved"
+                  ? "approved (bank transfer next)"
+                  : "rejected (amount refunded to wallet)";
+            notifyUser(prisma, {
+              username: wUser, type: "order",
+              userName: "susej Payouts", action: `Your payout request was ${copy}`, targetId: String(id),
+            });
+          }
+        }
       }
       // Staff order settlement (admin panel): the order-detail Cancel button
       // and status advances run through this generic PATCH, which previously
@@ -1876,6 +1901,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             }
           }
           }); // end locked settlement tx (cancel + deliver legs above)
+          // Staff-executed tells (fire-and-forget, post-commit): desk moves
+          // money too, and both sides hear it like app-side moves.
+          if (tracking && rawCurrent !== "cancelled" && nextStatus === "cancelled" && b.buyerUsername) {
+            notifyUser(prisma, {
+              username: String(b.buyerUsername), type: "order",
+              userName: "susej Orders", userHandle: undefined,
+              action: `cancelled order ${tracking} (refund issued${paysWallet ? "" : " where applicable"})`,
+              targetId: tracking,
+            });
+          }
+          if (tracking && rawCurrent !== "delivered" && nextStatus === "delivered" && b.buyerUsername) {
+            notifyUser(prisma, {
+              username: String(b.buyerUsername), type: "order",
+              userName: String(b.sellerUsername ?? "susej Orders") as string, userHandle: String(b.sellerUsername ?? "") || undefined,
+              action: `delivered your order ${tracking}`,
+              targetId: tracking,
+            });
+          }
           // Staff refund decisions from the order-detail panel: the panel
           // edits Order.refundStatus (display-only), but money lives on the
           // linked Refund row. Route the decision through the shared machine
@@ -2298,6 +2341,34 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
       }
       const row = await prisma[PRISMA_MODELS[resource]].update({ where: { [PRIMARY_KEY[resource] ?? "id"]: id }, data: cleanPayload });
+      // Dispute ruling tell (fire-and-forget, post-commit): both parties hear
+      // the verdict with the outcome — rulings otherwise sit silent in the
+      // desk while wallets move underneath.
+      if (resource === "disputes" && (data as Record<string, unknown>).status === "resolved") {
+        try {
+          const ruled = await prisma.dispute.findUnique({ where: { id: String(id) } }).catch(() => null);
+          const outcome = String((ruled as { outcome?: unknown } | null)?.outcome ?? (data as Record<string, unknown>).outcome ?? "");
+          const ref = String((ruled as { orderId?: unknown } | null)?.orderId ?? "").trim();
+          const outcomeCopy = outcome === "full_refund" ? "refunded in full" : outcome === "split_50_50" ? "split 50/50" : "released to the seller";
+          if (ref) {
+            const linked = await prisma.order.findFirst({
+              where: { OR: [{ id: ref }, { trackingNumber: ref }, { orderNumber: ref }] },
+              select: { buyerUsername: true, sellerUsername: true, buyerName: true, sellerName: true, trackingNumber: true },
+            }).catch(() => null);
+            if (linked) {
+              const tell = (username: unknown, userName: unknown, userHandle: unknown) =>
+                notifyUser(prisma, {
+                  username: String(username ?? ""), type: "order",
+                  userName: "susej Disputes", userHandle: String(userHandle ?? ""),
+                  action: `ruled on ${String((linked as { trackingNumber?: unknown }).trackingNumber ?? ref)}: ${outcomeCopy}`,
+                  targetId: String((linked as { trackingNumber?: unknown }).trackingNumber ?? ref),
+                });
+              tell((linked as { buyerUsername?: unknown }).buyerUsername, (linked as { buyerName?: unknown }).buyerName, (linked as { buyerUsername?: unknown }).buyerUsername);
+              tell((linked as { sellerUsername?: unknown }).sellerUsername, (linked as { sellerName?: unknown }).sellerName, (linked as { sellerUsername?: unknown }).sellerUsername);
+            }
+          }
+        } catch {}
+      }
       // Product moderation flows BACK to the app feed: hidden listings leave
       // the feed, featured ones get the boost, active restores published.
       if (resource === "products" && typeof data.status === "string" && String(id).startsWith("lst_")) {

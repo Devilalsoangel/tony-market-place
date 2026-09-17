@@ -89,8 +89,9 @@ export default function RootLayout() {
       <FollowProvider>
       <BookmarkProvider>
         <PostProvider>
-          <NotificationProvider>
-            <SettingsProvider>
+          {/* Settings above Notifications: the bell honors the push toggle. */}
+          <SettingsProvider>
+            <NotificationProvider>
               <CartProvider>
                 <OrderProvider>
                   <CommunityProvider>
@@ -109,8 +110,8 @@ export default function RootLayout() {
                   </CommunityProvider>
                 </OrderProvider>
               </CartProvider>
-            </SettingsProvider>
-          </NotificationProvider>
+            </NotificationProvider>
+          </SettingsProvider>
         </PostProvider>
       </BookmarkProvider>
     </FollowProvider>

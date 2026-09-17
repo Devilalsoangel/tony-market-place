@@ -394,7 +394,8 @@ export default function OtpScreen() {
                 {devHint}
               </Text>
             ) : null}
-            {/* Dev bypass: one-tap verify (always visible for testing) */}
+            {/* Dev bypass: one-tap verify (dev builds only — same rule). */}
+            {__DEV__ ? (
             <TouchableOpacity
               className="w-full h-12 items-center justify-center rounded-figma-16 mt-4"
               style={{ backgroundColor: 'rgba(34,197,94,0.15)' }}
@@ -405,6 +406,7 @@ export default function OtpScreen() {
                 {devBypassing ? 'Logging in...' : 'Dev: Login instantly'}
               </Text>
             </TouchableOpacity>
+            ) : null}
           </>
         )}
 

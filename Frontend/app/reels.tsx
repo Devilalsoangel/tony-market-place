@@ -210,6 +210,8 @@ export default function ReelsScreen() {
   const insets = useSafeAreaInsets();
   const [myReels, setMyReels] = useState<MyReel[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Counted watches this visit (reset per focus): one increment per reel.
+  const countedRefs = useRef<Set<string>>(new Set());
   // ROLE-BASED UI: reel publishing is seller-only; buyers watch reels.
   const { user } = useAuth();
   const isSeller = !!user?.isSeller;
@@ -217,6 +219,7 @@ export default function ReelsScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      countedRefs.current.clear();
       const u = user?.username?.trim();
       const key = u ? `${MY_REELS_KEY_BASE}:${u}` : MY_REELS_KEY_BASE;
       (async () => {
@@ -306,7 +309,20 @@ export default function ReelsScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.inverseSurface }}>
-      <PagerView style={{ flex: 1 }} orientation="vertical">
+      <PagerView
+        style={{ flex: 1 }}
+        orientation="vertical"
+        onPageSelected={(e) => {
+          // One counted watch per reel per screen visit (server increments;
+          // repeat swipes in one visit don't farm the counter).
+          const reel = myReels[e.nativeEvent.position];
+          const sid = reel?.serverId;
+          if (sid && !countedRefs.current.has(sid)) {
+            countedRefs.current.add(sid);
+            serverApi.viewReel(sid).catch(() => {});
+          }
+        }}
+      >
         {myReels.map((reel) => (
           <View key={reel.id} style={{ flex: 1 }}>
             <UserReelCard reel={reel} />

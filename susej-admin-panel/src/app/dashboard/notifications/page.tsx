@@ -58,6 +58,36 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (dbHistory) setHistory(dbHistory);
   }, [dbHistory]);
+  // Due-sweep: no runner exists for scheduled sends, so a past-due schedule
+  // used to sit "Scheduled" forever. On load, flip due rows to logged (the
+  // transport is log-only and labeled as such — the date now MEANS something:
+  // the entry joined history when due). Best-effort per row, never blocking.
+  useEffect(() => {
+    if (!dbHistory) return;
+    const now = Date.now();
+    const due = dbHistory.filter(
+      (h) => h.status === "scheduled" && h.scheduledFor && !Number.isNaN(Date.parse(h.scheduledFor)) && Date.parse(h.scheduledFor) <= now
+    );
+    if (!due.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const h of due) {
+        if (cancelled) return;
+        try {
+          const res = await fetch("/api/data/notification-history", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id: h.id, data: { status: "logged", sentAt: new Date().toISOString() } }),
+          });
+          if (res.ok && !cancelled) {
+            setHistory((prev) => prev.map((x) => (x.id === h.id ? { ...x, status: "logged" as const, sentAt: new Date().toISOString() } : x)));
+          }
+        } catch {}
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dbHistory]);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [subject, setSubject] = useState("");

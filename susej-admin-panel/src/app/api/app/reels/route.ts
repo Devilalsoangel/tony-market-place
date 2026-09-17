@@ -93,3 +93,46 @@ export async function POST(req: NextRequest) {
     { status: 201 }
   );
 }
+
+// PATCH /api/app/reels { id, action: "view" } — counts a watch. Authed only,
+// per-IP throttled (same viewer hammering still inflates: full fraud
+// filtering needs a view-events table — roadmap, not silent precision).
+// Likes stay unwired (no toggle table exists; showing a live 0 that can never
+// move is worse than the endpoint — like counts render only when > 0).
+const VIEW_WINDOW_MS = 60_000;
+const VIEW_MAX = 60;
+const viewHits = new Map<string, { count: number; resetAt: number }>();
+
+export async function PATCH(req: NextRequest) {
+  const auth = await getAppUser(req);
+  if (!auth) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const { getClientIp } = await import("@/lib/auth");
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const cur = viewHits.get(ip);
+  if (!cur || now >= cur.resetAt) {
+    viewHits.set(ip, { count: 1, resetAt: now + VIEW_WINDOW_MS });
+  } else {
+    cur.count += 1;
+    if (cur.count > VIEW_MAX) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+  if (body.action !== "view" || typeof body.id !== "string" || !body.id) {
+    return NextResponse.json({ error: "Expected { id, action: \"view\" }." }, { status: 400 });
+  }
+  const prisma = await getPrisma();
+  if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
+  const updated = await prisma.reel.updateMany({
+    where: { id: String(body.id), status: "published" },
+    data: { views: { increment: 1 } },
+  });
+  if (!updated.count) return NextResponse.json({ error: "Reel not found" }, { status: 404 });
+  return NextResponse.json({ ok: true });
+}

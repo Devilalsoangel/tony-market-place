@@ -57,6 +57,10 @@ model User {
   walletBalance Int      @default(0)
   passwordHash  String?
   loyaltyPoints Int      @default(0)
+  // Google subject binding (email-recycling protection): stable Google `sub`
+  // for accounts created/logged-in via Google. Nullable for legacy rows;
+  // adopted on first sub-aware login. Dormant until pushed.
+  googleSub     String?  @unique
   updatedAt     DateTime @default(now()) @updatedAt
   sessions      AppSession[]
 

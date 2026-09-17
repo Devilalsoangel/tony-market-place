@@ -387,7 +387,10 @@ export default function LoginScreen() {
                       {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
                     </Text>
                   </TouchableOpacity>
-                  {/* Dev bypass: one-tap login (always visible for testing) */}
+                  {/* Dev bypass: one-tap login (dev builds only — the server
+                      gate holds in prod regardless, but prod builds must not
+                      render the dead button). */}
+                  {__DEV__ ? (
                   <TouchableOpacity
                     className="w-full h-12 items-center justify-center rounded-figma-16 mt-4"
                     style={{ backgroundColor: 'rgba(34,197,94,0.15)' }}
@@ -398,6 +401,7 @@ export default function LoginScreen() {
                       {devBypassing ? 'Logging in...' : 'Dev: Login instantly'}
                     </Text>
                   </TouchableOpacity>
+                  ) : null}
                 </>
               )
             ) : (

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { getPrisma } from "@/lib/db";
 import { createAppSession, toAppUser } from "@/lib/app-auth";
+import { getClientIp } from "@/lib/auth";
 
 // Email + password auth for app users (buyer/seller).
 // Passwords: scrypt (node builtin - no extra dependency), 16-byte random salt,
@@ -23,8 +24,9 @@ const REGISTER_WINDOW_MS = 60 * 60 * 1000;
 const REGISTER_MAX = 5;
 const registerHits = new Map<string, { count: number; resetAt: number }>();
 function throttleIp(req: NextRequest): boolean {
-  const forwarded = req.headers.get("x-forwarded-for");
-  const ip = (forwarded ? forwarded.split(",")[0] : req.headers.get("x-real-ip") ?? "unknown").trim() || "unknown";
+  // Shared getClientIp (x-real-ip else edge-appended XFF tail) — inline
+  // first-entry parsing used to defeat this bucket per request.
+  const ip = getClientIp(req);
   const now = Date.now();
   const cur = throttleHits.get(ip);
   if (!cur || now >= cur.resetAt) {
@@ -36,8 +38,7 @@ function throttleIp(req: NextRequest): boolean {
   return true;
 }
 function throttleRegister(req: NextRequest): boolean {
-  const forwarded = req.headers.get("x-forwarded-for");
-  const ip = (forwarded ? forwarded.split(",")[0] : req.headers.get("x-real-ip") ?? "unknown").trim() || "unknown";
+  const ip = getClientIp(req);
   const now = Date.now();
   const cur = registerHits.get(ip);
   if (!cur || now >= cur.resetAt) {
@@ -73,7 +74,8 @@ export async function POST(req: NextRequest) {
   const email = (body.email ?? "").trim().toLowerCase();
   const password = String(body.password ?? "");
   if (!EMAIL_RE.test(email)) return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
-  if (password.length < 8) return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+  // CPU-DoS guard (shared 128-char cap): scrypt is synchronous.
+  if (password.length < 8 || password.length > 128) return NextResponse.json({ error: "Password must be 8-128 characters" }, { status: 400 });
 
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
@@ -127,6 +129,11 @@ export async function POST(req: NextRequest) {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
     return NextResponse.json({ error: "Incorrect email or password" }, { status: 401 });
+  }
+  // Banned accounts never mint (enforcement was lazy via getAppUser only —
+  // the banned user still received a valid 30-day token + full payload).
+  if (user.status !== "active") {
+    return NextResponse.json({ error: "Account disabled. Contact support." }, { status: 403 });
   }
   const token = await createAppSession(user.id, user.username!);
   return NextResponse.json({ token, user: toAppUser(user) });

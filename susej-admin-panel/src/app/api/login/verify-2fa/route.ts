@@ -8,10 +8,30 @@ import {
   SESSION_MAX_AGE,
   CHALLENGE_COOKIE,
   MAX_LOGIN_ATTEMPTS,
-  LOCKOUT_MINUTES,
   getClientIp,
 } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
+
+// 2FA attempt budget is tracked HERE (per challenge-subject, in-memory per
+// isolate) — deliberately SEPARATE from the password failedAttempts/lockedUntil
+// counter. Sharing it meant five wrong 2FA guesses locked the real admin out
+// even with the right password (lockout-DoS via the second factor). On
+// exhaustion the challenge is invalidated (re-login required), never a lock.
+const TFA_WINDOW_MS = 10 * 60 * 1000;
+const tfaFails = new Map<string, { count: number; resetAt: number }>();
+function tfaFailed(sub: string): number {
+  const now = Date.now();
+  const cur = tfaFails.get(sub);
+  if (!cur || now >= cur.resetAt) {
+    tfaFails.set(sub, { count: 1, resetAt: now + TFA_WINDOW_MS });
+    return 1;
+  }
+  cur.count += 1;
+  return cur.count;
+}
+function tfaClear(sub: string) {
+  tfaFails.delete(sub);
+}
 
 export async function POST(request: NextRequest) {
   let code = "";
@@ -43,36 +63,36 @@ export async function POST(request: NextRequest) {
   }
 
   if (admin.lockedUntil && admin.lockedUntil > new Date()) {
-    const minutes = Math.max(1, Math.ceil((admin.lockedUntil.getTime() - Date.now()) / 60000));
     return NextResponse.json(
-      { error: `Too many failed attempts. Try again in ${minutes} minute(s).`, locked: true },
-      { status: 423 }
+      { error: "Invalid sign-in. Please sign in again.", expired: true },
+      { status: 401 }
     );
   }
 
   if (!admin.twoFactorEnabled || !admin.twoFactorCode || !verifyPassword(code, admin.twoFactorCode)) {
-    const updated = await prisma.admin.update({
-      where: { id: admin.id },
-      data: { failedAttempts: { increment: 1 } },
-      select: { failedAttempts: true },
-    });
-    const locked = updated.failedAttempts >= MAX_LOGIN_ATTEMPTS;
-    if (locked) {
-      await prisma.admin.update({
-        where: { id: admin.id },
-        data: { lockedUntil: new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000) },
-      });
-    }
+    const fails = tfaFailed(admin.id);
+    const exhausted = fails >= MAX_LOGIN_ATTEMPTS;
     await writeAudit({
       action: "auth.2fa.failed",
       entity: "admins",
       entityId: admin.id,
-      details: locked ? "Account locked after too many 2FA attempts" : "Invalid 2FA code",
+      details: exhausted ? "2FA budget exhausted — challenge invalidated" : "Invalid 2FA code",
       adminName: admin.loginId,
       ip,
     });
-    return NextResponse.json({ error: "Invalid code. Try again." }, { status: 401 });
+    const response = NextResponse.json(
+      exhausted
+        ? { error: "Too many wrong codes. Please sign in again.", expired: true }
+        : { error: "Invalid code. Try again." },
+      { status: 401 }
+    );
+    if (exhausted) {
+      tfaClear(admin.id);
+      response.cookies.set(CHALLENGE_COOKIE, "", { path: "/", maxAge: 0 });
+    }
+    return response;
   }
+  tfaClear(admin.id);
 
   if (admin.status !== "active") {
     return NextResponse.json({ error: "This account is deactivated. Contact a Super Admin." }, { status: 403 });

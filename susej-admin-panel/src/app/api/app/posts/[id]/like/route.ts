@@ -66,20 +66,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   if (result.liked && post.authorUsername && post.authorUsername !== auth.user.username) {
-    // fire-and-forget notification outside transaction
-    prisma.userNotification
-      .create({
-        data: {
-          username: post.authorUsername,
-          type: "like",
-          userName: auth.user.name,
-          userHandle: auth.user.username,
-          action: "liked your listing",
-          target: post.title,
-          targetId: id,
-        },
-      })
-      .catch(() => {});
+    // Dedupe: an UNREAD twin from the same actor on the same post already
+    // tells the story — unlike→like loops used to ping the author per toggle.
+    // (A read twin means genuine renewed attention: notify again.)
+    const twin = await prisma.userNotification.findFirst({
+      where: {
+        username: post.authorUsername,
+        type: "like",
+        targetId: id,
+        userHandle: auth.user.username!,
+        read: false,
+      },
+      select: { id: true },
+    }).catch(() => null);
+    if (!twin) {
+      // fire-and-forget notification outside transaction
+      prisma.userNotification
+        .create({
+          data: {
+            username: post.authorUsername,
+            type: "like",
+            userName: auth.user.name,
+            userHandle: auth.user.username,
+            action: "liked your listing",
+            target: post.title,
+            targetId: id,
+          },
+        })
+        .catch(() => {});
+    }
   }
 
   return NextResponse.json(result);

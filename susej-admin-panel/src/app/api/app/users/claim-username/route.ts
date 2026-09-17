@@ -11,6 +11,13 @@ const RESERVED = new Set([
   "undefined", "system", "official", "verify", "verified", "staff",
 ]);
 
+/** Control-flow signal: account has activity, handle is frozen (→ 403). */
+class UsernameFrozen extends Error {
+  constructor() {
+    super("__username_frozen");
+  }
+}
+
 export function normalizeHandle(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const h = raw.trim().toLowerCase();
@@ -62,45 +69,55 @@ export async function POST(req: NextRequest) {
   // both sides, follows both directions, chat threads/messages, wallet legs,
   // likes, comments (author + username), withdrawals, stories, reels, live,
   // auctions + bids, community messages, ticket messages, notifications,
-  // support tickets) — renaming with ANY such row orphans history.
-  // Zero-activity auto-handle accounts (the normal onboarding case) pass freely.
+  // support tickets, legacy products) — renaming with ANY such row orphans
+  // history. Zero-activity auto-handle accounts (the normal onboarding case)
+  // pass freely. The birth-minted Welcome bonus is SYSTEM money, not activity
+  // (counting it 403d every fresh account — onboarding handle choice was dead).
+  // Check + rename run in ONE locked tx: activity landing between a check and
+  // a later update would orphan (TOCTOU).
   const me = auth.user.username!;
-  const footprint = await Promise.all([
-    prisma.post.count({ where: { authorUsername: me } }),
-    prisma.order.count({ where: { buyerUsername: me } }),
-    prisma.order.count({ where: { sellerUsername: me } }),
-    prisma.follow.count({ where: { follower: me } }),
-    prisma.follow.count({ where: { followed: me } }),
-    prisma.chatThread.count({ where: { OR: [{ participantA: me }, { participantB: me }] } }),
-    prisma.chatMessage.count({ where: { OR: [{ sender: me }, { receiver: me }] } }),
-    prisma.walletTransaction.count({ where: { username: me } }),
-    prisma.postLike.count({ where: { username: me } }),
-    prisma.postComment.count({ where: { OR: [{ username: me }, { author: me }] } }),
-    prisma.withdrawal.count({ where: { userName: me } }),
-    prisma.story.count({ where: { username: me } }),
-    prisma.reel.count({ where: { creatorUsername: me } }),
-    prisma.liveStream.count({ where: { hostUsername: me } }),
-    prisma.auction.count({ where: { sellerUsername: me } }),
-    prisma.auctionBid.count({ where: { bidder: me } }),
-    prisma.communityMessage.count({ where: { OR: [{ authorUsername: me }, { author: me }] } }),
-    prisma.message.count({ where: { sender: me } }),
-    prisma.userNotification.count({ where: { username: me } }),
-    prisma.supportTicket.count({ where: { userName: me } }),
-  ]);
-  if (footprint.some((n) => n > 0)) {
-    return NextResponse.json(
-      { error: "Username can't be changed after account activity. Contact support for assistance." },
-      { status: 403 }
-    );
-  }
-
   try {
-    const updated = await prisma.user.update({
-      where: { id: auth.user.id },
-      data: { username: handle },
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(`SELECT id FROM "User" WHERE id = $1 FOR UPDATE`, auth.user.id);
+      const footprint = await Promise.all([
+        tx.post.count({ where: { authorUsername: me } }),
+        tx.order.count({ where: { buyerUsername: me } }),
+        tx.order.count({ where: { sellerUsername: me } }),
+        tx.follow.count({ where: { follower: me } }),
+        tx.follow.count({ where: { followed: me } }),
+        tx.chatThread.count({ where: { OR: [{ participantA: me }, { participantB: me }] } }),
+        tx.chatMessage.count({ where: { OR: [{ sender: me }, { receiver: me }] } }),
+        tx.walletTransaction.count({ where: { username: me, title: { not: "Welcome bonus" } } }),
+        tx.postLike.count({ where: { username: me } }),
+        tx.postComment.count({ where: { OR: [{ username: me }, { author: me }] } }),
+        tx.withdrawal.count({ where: { userName: me } }),
+        tx.story.count({ where: { username: me } }),
+        tx.reel.count({ where: { creatorUsername: me } }),
+        tx.liveStream.count({ where: { hostUsername: me } }),
+        tx.auction.count({ where: { sellerUsername: me } }),
+        tx.auctionBid.count({ where: { bidder: me } }),
+        tx.communityMessage.count({ where: { OR: [{ authorUsername: me }, { author: me }] } }),
+        tx.message.count({ where: { sender: me } }),
+        tx.userNotification.count({ where: { username: me } }),
+        tx.supportTicket.count({ where: { userName: me } }),
+        tx.product.count({ where: { sellerName: me } }),
+      ]);
+      if (footprint.some((n) => n > 0)) {
+        throw new UsernameFrozen();
+      }
+      return tx.user.update({
+        where: { id: auth.user.id },
+        data: { username: handle },
+      });
     });
     return NextResponse.json({ user: toAppUser(updated) });
   } catch (e: unknown) {
+    if (e instanceof UsernameFrozen) {
+      return NextResponse.json(
+        { error: "Username can't be changed after account activity. Contact support for assistance." },
+        { status: 403 }
+      );
+    }
     const code = (e as { code?: string })?.code;
     if (code === "P2002") return NextResponse.json({ error: "Username already taken" }, { status: 409 });
     throw e;

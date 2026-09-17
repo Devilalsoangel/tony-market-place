@@ -8,8 +8,13 @@ export async function GET(req: NextRequest) {
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
+  const beforeRaw = req.nextUrl.searchParams.get("before");
+  const before = beforeRaw ? Number(beforeRaw) : NaN;
   const rows = await prisma.userNotification.findMany({
-    where: { username: auth.user.username! },
+    where: {
+      username: auth.user.username!,
+      ...(Number.isFinite(before) && before > 0 ? { timestamp: { lt: new Date(before) } } : {}),
+    },
     orderBy: { timestamp: "desc" },
     take: 100,
   });
@@ -42,14 +47,17 @@ export async function POST(req: NextRequest) {
   } catch {
     body = {};
   }
-  if (body.id) {
+  // 'all' (or missing id) marks EVERYTHING read for the caller. The old code
+  // treated any truthy id — including the literal 'all' the client sends —
+  // as a single-row id, matching 0 rows while the client painted all-read.
+  if (!body.id || body.id === "all") {
     await prisma.userNotification.updateMany({
-      where: { id: body.id, username: auth.user.username! },
+      where: { username: auth.user.username!, read: false },
       data: { read: true },
     });
   } else {
     await prisma.userNotification.updateMany({
-      where: { username: auth.user.username!, read: false },
+      where: { id: body.id, username: auth.user.username! },
       data: { read: true },
     });
   }
