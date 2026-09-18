@@ -75,9 +75,9 @@ export default function WalletPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label={`Credits (in)${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.inTotal)} tone="green" />
-        <StatTile label={`Debits (out)${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.outTotal)} tone="red" />
-        <StatTile label={`Net balance${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.net)} tone={totals.net >= 0 ? "default" : "red"} />
+        <StatTile label={`Collected (buyer payments)${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.outTotal)} tone="green" />
+        <StatTile label={`Paid out (settlements)${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.inTotal)} tone="default" />
+        <StatTile label={`Held by platform${typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(totals.outTotal - totals.inTotal)} tone="default" />
         <StatTile label="Pending (requested payouts + refunds)" value={formatCurrency(totals.pending)} tone="amber" />
       </div>
 
