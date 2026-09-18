@@ -124,6 +124,10 @@ function FeedContent() {
   // Admin rail visibility ("Show on home page" toggles). Missing = ON.
   const [homeSections, setHomeSections] = useState<Record<string, boolean> | null>(null);
   const sectionOn = (k: string) => homeSections?.[k] !== false;
+  // Server-degraded signal (/api/v1/home degraded:true or unreachable): the
+  // rails below render saved/cached content — say so (IG offline parity)
+  // instead of silently passing stale rails as live.
+  const [homeDegraded, setHomeDegraded] = useState(false);
   // Featured-post rail (paid placements from /api/v1/home). Pinned rows float
   // to the spotlight; the rest interleave as boosted posts — every paid row
   // renders while its rail is ON, none renders while OFF.
@@ -146,6 +150,7 @@ function FeedContent() {
       });
       serverApi.getHome().then(async (res) => {
         if (!active) return;
+        if (active) setHomeDegraded(!res.ok || res.data?.degraded === true);
         const sections = res.ok ? (res.data?.sections ?? null) : null;
         if (active) setHomeSections(sections);
         const secOn = (k: string) => (sections as Record<string, boolean> | null)?.[k] !== false;
@@ -530,6 +535,13 @@ function FeedContent() {
               <View className="mx-5 mb-2 px-4 py-2.5 rounded-figma-12" style={{ backgroundColor: colors.errorContainer }}>
                 <Text style={{ fontSize: 12, lineHeight: 16, color: colors.error }}>
                   Couldn&apos;t refresh — showing your saved feed. Pull to retry.
+                </Text>
+              </View>
+            )}
+            {homeDegraded && (
+              <View className="mx-5 mb-2 px-4 py-2.5 rounded-figma-12" style={{ backgroundColor: colors.errorContainer }}>
+                <Text style={{ fontSize: 12, lineHeight: 16, color: colors.error }}>
+                  You&apos;re offline — home rails show saved content. Pull to retry.
                 </Text>
               </View>
             )}
