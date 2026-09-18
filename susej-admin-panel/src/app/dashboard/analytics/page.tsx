@@ -70,7 +70,8 @@ function keyOf(d: Date): string {
 function labelOf(key: string): string {
   const [y, m] = key.split("-");
   const month = new Date(Number(y), Number(m) - 1, 1).toLocaleString("en-US", { month: "short" });
-  return `${month} ${y.slice(2)}`;
+  // Full year: "Sep 26" reads as the 26th. Same rule as the dashboard.
+  return `${month} ${y}`;
 }
 
 function perMonth(dates: Date[]): BucketMap {
