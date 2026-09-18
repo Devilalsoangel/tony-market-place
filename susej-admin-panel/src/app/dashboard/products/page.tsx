@@ -292,7 +292,10 @@ export default function ProductsPage() {
             </span>
           </button>
         ))}
-        {uncategorized > 0 && (
+        {/* Uncategorized only renders once categories have loaded: before that
+            every product is trivially "unmatched" and the chip would flash
+            a full-table count (same lying-zero family as the home desk). */}
+        {categories !== null && uncategorized > 0 && (
           <button
             type="button"
             onClick={() => setActiveCat("__uncat")}
