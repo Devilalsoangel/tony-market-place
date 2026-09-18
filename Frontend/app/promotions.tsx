@@ -102,14 +102,21 @@ export default function PromotionsScreen() {
     // each other's pending mirrors.
     const coverKey = (postId: unknown, kind: unknown, amount: unknown, days: unknown) =>
       `${postId ?? ''}|${kind}|${amount ?? ''}|${days ?? ''}`;
-    const mapped = (serverPromos ?? []).map((s: any) => ({
+    // Server rows are marketplace-wide by design — "My campaigns" must show
+    // ONLY mine (sellerId is the purchasing username). Unfiltered, every
+    // seller saw everyone else's package/amount/dates with a live End-early
+    // button on rows they don't own (server 403s, silent no-op).
+    const mine = (serverPromos ?? []).filter(
+      (s: any) => String(s?.sellerId ?? '').trim().toLowerCase() === me
+    );
+    const mapped = mine.map((s: any) => ({
       id: String(s.id ?? ''),
       packageId: '',
       kind: s.kind,
       packageName: String(s.packageName ?? 'Campaign'),
       amountPaid: Number(s.amountPaid ?? 0),
       durationDays: Number(s.durationDays ?? 0),
-      sellerUsername: user?.username ?? '',
+      sellerUsername: String(s.sellerId ?? user?.username ?? ''),
       postId: s.postId ? String(s.postId) : undefined,
       productTitle: s.postTitle ? String(s.postTitle) : undefined,
       status: s.status,
@@ -137,6 +144,18 @@ export default function PromotionsScreen() {
     if (myPosts.length > 0 && !selectedPost) setSelectedPost(myPosts[0]);
   }, [myPosts, selectedPost]);
 
+  // Server campaign truth for My campaigns (cross-device, reinstall-safe).
+  // Extracted: End-early must re-pull after the server deactivates, or the
+  // ended paid slot renders ACTIVE until a full remount.
+  const refreshServerPromos = async () => {
+    try {
+      const res = await serverApi.getPromotions();
+      if (res.ok && Array.isArray((res.data as any)?.promotions)) {
+        setServerPromos((res.data as any).promotions);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -146,14 +165,9 @@ export default function PromotionsScreen() {
         const state = await getWallet();
         setBalance(state.balance);
       } catch {}
-      // Server campaign truth for My campaigns (cross-device, reinstall-safe).
-      try {
-        const res = await serverApi.getPromotions();
-        if (res.ok && Array.isArray((res.data as any)?.promotions)) {
-          setServerPromos((res.data as any).promotions);
-        }
-      } catch {}
+      await refreshServerPromos();
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pkg = getPackage(selectedPkg ?? '');
@@ -350,7 +364,7 @@ export default function PromotionsScreen() {
                     )}
                   </View>
                   {p.status === 'active' && (
-                    <TouchableOpacity className="mt-3 self-start" onPress={() => endPromotion(p.id)}>
+                    <TouchableOpacity className="mt-3 self-start" onPress={() => { void endPromotion(p.id).then(() => refreshServerPromos()); }}>
                       <Text className="font-inter-600" style={{ fontSize: 12, lineHeight: 16, color: colors.error }}>
                         End early
                       </Text>

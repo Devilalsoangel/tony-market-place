@@ -73,7 +73,7 @@ function FeedContent() {
   const { posts, hiddenPostIds = [], mutedSellers = [], refresh: refreshPosts, toggleLike, isLiked } = usePosts() as {
     posts: Post[];
     loaded: boolean;
-    refresh: () => Promise<void>;
+    refresh: () => Promise<boolean>;
     hiddenPostIds?: string[];
     mutedSellers?: string[];
     toggleLike: (postId: string) => boolean;
@@ -84,11 +84,16 @@ function FeedContent() {
   const { cartCount } = useCart();
   const feedLoaded = (usePosts() as unknown as { loaded?: boolean }).loaded ?? false;
   // Industry-standard pull-to-refresh: refetch server feed + reconcile cache; spinner
-  // runs only while the request is live — failure just stops the spinner (honest state).
+  // runs only while the request is live — failure shows "Couldn't refresh"
+  // (IG parity) instead of passing as "no new posts".
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    Promise.resolve(refreshPosts ? refreshPosts() : null).finally(() => setRefreshing(false));
+    setRefreshFailed(false);
+    Promise.resolve(refreshPosts ? refreshPosts() : true).then((ok) => {
+      if (!ok) setRefreshFailed(true);
+    }).catch(() => setRefreshFailed(true)).finally(() => setRefreshing(false));
   }, [refreshPosts]);
   const { isFollowing, toggleFollow, followerCounts } = useFollow();
   const { user: authUser, isLoading: authLoading } = useAuth();
@@ -452,6 +457,13 @@ function FeedContent() {
         contentContainerStyle={{ paddingBottom: 96, paddingTop: 8 }}
         ListHeaderComponent={
           <View>
+            {refreshFailed && (
+              <View className="mx-5 mb-2 px-4 py-2.5 rounded-figma-12" style={{ backgroundColor: colors.errorContainer }}>
+                <Text style={{ fontSize: 12, lineHeight: 16, color: colors.error }}>
+                  Couldn&apos;t refresh — showing your saved feed. Pull to retry.
+                </Text>
+              </View>
+            )}
             {/* Stories — Figma 223:30 ring style (gradient stroke 64, avatar 56, label 12, gap 16),
                 but industry-practical: YOUR STORY first + 8 seller stories, horizontally scrollable,
                 tray navigation in viewer (tap -> story -> next story automatically). */}

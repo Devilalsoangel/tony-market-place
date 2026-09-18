@@ -111,16 +111,20 @@ function ChartCard({
   points,
   color,
   height,
+  scope,
 }: {
   title: string;
   points: Point[];
   color?: string;
   height?: number;
+  /** Window qualifier rendered under the title (omitted = exact server aggregate). */
+  scope?: string;
 }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
+        {scope && <p className="mt-0.5 text-[11px] text-[#71717A]">{scope}</p>}
       </CardHeader>
       <CardContent>
         {points.length === 0 ? (
@@ -161,15 +165,19 @@ export default function AnalyticsPage() {
     return () => { cancelled = true; };
   }, []);
   const { data: orders, total: ordersTotal } = useDbResource<OrderRow>("orders", { take: 100 });
-  const { data: users } = useDbResource<UserRow>("users", { take: 100 });
-  const { data: products } = useDbResource<ProductRow>("products", { take: 100 });
-  const { data: communities } = useDbResource<CommunityRow>("communities", { take: 100 });
+  const { data: users, total: usersTotal } = useDbResource<UserRow>("users", { take: 100 });
+  const { data: products, total: productsTotal } = useDbResource<ProductRow>("products", { take: 100 });
+  const { data: communities, total: communitiesTotal } = useDbResource<CommunityRow>("communities", { take: 100 });
   const { data: sellers } = useDbResource<SellerRow>("sellers", { take: 100 });
-  const { data: hashtags } = useDbResource<HashtagRow>("hashtags", { take: 100 });
+  const { data: hashtags, total: hashtagsTotal } = useDbResource<HashtagRow>("hashtags", { take: 100 });
   const windowNote =
     (typeof ordersTotal === "number" && ordersTotal > (orders ?? []).length
       ? ` — showing recent ${(orders ?? []).length} of ${ordersTotal}`
       : "") + " · Revenue, Growth and Categories are exact server aggregates";
+  // Per-chart window scope: every bucketed chart names its window so none
+  // reads as platform truth past 100 rows.
+  const scopeOf = (total: number | null, loaded: number) =>
+    typeof total === "number" && total > loaded ? `Recent ${loaded} of ${total} — not platform totals` : undefined;
 
   const revenueSeries = useMemo(() => {
     // Server aggregate first (exact delivered GMV by month at any scale).
@@ -370,16 +378,16 @@ export default function AnalyticsPage() {
             )}
           </CardContent>
         </Card>
-        <ChartCard title="Orders (cumulative)" points={ordersTrend} color="#6C3BFF" />
-        <ChartCard title="Products Growth" points={productsGrowth} color="#16A34A" />
-        <ChartCard title="Communities Growth" points={communitiesGrowth} color="#2563EB" />
-        <ChartCard title="New Users (Last 7 Days)" points={newUsersByDay} />
-        <ChartCard title="Top Sellers (by order value)" points={topSellers} color="#F59E0B" />
-        <ChartCard title="Top Products (by sold value)" points={topProducts} color="#16A34A" />
-        <ChartCard title="Top Cities (by users)" points={topCities} color="#2563EB" />
+        <ChartCard title="Orders (cumulative)" points={ordersTrend} color="#6C3BFF" scope={scopeOf(ordersTotal, (orders ?? []).length)} />
+        <ChartCard title="Products Growth" points={productsGrowth} color="#16A34A" scope={scopeOf(productsTotal, (products ?? []).length)} />
+        <ChartCard title="Communities Growth" points={communitiesGrowth} color="#2563EB" scope={scopeOf(communitiesTotal, (communities ?? []).length)} />
+        <ChartCard title="New Users (Last 7 Days)" points={newUsersByDay} scope={scopeOf(usersTotal, (users ?? []).length)} />
+        <ChartCard title="Top Sellers (by order value)" points={topSellers} color="#F59E0B" scope={scopeOf(ordersTotal, (orders ?? []).length)} />
+        <ChartCard title="Top Products (by sold value)" points={topProducts} color="#16A34A" scope={scopeOf(ordersTotal, (orders ?? []).length)} />
+        <ChartCard title="Top Cities (by users)" points={topCities} color="#2563EB" scope={scopeOf(usersTotal, (users ?? []).length)} />
         <ChartCard title="Top Categories (by products)" points={topCategories} />
-        <ChartCard title="Top Hashtags (by posts)" points={topHashtags} color="#16A34A" />
-        <ChartCard title="Conversion Rate (%)" points={conversionSeries} color="#2563EB" />
+        <ChartCard title="Top Hashtags (by posts)" points={topHashtags} color="#16A34A" scope={scopeOf(hashtagsTotal, (hashtags ?? []).length)} />
+        <ChartCard title="Conversion Rate (%)" points={conversionSeries} color="#2563EB" scope={scopeOf(usersTotal, (users ?? []).length)} />
       </div>
     </div>
   );

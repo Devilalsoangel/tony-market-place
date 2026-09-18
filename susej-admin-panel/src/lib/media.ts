@@ -39,7 +39,10 @@ export type MediaValidation =
 /**
  * Validate + normalize media references. Everything that reaches the database
  * must be hosted (http/https). file:, content: and data: URIs are rejected —
- * the client must upload first.
+ * the client must upload first. Hosts are FIRST-PARTY ONLY (own origin,
+ * Vercel preview suffix, or the configured Cloudinary cloud): arbitrary
+ * external hotlinks rot, leak buyer IPs via tracking pixels, and let a
+ * third party swap listing bytes post-moderation.
  */
 export function validateMediaRefs(
   refs: unknown,
@@ -53,6 +56,16 @@ export function validateMediaRefs(
     return { ok: false, error: min === 1 ? `${field} is required` : `At least ${min} ${field}(s) required` };
   }
   if (list.length > max) return { ok: false, error: `Maximum ${max} ${field}(s)` };
+  const ownHosts = new Set<string>();
+  for (const base of [process.env.APP_PUBLIC_BASE_URL, process.env.NEXT_PUBLIC_APP_URL, "http://localhost:3000", "http://127.0.0.1:3000"]) {
+    try {
+      if (base) ownHosts.add(new URL(base).hostname.toLowerCase());
+    } catch {}
+  }
+  const cloudName = (() => {
+    const m = String(process.env.CLOUDINARY_URL ?? "").match(/@([^/]+)/);
+    return m ? m[1].toLowerCase() : "";
+  })();
   const urls: string[] = [];
   for (const item of list.slice(0, max)) {
     const value = resolveMediaUrl(item);
@@ -62,6 +75,17 @@ export function validateMediaRefs(
         return {
           ok: false,
           error: `${field} must be a hosted http(s) URL — upload the file via /api/app/upload first`,
+        };
+      }
+      const host = parsed.hostname.toLowerCase();
+      const firstParty =
+        ownHosts.has(host) ||
+        host.endsWith(".vercel.app") ||
+        (cloudName !== "" && (host === cloudName || host.endsWith(`.${cloudName}`) || host.endsWith(".cloudinary.com")));
+      if (!firstParty) {
+        return {
+          ok: false,
+          error: `${field} must be uploaded via /api/app/upload first — external image links are not accepted`,
         };
       }
       urls.push(value);

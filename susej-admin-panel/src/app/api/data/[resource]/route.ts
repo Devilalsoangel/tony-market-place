@@ -79,7 +79,7 @@ const READ_ONLY_RESOURCES = new Set(["audit-logs"]);
 // report queues they triage and the blocked list their mute/block actions
 // write to. Without these, the moderation screens 403 for the role that owns
 // them (chat moderation mute/block included).
-const MODERATOR_RESOURCES = new Set(["communities", "reviews", "tickets", "reported-messages", "reported-products", "reported-comments", "reported-users", "blocked", "posts", "hashtags", "notification-templates", "notification-history"]);
+const MODERATOR_RESOURCES = new Set(["communities", "reviews", "tickets", "reported-messages", "reported-products", "reported-comments", "reported-users", "blocked", "posts", "hashtags", "notification-templates", "notification-history", "disputes"]);
 // Finance desk: money decisions only (payout/refund queues + their money
 // tables). Explicit — never inherited from the moderator set.
 const FINANCE_RESOURCES = new Set(["withdrawals", "refunds", "transactions", "ledger", "orders"]);
@@ -159,7 +159,7 @@ function normalizeRole(raw: string): Role {
 // payee directory (sellers), and read-only money context (commission rates,
 // summary aggregates). NEVER admins/audit-logs/users/moderation queues — a
 // payout clerk has no need for credentials, audit trails, or report contents.
-const FINANCE_READ_RESOURCES = new Set([...FINANCE_RESOURCES, "commission", "sellers", "summary"]);
+const FINANCE_READ_RESOURCES = new Set([...FINANCE_RESOURCES, "commission", "sellers", "summary", "gateway-logs"]);
 function readAllowed(resource: string, role: Role): boolean {
   if (role === "app") return false; // the app never reads admin data
   if (role === "super_admin") return true;
@@ -207,16 +207,21 @@ function writeAllowed(resource: string, role: Role): boolean {
  * payout or issuing a refund requires a PRIOR approve audit by a DIFFERENT
  * admin. Single-admin shops fall back to an explicitly flagged sole-approver
  * path (audited) instead of deadlocking.
+ * Break-glass: a super_admin may pass dualControlOverride:true when the
+ * approval trail is provably lost (deleted audit row) — execution proceeds
+ * with a LOUD override audit naming the actor. Without the flag, a missing
+ * trail refuses (fail-closed).
  * Returns null when execution may proceed, else an error message.
  */
 async function makerCheck(
   prisma: any,
   entity: string,
   entityId: string,
-  me: string
+  me: string,
+  opts?: { superAdmin?: boolean; override?: boolean }
 ): Promise<string | null> {
   try {
-    const admins: { role: string }[] = await prisma.admin.findMany({ select: { role: true } });
+    const admins: { role: string }[] = await prisma.admin.findMany({ where: { status: "active" }, select: { role: true } });
     const eligible = admins.filter((a) => ["super_admin", "manager", "finance"].includes(normalizeRole(a.role)));
     if (eligible.length < 2) return null; // sole finance approver — allowed, flagged below
     const prior = await prisma.auditLog.findFirst({
@@ -228,7 +233,10 @@ async function makerCheck(
       },
       orderBy: { timestamp: "desc" },
     });
-    if (!prior) return "Dual control: a different admin must approve first (no prior approval on record).";
+    if (!prior) {
+      if (opts?.override === true && opts?.superAdmin === true) return null;
+      return "Dual control: a different admin must approve first (no prior approval on record). Super Admin break-glass: resubmit with dualControlOverride:true (audited).";
+    }
     return null;
   } catch {
     return "Could not verify dual control — execution refused";
@@ -238,7 +246,7 @@ async function makerCheck(
 /** Count finance-eligible admins (for the sole-approver audit flag). */
 async function financeApproverCount(prisma: any): Promise<number> {
   try {
-    const admins: { role: string }[] = await prisma.admin.findMany({ select: { role: true } });
+    const admins: { role: string }[] = await prisma.admin.findMany({ where: { status: "active" }, select: { role: true } });
     return admins.filter((a) => ["super_admin", "manager", "finance"].includes(normalizeRole(a.role))).length;
   } catch {
     return 2; // unknown → enforce checker (fail closed)
@@ -371,7 +379,36 @@ function sanitizeStorefrontBannerForApp(
   return out;
 }
 
-function sanitizeSellerForApp(raw: Record<string, unknown>, appUser: Record<string, unknown>): Record<string, unknown> {
+// Server-side KYC format validation (mirrors the wizard regexes): client
+// checks are display-only by construction, so an app-key POST with
+// idNumber "000000000000" used to enter the review queue past every gate.
+// Validate-if-present (no new required-field 400s for legacy callers).
+function kycFormatError(out: Record<string, unknown>): string | null {
+  const idType = String(out.idType ?? "").trim().toLowerCase();
+  const num = String(out.idNumber ?? "").trim().toUpperCase();
+  if (num) {
+    if (idType === "aadhaar" || (!idType && /^\d+$/.test(num))) {
+      if (!/^\d{12}$/.test(num) || /^(\d)\1{11}$/.test(num)) return "Invalid Aadhaar number";
+    } else if (idType === "pan") {
+      if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(num)) return "Invalid PAN format";
+    } else if (idType === "passport") {
+      if (!/^[A-Z][0-9]{7}$/.test(num)) return "Invalid passport format";
+    }
+  }
+  const pan = String(out.pan ?? "").trim().toUpperCase();
+  if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) return "Invalid PAN format";
+  const bank = String(out.bankAccount ?? "").trim();
+  if (bank && !/^\d{9,18}$/.test(bank)) return "Invalid bank account number";
+  // GSTIN rides taxId (business sellers only; individuals leave it unset and
+  // the create lane defaults PENDING-KYC). A present non-default taxId IS a
+  // GSTIN attempt — the old check read out.gstin, a field nothing sends, so
+  // it never fired and garbage taxIds entered the queue.
+  const tax = String(out.taxId ?? "").trim().toUpperCase();
+  if (tax && tax !== "PENDING-KYC" && !/^[0-9A-Z]{15}$/.test(tax)) return "Invalid GSTIN format";
+  return null;
+}
+
+function sanitizeSellerForApp(raw: Record<string, unknown>, appUser: Record<string, unknown>, forUpdate = false): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of SELLER_APP_FIELDS) if (raw[k] !== undefined) out[k] = raw[k];
   // Phone/email prefer the verified token identity when present.
@@ -380,9 +417,17 @@ function sanitizeSellerForApp(raw: Record<string, unknown>, appUser: Record<stri
   else if (typeof out.phone === "string") out.phone = String(out.phone).replace(/\D/g, "");
   const tokenEmail = String((appUser as { email?: unknown }).email ?? "").trim();
   if (tokenEmail && !out.email) out.email = tokenEmail;
-  // Force server-controlled verification state - app can never self-approve.
-  out.kycStatus = "pending";
-  out.gstStatus = "pending";
+  // Updates must NEVER touch verification state: the shared sanitizer used to
+  // force kycStatus/gstStatus pending on every PATCH, so any profile edit by
+  // an approved seller silently threw them back into the review queue (and
+  // zeroed score/counters). Create-lane forcing stays below.
+  delete (out as Record<string, unknown>).kycStatus;
+  delete (out as Record<string, unknown>).gstStatus;
+  if (!forUpdate) {
+    // Force server-controlled verification state - app can never self-approve.
+    out.kycStatus = "pending";
+    out.gstStatus = "pending";
+  }
   // Never trust client-supplied scores or counters.
   delete (out as Record<string, unknown>).score;
   delete (out as Record<string, unknown>).productsCount;
@@ -391,18 +436,22 @@ function sanitizeSellerForApp(raw: Record<string, unknown>, appUser: Record<stri
   delete (out as Record<string, unknown>).reviewCount;
   // Server-side defaults for required Seller columns the app never supplies.
   // (Previously a bare KYC submission 500'd: Prisma "Argument logo is missing".)
-  const fallbackName = String(appUser.name ?? appUser.username ?? "New Seller").trim() || "New Seller";
-  if (!String(out.businessName ?? "").trim()) out.businessName = fallbackName;
-  if (!String(out.ownerName ?? "").trim()) out.ownerName = fallbackName;
-  if (!String(out.logo ?? "").trim()) out.logo = "";
-  if (!String(out.email ?? "").trim()) out.email = `${String(appUser.username ?? "user").trim() || "user"}@susej.app`;
-  if (!String(out.phone ?? "").trim()) out.phone = tokenPhone;
-  if (!String(out.address ?? "").trim()) out.address = String(appUser.location ?? "India").trim() || "India";
-  if (!String(out.taxId ?? "").trim()) out.taxId = "PENDING-KYC";
-  out.score = 0;
-  out.productsCount = 0;
-  out.joinedAt = new Date().toISOString();
-  out.submittedAt = new Date().toISOString();
+  // Create-lane ONLY: on update these would backfill blanks over real data
+  // (and zero score/counters on every profile edit).
+  if (!forUpdate) {
+    const fallbackName = String(appUser.name ?? appUser.username ?? "New Seller").trim() || "New Seller";
+    if (!String(out.businessName ?? "").trim()) out.businessName = fallbackName;
+    if (!String(out.ownerName ?? "").trim()) out.ownerName = fallbackName;
+    if (!String(out.logo ?? "").trim()) out.logo = "";
+    if (!String(out.email ?? "").trim()) out.email = `${String(appUser.username ?? "user").trim() || "user"}@susej.app`;
+    if (!String(out.phone ?? "").trim()) out.phone = tokenPhone;
+    if (!String(out.address ?? "").trim()) out.address = String(appUser.location ?? "India").trim() || "India";
+    if (!String(out.taxId ?? "").trim()) out.taxId = "PENDING-KYC";
+    out.score = 0;
+    out.productsCount = 0;
+    out.joinedAt = new Date().toISOString();
+    out.submittedAt = new Date().toISOString();
+  }
   // Clamp id to the caller's identity so one user cannot overwrite another's row.
   const username = String(appUser.username ?? "").trim();
   if (username) out.id = `app_${username}`;
@@ -497,7 +546,10 @@ function sanitizeTicketForApp(raw: Record<string, unknown>, appUser: Record<stri
   return out;
 }
 
-const MESSAGE_APP_FIELDS = new Set(["threadId", "sender", "senderRole", "body", "createdAt"]);
+// senderRole is desk-owned: app messages always render as the user bubble.
+// (Previously whitelisted, so an app-key POST with senderRole:"agent" rendered
+// as a staff reply on the support + live-chat desks.)
+const MESSAGE_APP_FIELDS = new Set(["threadId", "sender", "body", "createdAt"]);
 function sanitizeMessageForApp(raw: Record<string, unknown>, appUser: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of MESSAGE_APP_FIELDS) if (raw[k] !== undefined) out[k] = raw[k];
@@ -506,7 +558,10 @@ function sanitizeMessageForApp(raw: Record<string, unknown>, appUser: Record<str
   return out;
 }
 
-const REFUND_APP_FIELDS = new Set(["id", "orderRef", "reason", "requestedAt", "respondedAt"]);
+// Timestamps are server-owned: requestedAt is stamped at creation, and
+// respondedAt only ever moves via the desk decision machines (a client-set
+// respondedAt backdated the queue cosmetics).
+const REFUND_APP_FIELDS = new Set(["id", "orderRef", "reason"]);
 function sanitizeRefundForApp(raw: Record<string, unknown>, appUser: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of REFUND_APP_FIELDS) if (raw[k] !== undefined) out[k] = raw[k];
@@ -575,9 +630,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const takeRaw = url.searchParams.get("take") ?? url.searchParams.get("limit") ?? url.searchParams.get("pageSize") ?? "";
   const skipRaw = url.searchParams.get("skip") ?? url.searchParams.get("offset") ?? "";
   const pageRaw = url.searchParams.get("page") ?? "";
+  // Full-book export mode (?export=1): the Export Center needs the whole
+  // table for finance reconciliation, not the 100-row desk window. Cap 5000
+  // (bounded — never unbounded), same read-ACL as the desk. Desk browsing
+  // stays capped at 100.
+  const exportMode = url.searchParams.get("export") === "1";
+  const TAKE_MAX = exportMode ? 5000 : 100;
   const orderByKey = url.searchParams.get("orderBy") ?? url.searchParams.get("sortBy") ?? url.searchParams.get("sort") ?? "";
   const orderDir = (url.searchParams.get("orderDir") ?? url.searchParams.get("sortDir") ?? "desc").toLowerCase() === "asc" ? "asc" : "desc";
-  let take = takeRaw ? Math.min(Math.max(parseInt(takeRaw, 10) || 0, 1), 100) : 0;
+  let take = takeRaw ? Math.min(Math.max(parseInt(takeRaw, 10) || 0, 1), TAKE_MAX) : 0;
   let skip = skipRaw ? Math.max(parseInt(skipRaw, 10) || 0, 0) : 0;
   if (!skipRaw && pageRaw && take) {
     const page = Math.max(parseInt(pageRaw, 10) || 1, 1);
@@ -592,14 +653,38 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     reviews: ["reviewerName", "text"],
     communities: ["name", "description"],
     tickets: ["subject", "userName"],
+    // Money queues (server-searchable — client-side filtering of the loaded
+    // 100 used to make rows past the window unfindable from the desk):
+    disputes: ["orderId", "buyerName", "sellerName", "reason", "status"],
+    refunds: ["orderRef", "buyerName", "sellerName", "reason", "status"],
+    withdrawals: ["id", "userName", "method", "status"],
+    promotions: ["packageName", "sellerId", "sellerName", "status"],
+    coupons: ["code", "type", "status"],
+    ledger: ["partyName", "partyRole", "type", "status", "orderId"],
   };
   const fields = SEARCH_FIELDS[resource] ?? [];
   const where: Record<string, unknown> = {};
-  if (statusFilter) (where as any).status = statusFilter;
+  // Sellers track verification in kycStatus (no `status` column): map the
+  // generic ?status= filter so the ops-critical Pending Queue can page the
+  // server instead of filtering the first 100 rows in memory (row 101+
+  // pendings were invisible).
+  if (statusFilter) {
+    if (resource === "sellers") (where as any).kycStatus = statusFilter;
+    else (where as any).status = statusFilter;
+  }
   if (q && fields.length) {
     (where as any).OR = fields.map((f) => ({ [f]: { contains: q, mode: "insensitive" } }));
   }
   const orderBy = orderByKey ? { [orderByKey]: orderDir } : undefined;
+  // skip-without-take used to pull the WHOLE table (hasPagination true, but
+  // the `if (take)` guard applied neither) — default the page when skipping.
+  if (skip > 0 && take === 0) take = 100;
+  // Unvalidated sort keys threw inside Prisma and misreported as 503
+  // "Database unavailable". Shape-guard the key; unknown fields 400.
+  const ORDER_BY_ALLOW = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+  if (orderByKey && !ORDER_BY_ALLOW.test(orderByKey)) {
+    return NextResponse.json({ error: "Invalid sort field" }, { status: 400 });
+  }
   const hasPagination = take > 0 || skip > 0 || !!q || !!statusFilter || !!orderByKey;
 
   const prisma = (await resolveDb()) as any;
@@ -666,6 +751,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ? await prisma[PRISMA_MODELS[resource]].findMany(findArgs)
         : await prisma[PRISMA_MODELS[resource]].findMany(EXTENDED[resource] ?? {});
       let rowsOut = serialize(list, resource) as Record<string, unknown>[];
+      // Finance PII minimization: payout clerks need seller identity +
+      // payee destination (resolved above for withdrawals), never KYC
+      // internals (PAN/DOB/ID numbers/bank numbers/selfies). Stripped
+      // server-side — page-level hiding alone would leave the API door open.
+      if (resource === "sellers" && role === "finance") {
+        const PII = ["idNumber", "nameOnId", "dob", "pan", "bankAccount", "selfieUrl", "idType"];
+        rowsOut = rowsOut.map((r) => {
+          const copy = { ...r };
+          for (const k of PII) delete copy[k];
+          return copy;
+        });
+      }
       // Withdrawals: destination resolution (read-time join, no schema
       // change). New rows carry `· to <destination>` in their
       // walletTransaction detail (written atomically at payout). Legacy bank
@@ -742,7 +839,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             const userName = String((r as any).userName ?? "");
             let destination = "";
             const mine = byUser.get(userName) ?? [];
-            const hit = mine.find((t) => t.detail.includes(`Payout request ${id}`));
+            // Exact-prefix match (VPA-embed class): substring could pair the
+            // row with another payout's debit and show the wrong destination.
+            const hit = mine.find((t) => t.detail.startsWith(`Payout request ${id} `));
             const m = hit ? hit.detail.match(/· to (.+)$/) : null;
             if (m) destination = m[1].trim();
             if (!destination && method === "bank" && userName) {
@@ -816,7 +915,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         } catch {}
       }
       return NextResponse.json({ rows: rowsOut });
-    } catch {
+    } catch (e: unknown) {
+      // A well-formed key that is NOT a model field still throws inside
+      // Prisma — report 400 (bad sort), never 503 "Database unavailable".
+      const msg = e instanceof Error ? e.message : String(e);
+      if (orderByKey && /orderBy|Unknown (field|argument)|Invalid (field|value)|validation/i.test(msg)) {
+        return NextResponse.json({ error: "Invalid sort field" }, { status: 400 });
+      }
       // DB error — report honestly instead of echoing demo rows
     }
   }
@@ -937,7 +1042,7 @@ async function transitionRefund(
   prisma: any,
   refundId: string,
   nextStatus: string,
-  opts: { actor: string; superAdmin: boolean }
+  opts: { actor: string; superAdmin: boolean; override?: boolean; ip?: string }
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const fail = (error: string, status: number) => ({ ok: false as const, error, status });
   // Read-only validations run outside the money tx (no locks held during
@@ -959,7 +1064,10 @@ async function transitionRefund(
     return fail("Mark approved first — only a Super Admin may refund in one step.", 409);
   }
   if (nextStatus === "refunded") {
-    const block = await makerCheck(prisma, "refunds", String(row0.id), opts.actor);
+    const block = await makerCheck(prisma, "refunds", String(row0.id), opts.actor, {
+      superAdmin: opts.superAdmin,
+      override: opts.override,
+    });
     if (block) return fail(block, 409);
   }
   // Non-money terminal states settle nothing — plain update, no lock needed.
@@ -1093,14 +1201,17 @@ async function transitionRefund(
           await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "refunded" } });
           // Platform legs: placement booked fee-in + shipping-in; the desk
           // path stranded both (cancel/app-approve mirror them). Count-guarded
-          // so books balance on every path, not just cancel.
+          // so books balance on every path, not just cancel. Evidence-gated:
+          // pre-delivery rows never booked a fee — reversing one mints a
+          // phantom OUT leg — so only reverse what actually landed as IN.
           {
             const dRate = await resolveCommissionRate(prisma);
             const dLegFee = settledFeeFromLegs(order.itemsList);
             const dSettled = settlementGoodsBasis(order.itemsList);
             const dBasis = Number.isFinite(dSettled) ? (dSettled as number) : Number(order.amount ?? 0);
             const dFeeOut = dLegFee !== null && dLegFee > 0 ? Math.round(dLegFee) : Math.max(0, Math.round(dBasis * dRate));
-            if (dFeeOut > 0) {
+            const feeBooked = await prisma.ledgerEntry.count({ where: { orderId: order.id, type: "fee", direction: "in", status: "success" } });
+            if (dFeeOut > 0 && feeBooked > 0) {
               const dFeeReversed = await prisma.ledgerEntry.count({ where: { orderId: order.id, type: "fee", direction: "out" } });
               if (!dFeeReversed) {
                 await prisma.ledgerEntry.createMany({
@@ -1109,11 +1220,33 @@ async function transitionRefund(
               }
             }
             const dShipOut = Math.max(0, Math.round(Number(order.amount ?? 0)) - Math.round(dBasis));
-            if (dShipOut > 0) {
+            const shipBooked = await prisma.ledgerEntry.count({ where: { orderId: order.id, type: "shipping", direction: "in", status: "success" } });
+            if (dShipOut > 0 && shipBooked > 0) {
               const dShipReversed = await prisma.ledgerEntry.count({ where: { orderId: order.id, type: "shipping", direction: "out" } });
               if (!dShipReversed) {
                 await prisma.ledgerEntry.createMany({
                   data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: dShipOut, method, status: "success", orderId: order.id, createdAt: new Date() }],
+                });
+              }
+            }
+            // COD pending void (cancel/seller-approve parity): a pre-delivery
+            // desk refund must not leave pending charge/shipping legs dangling
+            // next to the new success reversals.
+            const pendCharge = await prisma.ledgerEntry.findFirst({ where: { orderId: order.id, type: "charge", direction: "out", status: "pending" } });
+            if (pendCharge) {
+              const chargeVoided = await prisma.ledgerEntry.count({ where: { orderId: order.id, type: "charge", direction: "out", status: "cancelled" } });
+              if (!chargeVoided && order.buyerUsername) {
+                await prisma.ledgerEntry.create({
+                  data: { partyName: order.buyerName, partyRole: "buyer", direction: "out", type: "charge", amount: Number((pendCharge as { amount?: unknown }).amount ?? order.amount ?? 0), method, status: "cancelled", orderId: order.id, createdAt: new Date() },
+                });
+              }
+            }
+            const pendShip = await prisma.ledgerEntry.findFirst({ where: { orderId: order.id, type: "shipping", direction: "in", status: "pending" } });
+            if (pendShip) {
+              const shipVoided = await prisma.ledgerEntry.count({ where: { orderId: order.id, type: "shipping", direction: "out", status: "cancelled" } });
+              if (!shipVoided) {
+                await prisma.ledgerEntry.create({
+                  data: { partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: Number((pendShip as { amount?: unknown }).amount ?? 0), method, status: "cancelled", orderId: order.id, createdAt: new Date() },
                 });
               }
             }
@@ -1124,6 +1257,19 @@ async function transitionRefund(
         where: { id: String(row.id) },
         data: { status: nextStatus, respondedAt: new Date().toISOString() },
       });
+      // Break-glass audit: an override execution must scream in the trail
+      // (who, what, explicit flag, real IP) — silent overrides would launder
+      // theft, and an empty IP would orphan the trail.
+      if (nextStatus === "refunded" && opts.override === true) {
+        await writeAuditSafe({
+          action: "dual-control-override",
+          entity: "refunds",
+          entityId: String(row.id),
+          details: `DUAL-CONTROL OVERRIDE by ${opts.actor} — executed without a prior different-admin approval (lost-trail break-glass)`,
+          adminName: opts.actor,
+          ip: opts.ip ?? "",
+        });
+      }
       return { ok: true };
     });
   } catch {
@@ -1155,6 +1301,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (!keys.length || keys.some((k) => k !== "status")) {
         return NextResponse.json({ error: "Paid rails are engine-owned — staff can hide/show rows, not rewrite them." }, { status: 403 });
       }
+    }
+  }
+  // Moderator dispute triage (read + under_review only): the queue needs the
+  // fastest human review, but resolving moves money — manager/super_admin
+  // only. POST/DELETE stay denied below; resolve PATCH is refused here.
+  if (resource === "disputes" && role === "moderator") {
+    const keys = Object.keys(data);
+    if (keys.length !== 1 || keys[0] !== "status" || (data as Record<string, unknown>).status !== "under_review") {
+      return NextResponse.json({ error: "Moderators can triage disputes (mark under review) — resolution moves money and needs a manager." }, { status: 403 });
     }
   }
   const validationErr = validateResourcePayload(resource, data as Record<string, unknown>);
@@ -1228,7 +1383,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     } else if (resource === "sellers") {
       const username = String(appUser.username ?? "").trim();
       if (username && String(id) !== `app_${username}`) return forbidden("Seller record belongs to another user.");
-      appScopedData = sanitizeSellerForApp(raw, appUser);
+      // Update lane: verification state + counters survive profile edits.
+      appScopedData = sanitizeSellerForApp(raw, appUser, true);
+      // Format validation PATCH-side too: POST-only enforcement left the
+      // exact same hole (garbage idNumber persisted past every gate).
+      const patchKycErr = kycFormatError(appScopedData);
+      if (patchKycErr) return NextResponse.json({ error: patchKycErr }, { status: 400 });
     } else if (resource === "promotions") {
       const prismaTmp = (await resolveDb()) as any;
       if (prismaTmp) {
@@ -1294,10 +1454,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   // PK armor (hostile-audit 7b): the row key comes from body.id, never from
   // data — Prisma rejects @id writes, so a client-echoed id 503'd every save.
   delete (cleanPayload as Record<string, unknown>).id;
+  // Control flags ride `data` but are not columns: dualControlOverride is
+  // consumed by makerCheck above — persisting it would 500 every override.
+  delete (cleanPayload as Record<string, unknown>).dualControlOverride;
   if (resource === "users") {
     const blockedUserFields = new Set(["walletBalance", "loyaltyPoints", "passwordHash"]);
     for (const k of Object.keys(cleanPayload)) if (blockedUserFields.has(k)) delete (cleanPayload as any)[k];
   }
+  // podNote is evidence metadata consumed by the shipment-deliver machine
+  // above — the Shipment model has no such column, so strip it before the
+  // row write (else Prisma 503s every staff delivery).
+  if (resource === "shipments") delete (cleanPayload as Record<string, unknown>).podNote;
 
   const prisma = (await resolveDb()) as any;
   if (prisma) {
@@ -1389,6 +1556,37 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
         (data as Record<string, unknown>).productId = productId;
         (cleanPayload as Record<string, unknown>).productId = productId;
+        // Re-point refresh: a new productId with the old product's
+        // name/image/prices serves a deceptive card (old face, new target).
+        // Refresh display fields the caller didn't explicitly set.
+        {
+          const src = (postHit ?? productHit) as {
+            title?: unknown; price?: unknown; mrp?: unknown; images?: unknown;
+          } | null;
+          const firstImage = (() => {
+            const imgs = src?.images;
+            if (typeof imgs === "string") { try { const p = JSON.parse(imgs); if (Array.isArray(p) && p.length) return String(p[0]); } catch {} }
+            if (Array.isArray(imgs) && imgs.length) return String(imgs[0]);
+            return "";
+          })();
+          const d = data as Record<string, unknown>;
+          const c = cleanPayload as Record<string, unknown>;
+          const setBoth = (k: string, v: unknown) => { if (d[k] === undefined && v !== "" && v !== null && v !== undefined) { d[k] = v; c[k] = v; } };
+          if (src) {
+            setBoth("productName", String(src.title ?? "").slice(0, 200));
+            setBoth("productImage", firstImage);
+            const price = Number(src.price);
+            const mrp = Number((src as { mrp?: unknown }).mrp);
+            if (d["discountedPrice"] === undefined && Number.isFinite(price) && price > 0) { d["discountedPrice"] = Math.round(price); c["discountedPrice"] = Math.round(price); }
+            if (d["originalPrice"] === undefined && Number.isFinite(mrp) && mrp > 0) { d["originalPrice"] = Math.round(mrp); c["originalPrice"] = Math.round(mrp); }
+            const op = Number(d["originalPrice"] ?? c["originalPrice"] ?? NaN);
+            const dp = Number(d["discountedPrice"] ?? c["discountedPrice"] ?? NaN);
+            if (d["discountPercentage"] === undefined && Number.isFinite(op) && Number.isFinite(dp) && op > 0 && dp >= 0 && dp <= op) {
+              const pct = Math.round(((op - dp) / op) * 100);
+              d["discountPercentage"] = pct; c["discountPercentage"] = pct;
+            }
+          }
+        }
       }
       // Unattributed-order repair (admin desk): legacy rows placed before
       // server-side seller binding carry sellerName "Seller" with no
@@ -1464,7 +1662,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 ? Math.max(0, Math.round(rBasis) - rLegFee)
                 : Math.max(0, Math.round(rBasis * (1 - rRate)));
               const rTracking = String((fresh as { trackingNumber?: unknown }).trackingNumber ?? "");
-              if (rTracking && rNet > 0) {
+              // No settlement on dead money: a delivered row later refunded
+              // (desk/dispute, buyer made whole) or under an open dispute must
+              // never credit the newly-bound seller — buyer-whole +
+              // seller-credited is double-pay. The binding itself still lands
+              // (reporting truth: who sold it); payout guards exclude
+              // refunded/frozen rows from withdrawable anyway.
+              const rPay = String((fresh as { paymentStatus?: unknown }).paymentStatus ?? "").trim().toLowerCase();
+              const rDead = rPay === "refunded" || rPay === "cancelled";
+              const rFrozen = rDead ? false : (await tx.dispute.count({
+                where: { orderId: rTracking, status: { in: ["open", "under_review"] } },
+              }).catch(() => 0)) > 0;
+              if (rTracking && rNet > 0 && !rDead && !rFrozen) {
                 const earnTitle = `Order earnings · ${rTracking}`;
                 const done = await tx.walletTransaction.count({ where: { username: target, title: earnTitle } });
                 if (!done) {
@@ -1547,16 +1756,34 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         // Maker-checker on EXECUTION (bank money actually leaves): approved →
         // completed needs a different admin's prior approval on record.
         if (nextStatus === "completed") {
-          const block = await makerCheck(prisma, resource, String(id), session.name);
+          const block = await makerCheck(prisma, resource, String(id), session.name, {
+            superAdmin: role === "super_admin",
+            override: role === "super_admin" && (data as Record<string, unknown>).dualControlOverride === true,
+          });
           if (block) return NextResponse.json({ error: block }, { status: 409 });
+          // Break-glass audit for override executions (see transitionRefund).
+          if ((data as Record<string, unknown>).dualControlOverride === true && role === "super_admin") {
+            await writeAuditSafe({
+              action: "dual-control-override",
+              entity: resource,
+              entityId: String(id),
+              details: `DUAL-CONTROL OVERRIDE by ${session.name} — payout completed without a prior different-admin approval (lost-trail break-glass)`,
+              adminName: session.name,
+              ip: getClientIp(request),
+            });
+          }
           // Payee check (F12): completing a payout with no recorded
           // destination certifies an unpayable transfer. The destination rides
           // in the request-time walletTx detail (`· to <dest>`). Rows predating
           // the detail format (no debit row at all) are grandfathered —
           // refusing them would strand ancient payouts with no recourse.
           {
+            // Exact-prefix match: a VPA destination (`name@bank`, cuid charset
+            // fits) could embed another payout's id, so substring matching
+            // could credit the wrong row's amount to the wrong user. Details
+            // are canonically `Payout request <id> · …`.
             const debit = await prisma.walletTransaction.findFirst({
-              where: { detail: { contains: String(id) }, amount: { lt: 0 } },
+              where: { detail: { startsWith: `Payout request ${String(id)} ` }, amount: { lt: 0 } },
             }).catch(() => null);
             if (debit) {
               const dest = String((debit as { detail?: unknown } | null)?.detail ?? "").split("· to ").pop()?.trim() ?? "";
@@ -1578,6 +1805,92 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
               ip: getClientIp(request),
             });
           }
+          // Settlement-freshness re-check (withdraw-after-refund closer): the
+          // payout amount was validated at REQUEST time, but refunds/disputes
+          // may have landed since. Completing against refunded/frozen earnings
+          // realizes the loss (claw drives the wallet negative, uncollectible).
+          // Recompute the payee's withdrawable NOW (same formula as the app
+          // payout guard) excluding THIS row; refuse when it no longer covers.
+          {
+            const wRow = await prisma.withdrawal.findUnique({ where: { id: String(id) } }).catch(() => null);
+            const payee = String((wRow as { userName?: unknown } | null)?.userName ?? "");
+            const wAmt = Number((wRow as { amount?: unknown } | null)?.amount ?? 0);
+            if (payee && wAmt > 0) {
+              try {
+                const dRate = await resolveCommissionRate(prisma);
+                const sRows = await prisma.order.findMany({
+                  where: { sellerUsername: payee, status: "delivered", paymentStatus: { not: "refunded" } },
+                  select: { itemsList: true, actualDelivery: true, trackingNumber: true },
+                });
+                const trks = sRows.map((o: { trackingNumber?: unknown }) => String(o.trackingNumber ?? "")).filter(Boolean);
+                const fz = trks.length
+                  ? new Set(
+                      (await prisma.dispute.findMany({
+                        where: { orderId: { in: trks }, status: { in: ["open", "under_review"] } },
+                        select: { orderId: true },
+                      }).catch(() => [] as Array<{ orderId: string }>)).map((d: { orderId: string }) => String(d.orderId))
+                    )
+                  : new Set<string>();
+                const HOLD_MS = 7 * 24 * 3600 * 1000;
+                const hNow = Date.now();
+                let lifeNet = 0;
+                for (const o of sRows) {
+                  const b = settlementGoodsBasis((o as { itemsList?: unknown }).itemsList);
+                  if (!Number.isFinite(b) || (b as number) <= 0) continue;
+                  if (fz.has(String((o as { trackingNumber?: unknown }).trackingNumber ?? ""))) continue;
+                  const stamp = Date.parse(String((o as { actualDelivery?: unknown }).actualDelivery ?? ""));
+                  if (Number.isFinite(stamp) && hNow - stamp < HOLD_MS) continue;
+                  const legFee = settledFeeFromLegs((o as { itemsList?: unknown }).itemsList);
+                  lifeNet += legFee !== null
+                    ? Math.max(0, Math.round(b as number) - legFee)
+                    : Math.max(0, Math.round((b as number) * (1 - dRate)));
+                }
+                const otherWd = await prisma.withdrawal.findMany({
+                  where: { userName: payee, status: { in: ["requested", "approved", "completed"] }, id: { not: String(id) } },
+                  select: { id: true, amount: true },
+                }).catch(() => [] as Array<{ id?: unknown; amount?: unknown }>);
+                // Principal + fee (matches the request-time paidOut math):
+                // fee rides in each payout's debit detail (`₹<fee> fee`).
+                // Unparseable legacy rows assume the CURRENT fee (same
+                // fallback as the request guard — understating committed
+                // would overstate withdrawable, the fail-open direction).
+                const liveFee = await prisma.commissionSetting.findUnique({ where: { id: "global" } })
+                  .then((s: { payoutFee?: unknown } | null) => {
+                    const f = Number((s as { payoutFee?: unknown } | null)?.payoutFee);
+                    return Number.isFinite(f) && f >= 0 && f <= 1000 ? Math.floor(f) : 20;
+                  })
+                  .catch(() => 20);
+                const otherIds = otherWd.map((w: { id?: unknown; amount?: unknown }) => String(w.id ?? "")).filter(Boolean);
+                const otherDebits = otherIds.length
+                  ? await prisma.walletTransaction.findMany({
+                      where: { username: payee, amount: { lt: 0 } },
+                      select: { detail: true },
+                    }).catch(() => [] as Array<{ detail?: unknown }>)
+                  : [];
+                const otherFeeById = new Map<string, number>();
+                for (const r of otherDebits) {
+                  const m = String(r.detail ?? "").match(/^Payout request (\S+).*?([\d,]+) fee/);
+                  if (m) otherFeeById.set(m[1], Number(m[2].replace(/,/g, "")) || 0);
+                }
+                // Principal + fee (matches the request-time paidOut math, which
+                // commits amount+fee; the wallet CAS still enforces amount+fee
+                // at debit).
+                const otherOut = otherWd.reduce((s: number, w: { id?: unknown; amount?: unknown }) => {
+                  const principal = Math.max(0, Number(w.amount ?? 0));
+                  const wf = otherFeeById.get(String(w.id ?? ""));
+                  return s + principal + (wf !== undefined ? Math.max(0, wf) : liveFee);
+                }, 0);
+                if (wAmt > lifeNet - otherOut) {
+                  return NextResponse.json(
+                    { error: "Settlement moved since request (refund/dispute landed) — amount no longer covered. Reject and ask for a fresh request." },
+                    { status: 409 }
+                  );
+                }
+              } catch {
+                return NextResponse.json({ error: "Settlement re-check unavailable — try again" }, { status: 503 });
+              }
+            }
+          }
         }
       }
       // Refund desk: single shared machine (transitionRefund above validates,
@@ -1589,6 +1902,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const settled = await transitionRefund(prisma, String(id), String(data.status), {
           actor: session.name,
           superAdmin: role === "super_admin",
+          ip: getClientIp(request),
+          // Break-glass is super_admin-only; the flag is stripped from the
+          // row write below so Prisma never sees it.
+          override: role === "super_admin" && (data as Record<string, unknown>).dualControlOverride === true,
         });
         if (!settled.ok) return NextResponse.json({ error: settled.error }, { status: settled.status });
       }
@@ -1612,23 +1929,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           );
         }
         if (nextStatus === "rejected") {
+          // Rejection refunds the held debit (amount+fee). Race-safe by
+          // construction: the credit row is created FIRST inside one tx, so
+          // concurrent double-rejects serialize on UNIQUE(username,title) —
+          // the loser takes P2002 and its increment rolls back with it (the
+          // old count-then-increment shape double-credited: both passed
+          // count==0, both incremented, the loser's create threw 503 while
+          // +2x stood).
           try {
             const revTitle = `Withdrawal rejected refund · ${String(id)}`;
-            const already = await prisma.walletTransaction.count({ where: { title: revTitle } });
-            if (!already) {
-              const debit = await prisma.walletTransaction.findFirst({
-                where: { detail: { contains: String(id) }, amount: { lt: 0 } },
-                orderBy: { ts: "desc" },
-              });
-              if (debit) {
-                const owner = await prisma.user.findUnique({ where: { username: debit.username } }).catch(() => null);
-                if (owner) {
-                  const back = -Number(debit.amount);
-                  await prisma.user.update({
-                    where: { id: owner.id },
-                    data: { walletBalance: { increment: back } },
-                  });
-                  await prisma.walletTransaction.create({
+            // Exact-prefix match (same VPA-embedding class as the payee check
+            // above): substring could refund the wrong row's amount.
+            const debit = await prisma.walletTransaction.findFirst({
+              where: { detail: { startsWith: `Payout request ${String(id)} ` }, amount: { lt: 0 } },
+              orderBy: { ts: "desc" },
+            });
+            if (debit) {
+              const back = -Number(debit.amount);
+              try {
+                await prisma.$transaction(async (tx: any) => {
+                  await tx.walletTransaction.create({
                     data: {
                       username: debit.username,
                       title: revTitle,
@@ -1636,8 +1956,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                       amount: back,
                     },
                   });
-                }
+                  const owner = await tx.user.findUnique({ where: { username: debit.username } }).catch(() => null);
+                  if (!owner) throw new Error("payout_owner_gone");
+                  await tx.user.update({
+                    where: { id: owner.id },
+                    data: { walletBalance: { increment: back } },
+                  });
+                });
+              } catch (txErr) {
+                // P2002 = a concurrent reject (or replay) already credited
+                // this title — idempotent replay, proceed to the status flip.
+                if ((txErr as { code?: string })?.code !== "P2002") throw txErr;
               }
+            } else {
+              // Fail-closed: legacy/pre-detail rows have no matching debit —
+              // flipping to rejected would strand the held funds with the desk
+              // believing it refunded. Refuse so ops verifies the balance first.
+              return NextResponse.json({ error: "No matching payout debit found — verify the seller's balance manually before rejecting" }, { status: 409 });
             }
           } catch {
             return NextResponse.json({ error: "Payout rejection refund failed — status not changed" }, { status: 503 });
@@ -1656,7 +1991,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                   ? "approved (bank transfer next)"
                   : "rejected (amount refunded to wallet)";
             notifyUser(prisma, {
-              username: wUser, type: "order",
+              // Wallet tell (not order): the targetId is a WITHDRAWAL id,
+              // which /order/<id> cannot resolve — stamping it as an order
+              // tell dead-tapped to Order-not-found. The wallet screen shows
+              // the payout row.
+              username: wUser, type: "wallet",
               userName: "susej Payouts", action: `Your payout request was ${copy}`, targetId: String(id),
             });
           }
@@ -1811,30 +2150,39 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                         data: [{ partyName: String(b.sellerUsername), partyRole: "seller", direction: "out", type: "reversal", amount: net, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
                       });
                     }
-                    // Platform legs: placement booked fee-in + shipping-in.
-                    const feeOut = legFee !== null && legFee > 0 ? Math.round(legFee) : Math.max(0, Math.round(goodsBasis * rate));
-                    if (feeOut > 0) {
-                      const feeReversed = await prisma.ledgerEntry.count({ where: { orderId, type: "fee", direction: "out" } });
-                      if (!feeReversed) {
-                        await prisma.ledgerEntry.createMany({
-                          data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "fee", amount: feeOut, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
-                        });
-                      }
-                    }
-                    const shipOut = Math.max(0, Math.round(Number(b.amount ?? 0)) - Math.round(goodsBasis));
-                    if (shipOut > 0) {
-                      const shipReversed = await prisma.ledgerEntry.count({ where: { orderId, type: "shipping", direction: "out" } });
-                      if (!shipReversed) {
-                        await prisma.ledgerEntry.createMany({
-                          data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: shipOut, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
-                        });
-                      }
-                    }
                   }
                   reversed = true;
                 }
               } else if (wasCredited) {
                 reversed = true;
+              }
+              // Platform legs INDEPENDENT of the claw above: pre-delivery
+              // escrow orders were never credited (no claw runs), but their
+              // placement shipping-IN (wallet success) still needs its OUT —
+              // nesting this inside the claw branch stranded it (ledger-only
+              // drift, platform shipping revenue overstated per such cancel).
+              // Evidence-gated + once-guarded like every sibling path.
+              {
+                const feeOut = legFee !== null && legFee > 0 ? Math.round(legFee) : Math.max(0, Math.round(goodsBasis * rate));
+                const feeBooked = await prisma.ledgerEntry.count({ where: { orderId, type: "fee", direction: "in", status: "success" } });
+                if (feeOut > 0 && feeBooked > 0) {
+                  const feeReversed = await prisma.ledgerEntry.count({ where: { orderId, type: "fee", direction: "out" } });
+                  if (!feeReversed) {
+                    await prisma.ledgerEntry.createMany({
+                      data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "fee", amount: feeOut, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
+                    });
+                  }
+                }
+                const shipOut = Math.max(0, Math.round(Number(b.amount ?? 0)) - Math.round(goodsBasis));
+                const shipBooked = await prisma.ledgerEntry.count({ where: { orderId, type: "shipping", direction: "in", status: "success" } });
+                if (shipOut > 0 && shipBooked > 0) {
+                  const shipReversed = await prisma.ledgerEntry.count({ where: { orderId, type: "shipping", direction: "out" } });
+                  if (!shipReversed) {
+                    await prisma.ledgerEntry.createMany({
+                      data: [{ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: shipOut, method: String(b.paymentMethod ?? ""), status: "success", orderId, createdAt: new Date() }],
+                    });
+                  }
+                }
               }
             }
             if (reversed) (cleanPayload as Record<string, unknown>).paymentStatus = "refunded";
@@ -1943,6 +2291,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             const settled = await transitionRefund(prisma, String(linked.id), String(wantRefund), {
               actor: session.name,
               superAdmin: role === "super_admin",
+              ip: getClientIp(request),
+              override: role === "super_admin" && (data as Record<string, unknown>).dualControlOverride === true,
             });
             if (!settled.ok) return NextResponse.json({ error: settled.error }, { status: settled.status });
           }
@@ -1968,6 +2318,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           );
         }
         const outcome = String((data as Record<string, unknown>).outcome ?? "");
+        // Allow-list: any other outcome string (empty, typo, "partial")
+        // used to fall through and resolve with zero legs settled.
+        if (outcome !== "full_refund" && outcome !== "split_50_50" && outcome !== "release_seller") {
+          return NextResponse.json(
+            { error: "Unknown dispute outcome — use full_refund, split_50_50, or release_seller" },
+            { status: 400 }
+          );
+        }
         if (outcome === "full_refund" || outcome === "split_50_50") {
           try {
             const b = (before ?? {}) as { orderId?: unknown };
@@ -2055,12 +2413,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                       amount: buyerDue,
                     },
                   });
-                  // ANY dispute settlement marks the order refunded (full or
-                  // split): the payout guard excludes refunded rows wholesale,
-                  // so a split-clawed order can never stay fully withdrawable
-                  // (withdraw-after-claw double-spend). Conservative by design:
-                  // understates withdrawable, never overstates.
-                  await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "refunded" } });
+                  // Buyer leg landed; the order-level refunded mark is applied
+                  // once below for ALL methods (see after the claw block).
                   buyerPaid = true;
                 }
               }
@@ -2096,6 +2450,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 }
               }
             }
+            // ANY dispute settlement (full or split, wallet or COD) marks the
+            // order refunded: the payout guard excludes refunded rows
+            // wholesale, so a COD ruling that only claws the seller can never
+            // leave the order "paid" and withdrawable again
+            // (withdraw-after-claw double-spend). Conservative by design:
+            // understates withdrawable, never overstates. Inside the locked
+            // tx, so concurrent rulings serialize on this write.
+            await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "refunded" } });
             // Ledger mirror for the ruling: LOUD, never swallowed (a ruling with
             // money moved but no mirror is unreconcilable). Count-guarded so a
             // retry after a partial failure never double-mirrors — the wallet
@@ -2118,18 +2480,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                   ((await settledElsewhere(clawTitle, order.sellerUsername)) ||
                     (await settledElsewhere(`Order refund clawback · ${tracking}`, order.sellerUsername)) ||
                     (await settledElsewhere(`Order cancelled clawback · ${tracking}`, order.sellerUsername))));
-              // Mirror gate is per-outcome-type: a full ruling mirrors
-              // reversal rows, a split mirrors split rows. The old ANY
-              // split|reversal count skipped the mirror when the wallet legs
-              // DID move under a different outcome (money without mirror).
-              // Same-outcome concurrent retries stay serialized by the
-              // one-way resolved guard above + title idempotency (a ledger
-              // UNIQUE would need a migration — logged as NOTED).
+              // Mirror gate is cross-outcome: a full ruling mirrors reversal
+              // rows, a split mirrors split rows — but the wallet legs are
+              // cross-outcome idempotent (a second ruling moves no money), so
+              // a reopen → re-resolve with the OTHER outcome must not mint a
+              // second mirror for the same economic event (reconciliation
+              // double-count). Same-outcome retries stay serialized by the
+              // one-way resolved guard + title idempotency (a ledger UNIQUE
+              // would need a migration — logged as NOTED).
               const alreadyMirrored = await prisma.ledgerEntry.count({
                 where: {
                   orderId: order.id,
                   status: "success",
-                  type: half ? "split" : "reversal",
+                  type: { in: ["split", "reversal"] },
                 },
               });
               if (!alreadyMirrored) {
@@ -2142,17 +2505,30 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 drows.push({ partyName: order.sellerUsername, partyRole: "seller", direction: "out", type: half ? "split" : "reversal", amount: clawDue, method, status: "success", orderId: order.id, createdAt: dnow });
               }
               if ((buyerSettledForMirror || sellerSettledForMirror) && shipAbsorbed > 0) {
-                drows.push({ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: shipAbsorbed, method, status: "success", orderId: order.id, createdAt: dnow });
+                // Evidence-gated like fee: no success shipping-IN (pre-delivery
+                // COD pending) means nothing to absorb — the COD void path
+                // offsets pending separately.
+                const shipBooked = await prisma.ledgerEntry.count({
+                  where: { orderId: order.id, type: "shipping", direction: "in", status: "success" },
+                });
+                if (shipBooked > 0) {
+                  drows.push({ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: shipAbsorbed, method, status: "success", orderId: order.id, createdAt: dnow });
+                }
               }
               // Full-ruling fee reversal: cancel / seller-approve / desk-refund
               // all reverse the placement fee — a full dispute ruling that keeps
               // it books invisible platform revenue and disagrees with every
-              // sibling path. (Split books retainedFee explicitly above.)
+              // sibling path. Evidence-gated (desk parity): fee-IN lands at
+              // DELIVERY, so a pre-delivery ruling reversing it mints a
+              // phantom OUT leg with no IN.
               if (!half && (buyerSettledForMirror || sellerSettledForMirror)) {
                 const fullFeeOut = disputeLegFee !== null && disputeLegFee > 0
                   ? Math.round(disputeLegFee)
                   : Math.max(0, Math.round(goodsBasis * rate));
-                if (fullFeeOut > 0) {
+                const fullFeeBooked = await prisma.ledgerEntry.count({
+                  where: { orderId: order.id, type: "fee", direction: "in", status: "success" },
+                });
+                if (fullFeeOut > 0 && fullFeeBooked > 0) {
                   const feeGone = await prisma.ledgerEntry.count({
                     where: { orderId: order.id, type: "fee", direction: "out", status: "success" },
                   });
@@ -2163,12 +2539,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
               }
               // Retained-fee leg (split only): the platform keeps roughly half
               // the commission (goodsHalf − clawDue) while refunding the buyer
-              // and clawing the seller. Without this row the ruling's books
-              // never balance — the kept commission is invisible money.
+              // and clawing the seller. Delivery already booked the FULL fee
+              // as fee-IN, so the returned half lands as fee-OUT (the kept
+              // half stays as the original IN row). Booking IN here
+              // double-counted the kept fee on every split ruling. Same
+              // evidence gate: no fee-IN (pre-delivery) means nothing to
+              // return — reversing books a phantom.
               if (half && (buyerSettledForMirror || sellerSettledForMirror)) {
                 const retainedFee = Math.max(0, goodsHalf - clawDue);
-                if (retainedFee > 0) {
-                  drows.push({ partyName: "susej", partyRole: "platform", direction: "in", type: "fee", amount: retainedFee, method, status: "success", orderId: order.id, createdAt: dnow });
+                const splitFeeBooked = await prisma.ledgerEntry.count({
+                  where: { orderId: order.id, type: "fee", direction: "in", status: "success" },
+                });
+                if (retainedFee > 0 && splitFeeBooked > 0) {
+                  // Same once-only guard as the full path: a prior ruling may
+                  // already have reversed the fee (reopen → re-resolve).
+                  const feeGone = await prisma.ledgerEntry.count({
+                    where: { orderId: order.id, type: "fee", direction: "out", status: "success" },
+                  });
+                  if (!feeGone) {
+                    drows.push({ partyName: "susej", partyRole: "platform", direction: "out", type: "fee", amount: retainedFee, method, status: "success", orderId: order.id, createdAt: dnow });
+                  }
                 }
               }
               if (drows.length) await prisma.ledgerEntry.createMany({ data: drows });
@@ -2233,6 +2623,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       // advances the linked order too, with the same idempotent COD
       // settlement the staff order path uses (shared titles — never double).
       if (resource === "shipments" && String((data as Record<string, unknown>).status ?? "") === "delivered") {
+        // POD parity with the app lane: staff delivery settles real money, so
+        // it needs the same handover evidence (tracking ID / receiver name).
+        // The desk prompts for it; the API 400s without it.
+        const shipPod = String((data as Record<string, unknown>).podNote ?? "").trim().slice(0, 200);
+        if (shipPod.length < 4) {
+          return NextResponse.json({ error: "Delivery proof required — tracking ID or receiver name" }, { status: 400 });
+        }
         try {
           const b = (before ?? {}) as { status?: unknown; orderId?: unknown };
           if (String(b.status ?? "") !== "delivered") {
@@ -2329,9 +2726,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 }
               }
               // Status flip LAST: only a fully-settled delivery reads delivered.
+              // POD evidence rides the order row (buyer tracking renders it).
+              const priorLog = Array.isArray((order as { deliveryLog?: unknown }).deliveryLog)
+                ? ((order as { deliveryLog: unknown[] }).deliveryLog)
+                : [];
               await prisma.order.update({
                 where: { id: order.id },
-                data: { status: "delivered", deliveryStatus: "delivered", actualDelivery: shipDeliveryAt },
+                data: {
+                  status: "delivered",
+                  deliveryStatus: "delivered",
+                  actualDelivery: shipDeliveryAt,
+                  deliveryLog: [...priorLog, { at: shipDeliveryAt, by: `staff:${String(session.name ?? "desk")}`, note: shipPod }],
+                },
               });
               });
             }
@@ -2495,6 +2901,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (PAID_RAILS.has(resource) && (role === "manager" || role === "finance" || role === "moderator" || role === "app")) {
     return forbidden("Paid rails are sold by the promotions engine — staff can hide/show rows, not mint them.");
   }
+  // Moderator dispute scope is triage-only (PATCH under_review): creating or
+  // deleting dispute rows is manager/super_admin territory.
+  if (resource === "disputes" && role === "moderator") {
+    return NextResponse.json({ error: "Moderators can triage disputes (mark under review) — creating them needs a manager." }, { status: 403 });
+  }
 
   const body = await request.json();
   if (typeof body !== "object" || body === null) {
@@ -2516,7 +2927,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
       appScopedBody = { id: raw.id, ...sanitizeStorefrontBannerForApp(raw, appUser) };
     }
-    else if (resource === "sellers") appScopedBody = sanitizeSellerForApp(raw, appUser);
+    else if (resource === "sellers") {
+      appScopedBody = sanitizeSellerForApp(raw, appUser);
+      const kycErr = kycFormatError(appScopedBody);
+      if (kycErr) return NextResponse.json({ error: kycErr }, { status: 400 });
+    }
     else if (resource === "promotions") appScopedBody = sanitizePromotionForApp(raw, appUser);
         else if (resource === "orders") appScopedBody = sanitizeOrderForApp(raw, appUser);
     else if (resource === "tickets") {
@@ -2565,6 +2980,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const prisma = (await resolveDb()) as any;
   if (prisma) {
     try {
+      // Ticket id squat guard: the app sends its local ticket id (the opener
+      // message joins on it), so the id must stay client-settable — but a row
+      // with that id belonging to ANOTHER requester 409s instead of P2002ing
+      // into a 503 id-existence oracle.
+      if (resource === "tickets" && role === "app" && cleanPayloadPost.id) {
+        const clash = await prisma.supportTicket.findUnique({ where: { id: String(cleanPayloadPost.id) } }).catch(() => null);
+        const appU = (session as unknown as { appUser?: Record<string, unknown> }).appUser ?? {};
+        const callerName = String(appU.name ?? appU.username ?? "").trim();
+        if (clash && callerName && String((clash as { userName?: unknown }).userName ?? "") !== callerName) {
+          return NextResponse.json({ error: "Ticket id already in use — retry with a fresh ticket." }, { status: 409 });
+        }
+      }
       // KYC resubmission: a seller application is idempotent per user. If the
       // caller-owned row already exists (id = app_<username>), update it instead
       // of failing with a unique-violation misreported as "Database unavailable".
@@ -2573,8 +3000,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (existing) {
           // Re-submission resets a rejected/suspended application to pending for
           // re-review, but NEVER silently re-approves or modifies an approved one.
+          // Live counters survive: the create-lane defaults (score/productsCount
+          // 0, fresh joinedAt) used to zero an approved row's earned values.
           const resetStatus = ["rejected", "suspended", "pending"].includes(String(existing.kycStatus));
-          const patch = { ...cleanPayloadPost, kycStatus: resetStatus ? "pending" : existing.kycStatus, gstStatus: resetStatus ? "pending" : existing.gstStatus, submittedAt: new Date().toISOString() };
+          const { score: _dropScore, productsCount: _dropCount, totalSales: _dropSales, rating: _dropRating, reviewCount: _dropReviews, joinedAt: _dropJoined, ...resubmit } = cleanPayloadPost as Record<string, unknown>;
+          void _dropScore; void _dropCount; void _dropSales; void _dropRating; void _dropReviews; void _dropJoined;
+          const patch = { ...resubmit, kycStatus: resetStatus ? "pending" : existing.kycStatus, gstStatus: resetStatus ? "pending" : existing.gstStatus, submittedAt: new Date().toISOString() };
           const row = await prisma.seller.update({ where: { id: String(cleanPayloadPost.id) }, data: patch });
           await writeAuditSafe({ action: "data.create", entity: resource, entityId: String(row.id ?? ""), details: "Seller KYC resubmitted (upsert)", adminName: session.name, ip: getClientIp(request) });
           return NextResponse.json({ row: serialize(row, resource) });
@@ -2695,6 +3126,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           return NextResponse.json({ error: "Not your order." }, { status: 403 });
         }
         (cleanPayloadPost as Record<string, unknown>).orderRef = String((linked as { trackingNumber?: unknown }).trackingNumber ?? ref);
+        // Server-stamped (client timestamps left the whitelist with P3-2).
+        (cleanPayloadPost as Record<string, unknown>).requestedAt = new Date();
+        // Seller identity from the linked order (sanitizeRefundForApp forces
+        // buyerName from the token but nothing set sellerName — required
+        // column, so every data-lane app refund 500d as P2012).
+        (cleanPayloadPost as Record<string, unknown>).sellerName = String((linked as { sellerName?: unknown }).sellerName ?? "");
       }
       const row = await prisma[PRISMA_MODELS[resource]].create({ data: cleanPayloadPost });
       // Ticket body without a column: SupportTicket has no description field
@@ -2743,6 +3180,22 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { resource } = await params;
   if (!PRISMA_MODELS[resource]) return NextResponse.json({ error: "Unknown resource" }, { status: 404 });
   if (!writeAllowed(resource, role)) return forbidden();
+
+  // Paid rails are engine-owned (mirrors PATCH/POST gates): staff DELETE
+  // would vaporize sold inventory with the purchase still active. Managers
+  // and below cannot DELETE paid rails at all — hide via status instead.
+  // Super_admin can only delete non-active rows; active rows must go through
+  // the promotions refund path (which unpins + credits).
+  // Moderator dispute scope is triage-only: no DELETE (see PATCH/POST gates).
+  {
+    const PAID_DELETE = new Set(["top-sellers", "hot-deals", "featured-posts", "spotlights"]);
+    if (PAID_DELETE.has(resource) && role !== "super_admin") {
+      return NextResponse.json({ error: "Paid rails are engine-owned — hide via status, never delete." }, { status: 403 });
+    }
+    if (resource === "disputes" && role === "moderator") {
+      return NextResponse.json({ error: "Moderators can triage disputes — deleting them needs a manager." }, { status: 403 });
+    }
+  }
 
   const { id } = await request.json();
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -2907,19 +3360,32 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
               }
             }
           } else if (resource === "sellers") {
-            const s = await prisma.seller.findUnique({ where: { id: String(id) }, select: { businessName: true } });
+            // Live-data guard keyed on EXACT username where possible: Post rows
+            // carry authorUsername (stable identity); Product/Order rows carry
+            // only the mutable display sellerName, so those stay exact-match
+            // (never contains — similar business names false-refused deletes
+            // while renamed sellers slipped through). The row id itself is
+            // app_<username> for app-filed applications — strongest key.
+            const rowId = String(id);
+            const unameFromId = rowId.startsWith("app_") ? rowId.slice(4) : "";
+            const s = await prisma.seller.findUnique({ where: { id: rowId }, select: { businessName: true } });
             const biz = s?.businessName ? String(s.businessName) : null;
-            if (biz) {
-              const [products, orders] = await Promise.all([
-                prisma.product.count({ where: { sellerName: { contains: biz, mode: "insensitive" } } }),
-                prisma.order.count({ where: { sellerName: { contains: biz, mode: "insensitive" } } }),
-              ]);
-              if (products || orders) {
-                return NextResponse.json(
-                  { error: `Seller has live data (${products} products, ${orders} orders). Soft-delete instead.` },
-                  { status: 409 }
-                );
-              }
+            const [postCount, products, orders] = await Promise.all([
+              unameFromId
+                ? prisma.post.count({ where: { authorUsername: unameFromId } }).catch(() => 0)
+                : Promise.resolve(0),
+              biz
+                ? prisma.product.count({ where: { sellerName: biz } }).catch(() => 0)
+                : Promise.resolve(0),
+              biz
+                ? prisma.order.count({ where: { sellerName: biz } }).catch(() => 0)
+                : Promise.resolve(0),
+            ]);
+            if (postCount || products || orders) {
+              return NextResponse.json(
+                { error: `Seller has live data (${postCount} listings, ${products} products, ${orders} orders). Soft-delete instead.` },
+                { status: 409 }
+              );
             }
             // KYC evidence is irreplaceable: SellerDocument + SellerAuditLog
             // rows cascade-delete with the seller, so a hard delete while any
@@ -2941,6 +3407,26 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
           // destructive op rather than deleting blind.
           return NextResponse.json({ error: "Could not verify dependents — delete refused" }, { status: 503 });
         }
+      }
+      // Active paid placement guard (super_admin included): deleting an
+      // active rail row orphans a live paid slot with the purchase still
+      // active (unbillable, unrefundable). Hide via status or refund the
+      // purchase via the promotions desk instead.
+      if (resource === "top-sellers" || resource === "hot-deals" || resource === "featured-posts" || resource === "spotlights") {
+        try {
+          const rail = await prisma[PRISMA_MODELS[resource]].findUnique({ where: { [PRIMARY_KEY[resource] ?? "id"]: id } }).catch(() => null);
+          if (rail && String((rail as { status?: unknown }).status ?? "") === "active") {
+            return NextResponse.json({ error: "Active paid placement — hide via status or refund the purchase; delete is refused." }, { status: 409 });
+          }
+        } catch {}
+      }
+      if (resource === "promotions") {
+        try {
+          const promo = await prisma.promotionPurchase.findUnique({ where: { id: String(id) } }).catch(() => null);
+          if (promo && String((promo as { status?: unknown }).status ?? "") === "active") {
+            return NextResponse.json({ error: "Active campaign — end/refund via the promotions desk so rails unpin; delete is refused." }, { status: 409 });
+          }
+        } catch {}
       }
       await prisma[PRISMA_MODELS[resource]].delete({ where: { [PRIMARY_KEY[resource] ?? "id"]: id } });
       if (resource === "products" && String(id).startsWith("lst_")) {

@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeftIcon, SendIcon, CheckIcon } from '../../utils/icons';
+import { ChevronLeftIcon, CheckIcon } from '../../utils/icons';
 import { colors } from '../../utils/theme';
 import type { Dispute, DisputeTimelineEntry } from '../disputes';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,7 +38,6 @@ export default function DisputeDetailScreen() {
   }, [user?.username]);
   const [loaded, setLoaded] = useState(false);
   const [dispute, setDispute] = useState<Dispute | null>(null);
-  const [response, setResponse] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -72,31 +71,12 @@ export default function DisputeDetailScreen() {
     return () => { cancelled = true; };
   }, [disputeId, getKey, tokenSeq]);
 
-  const sendResponse = () => {
-    const text = response.trim();
-    if (!dispute || !text) return;
-    const entry: DisputeTimelineEntry = {
-      id: `t${Date.now()}`,
-      author: 'you',
-      text,
-      time: Date.now(),
-    };
-    const next = { ...dispute, timeline: [...dispute.timeline, entry] };
-    setDispute(next);
-    setResponse('');
-    const key = getKey();
-    AsyncStorage.getItem(key)
-      .then((data) => {
-        if (!data) return;
-        try {
-          const parsed = JSON.parse(data);
-          if (Array.isArray(parsed)) {
-            const updated = parsed.map((d: Dispute) => (d.id === dispute.id ? next : d));
-            AsyncStorage.setItem(key, JSON.stringify(updated)).catch(() => {});
-          }
-        } catch {}
-      })
-      .catch(() => {});
+  // No local reply box: dispute threads have no server backing, so a reply
+  // composer faked a conversation nobody else could see. Follow-ups route to
+  // Support (server-backed ticket + opener message) with the dispute linked.
+  const contactSupport = () => {
+    if (!dispute) return;
+    router.push(`/support?topic=${encodeURIComponent(`dispute:${dispute.orderRef}`)}`);
   };
 
   return (
@@ -235,28 +215,21 @@ export default function DisputeDetailScreen() {
             </View>
           ) : null}
 
-          {/* Add response */}
+          {/* Follow-up via Support (server-backed) — never a local-only reply */}
           {dispute.status !== 'resolved' && (
-            <View className="flex-row items-center">
-              <TextInput
-                className="flex-1 h-12 px-4 mr-3"
-                style={{ borderRadius: 16, backgroundColor: colors.surfaceContainerLow, color: colors.textPrimary }}
-                placeholder="Add a response…"
-                placeholderTextColor={colors.secondary}
-                value={response}
-                onChangeText={setResponse}
-                onSubmitEditing={sendResponse}
-                returnKeyType="send"
-              />
-              <TouchableOpacity
-                className="w-12 h-12 items-center justify-center rounded-full"
-                style={{ backgroundColor: response.trim() ? colors.primaryContainer : colors.surfaceContainer }}
-                onPress={sendResponse}
-              >
-                <SendIcon size={20} color={response.trim() ? colors.onPrimary : colors.secondary} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              className="flex-row items-center justify-center h-12 px-4"
+              style={{ borderRadius: 16, backgroundColor: colors.primaryContainer }}
+              onPress={contactSupport}
+            >
+              <Text className="font-inter-600 text-white" style={{ fontSize: 14, lineHeight: 20 }}>
+                Add information via Support
+              </Text>
+            </TouchableOpacity>
           )}
+          <Text className="font-inter-400 text-textSecondary mt-3 text-center" style={{ fontSize: 12, lineHeight: 16 }}>
+            Replies here reach the susej team through a support ticket linked to this dispute.
+          </Text>
         </ScrollView>
       )}
     </KeyboardAvoidingView>

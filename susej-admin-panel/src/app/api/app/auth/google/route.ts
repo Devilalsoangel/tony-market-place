@@ -21,6 +21,30 @@ function throttleGoogleIp(ip: string): boolean {
   if (cur.count > GOOGLE_MAX) return false;
   return true;
 }
+// Mint bucket (5/hour/IP, email-register parity): each mint creates ₹500 of
+// spendable-after-hold value, and plus-addressed Gmails are distinct verified
+// emails — without this, 30/min/IP farms ₹15k/min of bonus fuel (the hold
+// delays withdrawal, it doesn't prevent the mint). Checked only when about
+// to mint (existing-user logins never consume the budget); recorded only
+// when the create commits.
+const MINT_WINDOW_MS = 60 * 60 * 1000;
+const MINT_MAX = 5;
+const mintHits = new Map<string, { count: number; resetAt: number }>();
+function googleMintAllowed(ip: string): boolean {
+  const now = Date.now();
+  const cur = mintHits.get(ip);
+  if (!cur || now >= cur.resetAt) return true;
+  return cur.count < MINT_MAX;
+}
+function recordGoogleMint(ip: string): void {
+  const now = Date.now();
+  const cur = mintHits.get(ip);
+  if (!cur || now >= cur.resetAt) {
+    mintHits.set(ip, { count: 1, resetAt: now + MINT_WINDOW_MS });
+  } else {
+    cur.count += 1;
+  }
+}
 
 export async function POST(req: NextRequest) {
   let body: { idToken?: string; devBypass?: boolean; email?: string; name?: string };
@@ -69,6 +93,9 @@ export async function POST(req: NextRequest) {
         if (!c) { username = finalUsername; break; }
         finalUsername = `${username}${Math.floor(1000 + Math.random() * 9000)}`;
       }
+      if (!googleMintAllowed(getClientIp(req))) {
+        return NextResponse.json({ error: "Too many new accounts from this network — try again later" }, { status: 429 });
+      }
       try {
         user = await prisma.user.create({
           data: {
@@ -81,6 +108,7 @@ export async function POST(req: NextRequest) {
             joinedAt: new Date(),
           },
         });
+        recordGoogleMint(getClientIp(req));
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         if (msg.includes("Unique constraint") || (e as { code?: string })?.code === "P2002") {
@@ -234,6 +262,9 @@ export async function POST(req: NextRequest) {
       finalUsername = `${username}${Math.floor(1000 + Math.random() * 9000)}`;
     }
     const avatar = typeof info.picture === "string" ? info.picture.trim() : null;
+    if (!googleMintAllowed(getClientIp(req))) {
+      return NextResponse.json({ error: "Too many new accounts from this network — try again later" }, { status: 429 });
+    }
     try {
       user = await prisma.user.create({
         data: {
@@ -247,6 +278,7 @@ export async function POST(req: NextRequest) {
           joinedAt: new Date(),
         },
       });
+      recordGoogleMint(getClientIp(req));
       // Bind subject at birth (guarded: no-op until the column migration lands).
       if (sub) {
         try {

@@ -7,6 +7,26 @@ const HASHTAGS_KEY_BASE = '@susej_followed_hashtags';
 
 const normalizeTag = (tag: string) => tag.trim().toLowerCase().replace(/^#/, '');
 
+/**
+ * Extract #tags from free text, Unicode-aware (Indic scripts included):
+ * #[letters/digits/_] in any script. The old ASCII-only \w silently dropped
+ * every non-Latin tag at creation AND at detail-parse time.
+ */
+export function extractHashtags(text: string): string[] {
+  const out: string[] = [];
+  try {
+    const re = /#([\p{L}\p{N}_]+)/gu;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text ?? '')) !== null) {
+      out.push(`#${m[1].toLowerCase()}`);
+    }
+  } catch {
+    const fallback = (text ?? '').match(/#(\w+)/g) ?? [];
+    for (const t of fallback) out.push(t.toLowerCase());
+  }
+  return [...new Set(out)];
+}
+
 interface HashtagContextType {
   /** Tags (lowercase, no '#') the current user follows */
   followedHashtags: string[];

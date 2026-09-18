@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { nearbyImages } from '../utils/screenImages';
-import { resolveAvatar } from '../utils/productImages';
+import { AvatarView } from '../components/AvatarView';
 import { LeafletMapHost, type LeafletMarker } from '../components/LeafletMap';
 import {
   BackIcon,
@@ -146,6 +146,8 @@ export default function MapScreen() {
 
   const origin = userLoc ?? CENTER;
 
+  // Pune fallback is a disclosed default (location off/denied), never
+  // presented as the user's position — the recenter copy says so.
   const recenter = () => {
     if (userLoc) {
       setCenterTarget({ lat: userLoc.latitude, lng: userLoc.longitude, zoom: 15 });
@@ -227,12 +229,15 @@ export default function MapScreen() {
   );
 
   const chips = useMemo(() => {
+    // Pinned AND unmapped sellers feed the chips: with zero precise pins
+    // (the honest prod state) the chips used to collapse to ['All'] while
+    // unmapped rows carried real filterable categories.
     const cats =
       view === 'Sellers'
-        ? new Set(sellers.flatMap((s) => s.categories))
+        ? new Set([...sellers.flatMap((s) => s.categories), ...unmappedSellers.flatMap((s) => s.categories ?? [])])
         : new Set(communities.map((c) => c.category).filter(Boolean));
     return ['All', ...Array.from(cats)];
-  }, [view, sellers, communities]);
+  }, [view, sellers, unmappedSellers, communities]);
 
   const visibleSellers = useMemo(
     () =>
@@ -408,13 +413,17 @@ export default function MapScreen() {
     >
       <SearchIcon size={18} color={colors.secondary} />
       <Text className="flex-1 ml-3 text-figma-14 font-inter-400 text-textSecondary">
-        Search nearby...
+        Search marketplace...
       </Text>
       <MapPinIcon size={16} color={colors.secondary} />
     </TouchableOpacity>
   );
 
-  const segmented = (
+  // Communities have no coordinates anywhere in the model (no lat/lng writer
+  // exists), so the toggle would offer a permanently empty view. Render it
+  // only when pins exist; sellers stay the single truth otherwise.
+  const hasCommunityPins = communityPins.length > 0;
+  const segmented = hasCommunityPins ? (
     <View className="flex-row bg-surfaceContainerLowest rounded-figma-full p-1" style={pillShadow}>
       {(['Sellers', 'Communities'] as const).map((v) => (
         <TouchableOpacity
@@ -428,7 +437,7 @@ export default function MapScreen() {
         </TouchableOpacity>
       ))}
     </View>
-  );
+  ) : null;
 
   const chipsRow = (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
@@ -455,8 +464,8 @@ export default function MapScreen() {
   const renderSellerRow = (s: SellerPin) => (
     <View className="bg-surfaceContainerLowest rounded-figma-24 p-4 mb-3" style={cardShadow}>
       <View className="flex-row items-center">
-        <View className="w-10 h-10 rounded-full mr-3 overflow-hidden" style={{ backgroundColor: colors.surfaceContainer }}>
-          <Image source={resolveAvatar(s.username)} className="w-full h-full" />
+        <View className="mr-3">
+          <AvatarView name={s.username} size={40} />
         </View>
         <View className="flex-1">
           <View className="flex-row items-center gap-1">
@@ -489,8 +498,8 @@ export default function MapScreen() {
   const renderUnmappedRow = (s: UnmappedSeller) => (
     <View className="bg-surfaceContainerLowest rounded-figma-24 p-4 mb-3" style={cardShadow}>
       <View className="flex-row items-center">
-        <View className="w-10 h-10 rounded-full mr-3 overflow-hidden" style={{ backgroundColor: colors.surfaceContainer }}>
-          <Image source={resolveAvatar(s.username)} className="w-full h-full" />
+        <View className="mr-3">
+          <AvatarView name={s.username} size={40} />
         </View>
         <View className="flex-1">
           <View className="flex-row items-center gap-1">
@@ -567,8 +576,8 @@ export default function MapScreen() {
   const sellerCard = selectedSeller ? (
     <View className="bg-surfaceContainerLowest rounded-figma-24 p-4 mx-4 mt-3" style={cardShadow}>
       <View className="flex-row items-center">
-        <View className="w-12 h-12 rounded-full mr-3 overflow-hidden" style={{ backgroundColor: colors.surfaceContainer }}>
-          <Image source={resolveAvatar(selectedSeller.username)} className="w-full h-full" />
+        <View className="mr-3">
+          <AvatarView name={selectedSeller.username} size={48} />
         </View>
         <View className="flex-1">
           <View className="flex-row items-center gap-1">
@@ -762,7 +771,7 @@ export default function MapScreen() {
               >
                 <SearchIcon size={18} color={colors.secondary} />
                 <Text className="flex-1 ml-2 text-figma-14 font-inter-400 text-textSecondary">
-                  Search nearby...
+                  Search marketplace...
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -780,7 +789,7 @@ export default function MapScreen() {
                 onPress={recenter}
               >
                 <Text className="flex-1 text-figma-12 font-inter-500 text-textSecondary mr-3">
-                  Location off — tap to retry and find places near you
+                  Location off — showing Pune as a default. Tap to retry your location.
                 </Text>
                 <GpsTargetIcon size={16} color={colors.primaryContainer} />
               </TouchableOpacity>

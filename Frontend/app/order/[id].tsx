@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, MapPinIcon, StarIcon, SendIcon, ShopIcon, BagIcon, ChevronRightIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
 import { useOrders, STATUS_LABELS, REFUND_STATUS_LABELS, ORDER_STATUS_FLOW } from '../../contexts/OrderContext';
-import type { Order } from '../../contexts/OrderContext';
+import type { Order, Refund, RefundStatus, RefundTimelineEntry } from '../../contexts/OrderContext';
 import { resolveListingImage } from '../../utils/productImages';
 import { serverApi } from '../../utils/serverApi';
 
@@ -101,6 +101,42 @@ export default function OrderDetailsScreen() {
           reviewComment: hit.reviewComment ? String(hit.reviewComment) : undefined,
           address: hit.address ? String(hit.address) : undefined,
           paymentMethod: hit.paymentMethod ? String(hit.paymentMethod) : undefined,
+          // Delivery stamp drives the return window + "Delivered on" date —
+          // without it a second-device receipt anchors both to purchase date.
+          ...(typeof hit.actualDelivery === 'string' && hit.actualDelivery ? { actualDelivery: hit.actualDelivery } : {}),
+          // POD log rides to tracking the same way.
+          ...(Array.isArray(hit.deliveryLog) && hit.deliveryLog.length ? { deliveryLog: hit.deliveryLog } : {}),
+          // Second-device receipt truth: without these a fresh install shows
+          // no refund card, no fee lines, and offers Cancel on rows the
+          // server would refuse (cancel/refuse flicker).
+          ...(hit.deliveryFee !== undefined ? { deliveryFee: Number(hit.deliveryFee) || 0 } : {}),
+          ...(typeof hit.promoCode === 'string' && hit.promoCode ? { promoCode: hit.promoCode } : {}),
+          ...(typeof hit.buyerUsername === 'string' && hit.buyerUsername ? { buyerUsername: hit.buyerUsername } : {}),
+          ...(typeof hit.paymentMethod === 'string' && hit.paymentMethod ? { paymentMethod: hit.paymentMethod } : {}),
+          ...(typeof hit.paymentStatus === 'string' && hit.paymentStatus ? { paymentStatus: hit.paymentStatus } : {}),
+          ...(hit.disputeFrozen !== undefined ? { disputeFrozen: Boolean(hit.disputeFrozen) } : {}),
+          ...(hit.refund && typeof hit.refund === 'object'
+            ? (() => {
+                const sr = hit.refund as Partial<Refund> & { timeline?: Array<Partial<RefundTimelineEntry>> };
+                const st: RefundStatus =
+                  sr.status === 'approved' || sr.status === 'rejected' || sr.status === 'refunded' ? sr.status : 'requested';
+                return {
+                  refund: {
+                    id: String(sr.id ?? ''),
+                    reason: String(sr.reason ?? ''),
+                    status: st,
+                    timeline: Array.isArray(sr.timeline)
+                      ? sr.timeline.map((t, i) => ({
+                          author: t.author === 'seller' || t.author === 'platform' ? t.author : ('you' as const),
+                          text: String(t.text ?? ''),
+                          time: Number(t.time ?? Date.now()),
+                        }))
+                      : [],
+                    requestedAt: Number(sr.requestedAt ?? Date.now()),
+                  } as Refund,
+                };
+              })()
+            : {}),
           serverId: String(hit.id),
           tracking: labels.map((label, i) => ({
             label,
@@ -120,9 +156,14 @@ export default function OrderDetailsScreen() {
 
   const submitRefund = () => {
     if (!order || !refundReason) return;
-    requestRefund(order.id, refundReason);
+    const reason = refundReason;
     setRefundReason(null);
     setShowRefundPicker(false);
+    // Awaited: an offline/refused request rolls back instead of rendering a
+    // "requested" row the server never holds (which had no retry path).
+    void requestRefund(order.id, reason).then((ok) => {
+      if (!ok) Alert.alert('Refund not recorded', 'Check your connection and try again — nothing was sent.');
+    });
   };
 
   const handleRetrySync = async () => {
@@ -186,7 +227,7 @@ export default function OrderDetailsScreen() {
   const isCancelled = order.status === 'cancelled';
   const activeIdx = isCancelled ? -1 : steps.findIndex((s) => s.label === STATUS_LABELS[order.status]);
 
-  const canCancel = !order.refund && (order.status === 'placed' || order.status === 'confirmed');
+  const canCancel = !order.refund && (order.status === 'placed' || order.status === 'confirmed' || order.status === 'preparing');
 
   const confirmCancel = () => {
     const buttons: AlertButton[] = [
@@ -194,7 +235,11 @@ export default function OrderDetailsScreen() {
         text: reason,
         style: 'default' as const,
         onPress: () => {
-          cancelOrder(order.id, reason);
+          void cancelOrder(order.id, reason).then((ok) => {
+            if (!ok) {
+              Alert.alert('Cannot cancel', 'The server refused the cancel — the order was restored. Check connection and try again.');
+            }
+          });
         },
       })),
       { text: 'Keep order', style: 'cancel' as const },
@@ -203,10 +248,23 @@ export default function OrderDetailsScreen() {
   };
 
   const orderNumber = order.orderNumber.startsWith('#') ? order.orderNumber : `#${order.orderNumber}`;
-  const orderDate = new Date(order.placedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // Delivery truth: tracking step time → server delivery stamp → unknown.
+  // Never the purchase date — "Delivered on <order date>" was wrong on every
+  // old order, and unknown stays dateless instead of fabricating one.
+  const deliveredStepEarly = order.tracking.find((s) => s.done && s.label === 'Delivered');
+  const deliveredStepMs = deliveredStepEarly ? new Date(deliveredStepEarly.time).getTime() : NaN;
+  const stampMs = (() => {
+    const raw = (order as { actualDelivery?: unknown }).actualDelivery;
+    if (typeof raw !== 'string' || !raw) return NaN;
+    const t = Date.parse(raw);
+    return Number.isFinite(t) ? t : NaN;
+  })();
+  const knownDeliveredMs = !Number.isNaN(deliveredStepMs) ? deliveredStepMs : stampMs;
   const etaLine =
     order.status === 'delivered'
-      ? `Delivered on ${orderDate}`
+      ? (!Number.isNaN(knownDeliveredMs)
+          ? `Delivered on ${new Date(knownDeliveredMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+          : 'Delivered')
       : order.status === 'cancelled'
         ? 'Order cancelled'
         : order.kind === 'food'
@@ -215,9 +273,15 @@ export default function OrderDetailsScreen() {
 
   const deliveredStep = order.tracking.find((s) => s.done && s.label === 'Delivered');
   const deliveredStepTime = deliveredStep ? new Date(deliveredStep.time).getTime() : NaN;
-  const deliveredAt = Number.isNaN(deliveredStepTime) ? order.placedAt : deliveredStepTime;
+  // Unknown delivery date hides the return window — anchoring it to the
+  // purchase date showed wrong open/expired states on second-device receipts.
+  const deliveredAt = !Number.isNaN(deliveredStepTime) ? deliveredStepTime : stampMs;
+  // Unknown delivery date stays OPEN (track-screen parity): the server has
+  // no window check (seller decides every request), so a false "over" would
+  // refuse a request the server would accept. Anchoring to purchase date
+  // showed wrong states — unknown means undecided, not expired.
   const withinReturnWindow =
-    order.status === 'delivered' && !order.refund && Date.now() <= deliveredAt + RETURN_WINDOW_MS;
+    order.status === 'delivered' && !order.refund && (Number.isNaN(deliveredAt) || Date.now() <= deliveredAt + RETURN_WINDOW_MS);
 
   const returnUntil = withinReturnWindow
     ? new Date(deliveredAt + RETURN_WINDOW_MS).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })

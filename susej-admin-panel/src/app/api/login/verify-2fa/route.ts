@@ -103,9 +103,9 @@ export async function POST(request: NextRequest) {
     data: { failedAttempts: 0, lockedUntil: null, lastLogin: new Date() },
   });
 
-  const token = signSession({ id: admin.id, name: admin.name, role: admin.role, loginId: admin.loginId });
+  const token = signSession({ id: admin.id, name: admin.name, role: admin.role, loginId: admin.loginId }, String((admin as { passwordHash?: unknown }).passwordHash ?? ""));
+  // HttpOnly cookie ONLY — never echo the session token in the body.
   const response = NextResponse.json({
-    token,
     user: {
       id: admin.id,
       name: admin.name,

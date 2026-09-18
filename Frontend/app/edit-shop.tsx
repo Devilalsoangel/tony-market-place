@@ -60,6 +60,37 @@ export default function EditShopScreen() {
       cancelled = true;
     };
   }, [deactivatedKey]);
+  // Offline-deactivate replay: updatePost resolves offline as success with no
+  // queue, so an airplane-mode deactivation never reached the server — and
+  // the next pull reseeds published rows over the local hidden paint. On
+  // entry, re-hide any persisted id the server still shows as published.
+  // (Deleted ids vanish from the persisted set on the next reactivate pass,
+  // which prunes via owner-visible GET.)
+  useEffect(() => {
+    if (!deactivatedKey || !deactivatedIds || deactivatedIds.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { serverApi } = await import('../utils/serverApi');
+        const res = await serverApi.getPosts({ seller: username ?? '' }).catch(() => null);
+        if (cancelled || !res?.ok) return;
+        const rows = ((res.data as { posts?: Array<{ id?: unknown; status?: unknown }> } | null)?.posts ?? []);
+        const stillPublished = new Set(
+          rows.filter((r) => String(r.status ?? '') === 'published').map((r) => String(r.id ?? ''))
+        );
+        for (const id of deactivatedIds) {
+          if (cancelled) return;
+          if (stillPublished.has(id)) {
+            await updatePost(id, { status: 'hidden' }).catch(() => false);
+          }
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deactivatedKey, deactivatedIds === null]);
   const shopKey = username ? `${SHOP_PROFILE_KEY_BASE}:${username}` : SHOP_PROFILE_KEY_BASE;
   const [name, setName] = useState(user?.businessName || '');
   const [tagline, setTagline] = useState('');
@@ -389,8 +420,31 @@ export default function EditShopScreen() {
                       try {
                         if (deactivated) {
                           const ids = deactivatedIds ?? [];
-                          const failed: string[] = [];
+                          // Republish by PERSISTED id, not cache intersection:
+                          // hidden server rows vanish from the cache on reseed,
+                          // so intersecting stranded every reseed-then-reactivate
+                          // behind a false "Shop live". updatePost PATCHes
+                          // hidden rows fine (owner lane). Truly deleted ids
+                          // (GET 200 with status removed — owners see removed)
+                          // are pruned, never republished (republishing them
+                          // resurrected deleted listings).
+                          const { serverApi: api } = await import('../utils/serverApi');
+                          const aliveIds: string[] = [];
                           for (const id of ids) {
+                            if (posts.some((p) => p.id === id)) {
+                              aliveIds.push(id);
+                              continue;
+                            }
+                            try {
+                              const res = await api.getPost(id);
+                              const st = String((res.data as { post?: { status?: unknown } } | null)?.post?.status ?? '');
+                              if (res.ok && st !== 'removed') aliveIds.push(id);
+                            } catch {
+                              aliveIds.push(id);
+                            }
+                          }
+                          const failed: string[] = [];
+                          for (const id of aliveIds) {
                             const ok = await updatePost(id, { status: 'published' }).catch(() => false);
                             if (!ok) failed.push(id);
                           }
@@ -407,11 +461,23 @@ export default function EditShopScreen() {
                             Alert.alert('Partially live', `${ids.length - failed.length} of ${ids.length} republished — ${failed.length} failed and reverted. Check your connection and retry.`);
                           }
                         } else {
-                          const ids = own.map((p) => p.id);
+                          // Union cache + server ids: a fresh install (or
+                          // partial cache) hides only what it can see while
+                          // buyers still see the rest — and reports full
+                          // success. The server list is truth for scope.
+                          const { serverApi: api2 } = await import('../utils/serverApi');
+                          const serverIds: string[] = await api2.getPosts({ seller: username ?? '' })
+                            .then((res) => {
+                              const rows = res.ok ? ((res.data as { posts?: Array<{ id?: unknown }> } | null)?.posts ?? []) : [];
+                              return rows.map((r) => String(r.id ?? '')).filter(Boolean);
+                            })
+                            .catch(() => []);
+                          const idSet = new Set<string>([...own.map((p) => p.id), ...serverIds]);
+                          const ids = [...idSet];
                           const failed: string[] = [];
-                          for (const p of own) {
-                            const ok = await updatePost(p.id, { status: 'hidden' }).catch(() => false);
-                            if (!ok) failed.push(p.id);
+                          for (const id of ids) {
+                            const ok = await updatePost(id, { status: 'hidden' }).catch(() => false);
+                            if (!ok) failed.push(id);
                           }
                           if (failed.length === 0) {
                             if (deactivatedKey) await AsyncStorage.setItem(deactivatedKey, JSON.stringify(ids));
@@ -420,7 +486,7 @@ export default function EditShopScreen() {
                           Alert.alert(
                             'Shop hidden',
                             failed.length > 0
-                              ? `${own.length - failed.length} of ${own.length} hidden — ${failed.length} failed and reverted. Check your connection and retry.`
+                              ? `${ids.length - failed.length} of ${ids.length} hidden — ${failed.length} failed and reverted. Check your connection and retry.`
                               : 'Your listings are now hidden from buyers.'
                           );
                         }

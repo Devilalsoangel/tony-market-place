@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, CloseIcon, VerifiedIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
 import { serverApi } from '../../utils/serverApi';
+import { useAuth } from '../../contexts/AuthContext';
 import { usePosts } from '../../contexts/PostContext';
 import { hasRealImage, resolveListingImage } from '../../utils/productImages';
 
@@ -25,6 +26,8 @@ interface Auction {
   id: string;
   title: string;
   seller: string;
+  /** Stable seller identity — the screen refuses self-bids (server 403s too). */
+  sellerUsername?: string;
   verified: boolean;
   startPrice: number;
   currentBid: number;
@@ -32,8 +35,12 @@ interface Auction {
   bidsCount: number;
   status: 'live' | 'upcoming' | 'ended';
   imageKey: string;
+  /** Server-joined listing cover. */
+  imageUrl?: string | null;
   startsLabel?: string;
   reminder?: boolean;
+  /** Device-only row (offline save / server refusal): bidding stays closed. */
+  localOnly?: boolean;
   bids: AuctionBid[];
 }
 
@@ -42,6 +49,7 @@ function normalizeAuction(a: any): Auction {
     id: String(a.id),
     title: a.title ?? 'Untitled auction',
     seller: a.seller ?? 'susej seller',
+    sellerUsername: typeof a.sellerUsername === 'string' ? a.sellerUsername : undefined,
     verified: !!a.verified,
     startPrice: Number(a.startPrice) || 0,
     currentBid: Number(a.currentBid) || 0,
@@ -49,8 +57,10 @@ function normalizeAuction(a: any): Auction {
     bidsCount: Number(a.bidsCount) || 0,
     status: a.status === 'ended' ? 'ended' : a.status === 'upcoming' ? 'upcoming' : 'live',
     imageKey: a.imageKey ?? String(a.id),
+    imageUrl: typeof a.imageUrl === 'string' && a.imageUrl ? a.imageUrl : undefined,
     startsLabel: a.startsLabel,
     reminder: !!a.reminder,
+    localOnly: a.localOnly === true ? true : undefined,
     bids: Array.isArray(a.bids) ? a.bids : [],
   };
 }
@@ -109,7 +119,11 @@ export default function AuctionDetailScreen() {
   const [now, setNow] = useState(Date.now());
   const [showBidInput, setShowBidInput] = useState(false);
   const [bidAmount, setBidAmount] = useState('');
+  // Server-resolved top bid (winner truth across devices). Null = unfetched
+  // or offline — the local thread is the fallback, never the verdict.
+  const [serverTop, setServerTop] = useState<{ bidder: string; amount: number; iAmWinning: boolean } | null>(null);
   const { posts } = usePosts();
+  const { user } = useAuth();
   // The auction photo IS the linked listing photo — resolved live so the
   // hammer price always shows the real item, never a stock photo.
   const listingPost = useMemo(
@@ -118,8 +132,10 @@ export default function AuctionDetailScreen() {
   );
   const heroSource = listingPost && hasRealImage(listingPost)
     ? resolveListingImage(listingPost, listingPost.id)
-    : auctionImage(auction?.imageKey ?? auctionId);
-  const heroHasPhoto = !!(listingPost && hasRealImage(listingPost));
+    : auction?.imageUrl
+      ? { uri: auction.imageUrl }
+      : auctionImage(auction?.imageKey ?? auctionId);
+  const heroHasPhoto = !!(listingPost && hasRealImage(listingPost)) || !!auction?.imageUrl;
 
   useEffect(() => {
     AsyncStorage.getItem(AUCTIONS_KEY)
@@ -142,8 +158,31 @@ export default function AuctionDetailScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  // Server truth on every focus (price/outbid/ended refresh): local cache is
-  // the offline fallback, never money truth. Local bid thread preserved.
+  // Server truth on every focus (price/outbid/ended/winner refresh): local
+  // cache is the offline fallback, never money truth. Local bid thread
+  // preserved. The detail lane additionally resolves the cross-device top
+  // bid — without it a rival phone's winning bid never appears here.
+  const fetchDetail = useCallback(async () => {
+    try {
+      const res = await serverApi.getAuction(auctionId);
+      const a = (res as { ok?: boolean; data?: { auction?: any } })?.data?.auction;
+      if (!res.ok || !a) return;
+      if (a.topBid && typeof a.topBid.amount === 'number') {
+        setServerTop({ bidder: String(a.topBid.bidder ?? ''), amount: Number(a.topBid.amount), iAmWinning: a.iAmWinning === true });
+      }
+      setAuction((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          currentBid: Number(a.currentBid ?? prev.currentBid),
+          status: (a.status === 'live' || a.status === 'upcoming' || a.status === 'ended' ? a.status : prev.status) as typeof prev.status,
+          bidsCount: Number(a.bidsCount ?? prev.bidsCount),
+          endTime: typeof a.endTime === 'number' ? a.endTime : prev.endTime,
+          imageUrl: typeof a.imageUrl === 'string' && a.imageUrl ? a.imageUrl : prev.imageUrl,
+        };
+      });
+    } catch {}
+  }, [auctionId]);
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -162,19 +201,40 @@ export default function AuctionDetailScreen() {
           };
         });
       }).catch(() => {});
+      if (active) void fetchDetail();
       return () => { active = false; };
-    }, [auctionId])
+    }, [auctionId, fetchDetail])
   );
 
   const endTime = auction?.endTime ?? 0;
   const remaining = Math.max(0, endTime - now);
   const ended = !!auction && (auction.status === 'ended' || (auction.status === 'live' && endTime > 0 && remaining <= 0));
-  const canBid = !!auction && auction.status === 'live' && !ended;
+  // No self-bids (server 403s too — this fails fast with the reason) and no
+  // bids on device-only rows (offline save / server refusal: bids there can
+  // never settle, so the button must not pretend they can).
+  const isOwnAuction = !!auction?.sellerUsername && !!user?.username &&
+    auction.sellerUsername.trim().toLowerCase() === user.username.trim().toLowerCase();
+  const canBid = !!auction && auction.status === 'live' && !ended && !auction.localOnly && !isOwnAuction;
 
+  // Winner truth at the moment it matters: when the hammer falls, resolve
+  // the server top bid once (focus refresh covers later visits).
+  const endKey = ended ? 'ended' : 'live';
+  useEffect(() => {
+    if (ended) void fetchDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endKey]);
+
+  // Winner: SERVER top bid wins whenever fetched (cross-device truth — a
+  // rival phone's higher bid never appears in the local thread). Local thread
+  // is the offline-only fallback (serverTop null = unfetched/offline).
   const winnerBid = useMemo(() => {
-    if (!auction || !ended || !auction.bids.length) return null;
+    if (!auction || !ended) return null;
+    if (serverTop && serverTop.amount > 0) {
+      return { id: 'server-top', bidder: serverTop.bidder || 'Another bidder', amount: serverTop.amount, time: '', you: serverTop.iAmWinning };
+    }
+    if (!auction.bids.length) return null;
     return [...auction.bids].sort((x, y) => y.amount - x.amount)[0];
-  }, [auction, ended]);
+  }, [auction, ended, serverTop]);
 
   const minBid = auction ? auction.currentBid + MIN_INCREMENT : 0;
   const bidValid = /^\d+$/.test(bidAmount) && Number(bidAmount) >= minBid;
@@ -201,6 +261,14 @@ export default function AuctionDetailScreen() {
 
   const openBidInput = () => {
     if (!auction) return;
+    if (isOwnAuction) {
+      Alert.alert('Your own auction', 'Bidding on your own lot is not allowed — it inflates the price other buyers pay.');
+      return;
+    }
+    if (auction.localOnly) {
+      Alert.alert('Not published yet', 'This lot lives on this device only until it publishes — bids placed now could never settle.');
+      return;
+    }
     setBidAmount(String(auction.currentBid + MIN_INCREMENT));
     setShowBidInput(true);
   };
@@ -236,6 +304,8 @@ export default function AuctionDetailScreen() {
     serverApi.placeBid(auction.id, amount).then((res) => {
       if (res.ok) {
         persistAuction(updated);
+        // Re-resolve winner truth promptly (a rival may have outbid meanwhile).
+        void fetchDetail();
       } else {
         // Server refused — roll back the optimistic row and say why.
         setAuction(prev);
@@ -308,10 +378,24 @@ export default function AuctionDetailScreen() {
                 className="font-inter-700"
                 style={{ fontSize: 10, lineHeight: 12, letterSpacing: 1, color: auction.status === 'live' ? colors.onError : auction.status === 'ended' ? colors.textSecondary : colors.onTertiary }}
               >
-                {auction.status === 'ended' ? 'ENDED' : auction.status === 'live' ? (ended ? 'ENDED' : 'LIVE') : 'UPCOMING'}
+                {auction.status === 'ended' ? 'ENDED' : auction.status === 'live' ? (auction.localOnly ? 'ON THIS DEVICE' : ended ? 'ENDED' : 'LIVE') : 'UPCOMING'}
               </Text>
             </View>
           </View>
+          {auction.localOnly ? (
+            <View className="mx-5 mt-3 px-4 py-3 rounded-figma-12" style={{ backgroundColor: colors.surfaceContainer }}>
+              <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
+                Saved on this device only — it never reached the Auction House, so no bids can settle here.
+              </Text>
+            </View>
+          ) : null}
+          {isOwnAuction && !ended ? (
+            <View className="mx-5 mt-3 px-4 py-3 rounded-figma-12" style={{ backgroundColor: colors.surfaceContainer }}>
+              <Text className="font-inter-500 text-textSecondary" style={{ fontSize: 12, lineHeight: 16 }}>
+                This is your lot — bidding on your own auction is not allowed.
+              </Text>
+            </View>
+          ) : null}
 
           {/* Title + seller */}
           <View className="px-5 pt-4">

@@ -6,6 +6,7 @@ import { ChevronLeftIcon } from '../../utils/icons';
 import { colors } from '../../utils/theme';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePosts } from '../../contexts/PostContext';
+import type { Post } from '../../contexts/PostContext';
 import { serverApi } from '../../utils/serverApi';
 import { isApprovedSeller } from '../../utils/marketplace';
 import SellerGate from '../../components/SellerGate';
@@ -26,10 +27,59 @@ export default function EditListingScreen() {
   const { user } = useAuth();
   const { posts, updatePost } = usePosts();
 
-  const post = useMemo(
+  const cachePost = useMemo(
     () => posts.find((p) => p.id === listingId),
     [posts, listingId]
   );
+  // Server fallback: a cold cache (fresh install, deep link, notification)
+  // used to dead-end at "Listing not found" though the server holds the row.
+  // Fetch once; the fetched row seeds the form exactly like the cached one.
+  const [serverPost, setServerPost] = useState<Post | null>(null);
+  const [fetching, setFetching] = useState(false);
+  useEffect(() => {
+    if (cachePost || !listingId || serverPost || fetching) return;
+    setFetching(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await serverApi.getPost(listingId);
+        const p = (res as { ok?: boolean; data?: { post?: any } })?.data?.post;
+        if (!cancelled && res.ok && p && p.id) {
+          setServerPost({
+            type: 'product',
+            id: String(p.id),
+            title: String(p.title ?? ''),
+            description: String(p.description ?? ''),
+            price: Number(p.price ?? 0),
+            mrp: typeof p.mrp === 'number' ? p.mrp : undefined,
+            category: String(p.category ?? 'General'),
+            subCategories: Array.isArray(p.subCategories) ? p.subCategories.map(String) : undefined,
+            hashtags: [],
+            likes: 0,
+            comments: 0,
+            createdAt: Date.now(),
+            image: typeof p.image === 'string' ? p.image : '',
+            images: Array.isArray(p.images) ? p.images.filter((u: unknown): u is string => typeof u === 'string') : [],
+            status: typeof p.status === 'string' ? p.status : undefined,
+            sellerUsername: String(p.sellerUsername ?? ''),
+            sellerName: String(p.sellerName ?? ''),
+            sellerLocation: String(p.sellerLocation ?? ''),
+            verified: Boolean(p.verified),
+            stockLeft: typeof p.stockLeft === 'number' ? p.stockLeft : undefined,
+            negotiable: typeof p.negotiable === 'boolean' ? p.negotiable : undefined,
+          });
+        } else if (!cancelled) {
+          setServerPost(null);
+        }
+      } catch {
+        if (!cancelled) setServerPost(null);
+      } finally {
+        if (!cancelled) setFetching(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [cachePost, listingId, serverPost, fetching]);
+  const post = cachePost ?? serverPost ?? undefined;
 
   const me = (user?.username ?? '').trim().toLowerCase();
   const isOwner = !!post && (post.sellerUsername ?? '').toLowerCase() === me;
@@ -127,7 +177,7 @@ export default function EditListingScreen() {
 
   if (!isApprovedSeller(user)) return <SellerGate title="Edit listing" user={user} />;
 
-  if (!listingId || !post) {
+  if (!listingId || (!post && !fetching)) {
     return (
       <View className="flex-1 bg-surface items-center justify-center px-8">
         <Text className="font-inter-700 text-center" style={{ fontSize: 18, color: colors.textPrimary }}>
@@ -143,6 +193,17 @@ export default function EditListingScreen() {
         >
           <Text className="font-inter-600" style={{ fontSize: 14, color: colors.onPrimary }}>Go back</Text>
         </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!post) {
+    // Server fallback still in flight — not "not found" yet.
+    return (
+      <View className="flex-1 bg-surface items-center justify-center px-8">
+        <Text className="font-inter-600 text-center" style={{ fontSize: 15, color: colors.textSecondary }}>
+          Loading listing…
+        </Text>
       </View>
     );
   }
@@ -196,12 +257,18 @@ export default function EditListingScreen() {
       image: post.image,
     };
     // Photos upload FIRST (hosted URLs only — file:// URIs are unviewable on
-    // other devices and the server rejects them). A picked-but-unuploaded
-    // photo blocks the save honestly instead of silently dropping.
+    // other devices and the server rejects them). Partial failure blocks the
+    // save: silently dropping a photo rewrites the gallery behind the seller.
     let hostedPhotos: string[];
     try {
       const { uploadAllToServer } = require('../../utils/mediaUpload');
-      hostedPhotos = await uploadAllToServer(photos);
+      const result = await uploadAllToServer(photos);
+      if (result.failed > 0) {
+        setSaving(false);
+        Alert.alert('Photos not uploaded', `${result.failed} photo${result.failed === 1 ? '' : 's'} could not be uploaded. Check your connection and try again — nothing was saved.`);
+        return;
+      }
+      hostedPhotos = result.urls;
     } catch {
       hostedPhotos = photos.every((u) => /^https?:\/\//i.test(u)) ? [...photos] : [];
     }

@@ -12,26 +12,39 @@ const publicRoutes = ["/login", "/login/2fa", "/forgot-password", "/reset-passwo
 // finance: money queues + payee/summary context (read-only except the payout/
 // refund queues it decides), moderator: community/review/report/message
 // moderation only.
+// Single source for the moderator scope (declared BEFORE roleRoutes — the old
+// duplicate list drifted: roleRoutes.moderator allowed /disputes the
+// enforcement prefixes denied, and vice versa for /blocked + /notifications).
+const moderatorAllowedPrefixes = [
+  "/dashboard/communities",
+  "/dashboard/reviews",
+  "/dashboard/reports",
+  "/dashboard/messages",
+  "/dashboard/blocked",
+  "/dashboard/posts",
+  "/dashboard/hashtags",
+  "/dashboard/support",
+  "/dashboard/notifications",
+  // Disputes triage desk: the API allows moderator under_review triage, so
+  // the page must be reachable too (page-denied + API-allowed is theater
+  // that locked triage out of its own queue).
+  "/dashboard/disputes",
+];
+const financeAllowedPrefixes = [
+  "/dashboard/payments",
+  "/dashboard/refunds",
+  "/dashboard/wallet",
+  "/dashboard/commission",
+  "/dashboard/orders",
+  "/dashboard/sellers",
+];
 const roleRoutes: Record<string, string[]> = {
   super_admin: ["/dashboard"],
   manager: ["/dashboard"],
-  finance: [
-    "/dashboard/payments",
-    "/dashboard/refunds",
-    "/dashboard/wallet",
-    "/dashboard/commission",
-    "/dashboard/orders",
-    "/dashboard/sellers",
-  ],
-  moderator: [
-    "/dashboard/communities",
-    "/dashboard/reviews",
-    "/dashboard/reports",
-    "/dashboard/messages",
-    "/dashboard/posts",
-    "/dashboard/hashtags",
-    "/dashboard/support",
-  ],
+  // Single source with the enforcement branch below (same drift class as the
+  // moderator list just unified — a second literal here WILL diverge).
+  finance: financeAllowedPrefixes,
+  moderator: moderatorAllowedPrefixes,
 };
 
 // Enforcement helper: manager cannot manage admins; moderator cannot touch commerce/finance.
@@ -48,17 +61,8 @@ function normalizeProxyRole(raw: unknown): string {
   return "moderator";
 }
 const managerBlockedPrefixes = ["/dashboard/admins", "/dashboard/system", "/dashboard/audit-logs"];
-const moderatorAllowedPrefixes = [
-  "/dashboard/communities",
-  "/dashboard/reviews",
-  "/dashboard/reports",
-  "/dashboard/messages",
-  "/dashboard/posts",
-  "/dashboard/hashtags",
-  "/dashboard/support",
-  "/dashboard/notifications",
-];
-
+// (moderatorAllowedPrefixes + financeAllowedPrefixes live at the top with
+// roleRoutes — single source.)
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -94,15 +98,7 @@ export default function proxy(request: NextRequest) {
         return NextResponse.redirect(new URL("/dashboard/communities?error=role", request.url));
       }
     } else if (role === "finance") {
-      const financeAllowed = [
-        "/dashboard/payments",
-        "/dashboard/refunds",
-        "/dashboard/wallet",
-        "/dashboard/commission",
-        "/dashboard/orders",
-        "/dashboard/sellers",
-      ];
-      const ok = pathname === "/dashboard" || financeAllowed.some((p) => pathname.startsWith(p));
+      const ok = pathname === "/dashboard" || financeAllowedPrefixes.some((p) => pathname.startsWith(p));
       if (!ok) {
         return NextResponse.redirect(new URL("/dashboard/payments?error=role", request.url));
       }

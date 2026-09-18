@@ -11,9 +11,11 @@ export async function GET(req: NextRequest) {
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
   const username = auth.user.username!;
+  // Case-insensitive party match (write paths already are — an exact-match
+  // list hid rows the PATCH lane would happily mutate).
   const rows = await prisma.dispute.findMany({
     where: {
-      OR: [{ buyerName: username }, { sellerName: username }],
+      OR: [{ buyerName: { equals: username, mode: "insensitive" } }, { sellerName: { equals: username, mode: "insensitive" } }],
     },
     orderBy: { raisedAt: "desc" },
     take: 100,
@@ -59,36 +61,82 @@ export async function POST(req: NextRequest) {
     where: { OR: [{ id: ref }, { id: hashedRef }, { trackingNumber: ref }, { trackingNumber: hashedRef }, { orderNumber: ref }, { orderNumber: hashedRef }] },
   });
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  if (order.buyerUsername !== username && order.sellerUsername !== username) {
+  // Case-insensitive identity (same class as the order route: exact-match
+  // 403d mixed-case owners while their UI allowed the action).
+  const meLower = String(username ?? "").trim().toLowerCase();
+  const partyBuyer = String(order.buyerUsername ?? "").trim().toLowerCase();
+  const partySeller = String(order.sellerUsername ?? "").trim().toLowerCase();
+  if (!meLower || (partyBuyer !== meLower && partySeller !== meLower)) {
     return NextResponse.json({ error: "Not your order" }, { status: 403 });
   }
-  const open = await prisma.dispute.findFirst({
-    where: { orderId: order.trackingNumber, status: { in: ["open", "under_review"] } },
-  });
-  if (open) {
-    return NextResponse.json(
-      { dispute: { id: open.id, orderRef: open.orderId, reason: open.reason, status: open.status } },
-      { status: 200 }
-    );
+  // Terminal orders can't host a new dispute: cancelled/refunded rows have no
+  // live money to rule on, and ruling stamps paymentStatus on a dead order
+  // (phantom-mirror trigger). Resolved-then-reopened flows stay desk-side.
+  if (String(order.status ?? "") === "cancelled" || String(order.paymentStatus ?? "") === "refunded") {
+    return NextResponse.json({ error: "This order is already closed — contact support instead" }, { status: 400 });
   }
-  const created = await prisma.dispute.create({
-    data: {
-      orderId: order.trackingNumber,
-      buyerName: order.buyerUsername ?? order.buyerName,
-      sellerName: order.sellerUsername ?? order.sellerName,
-      // The free-text complaint rides with the reason (the model has no
-      // separate body field); desk reads the full string.
-      reason: description ? `${reason} — ${description.slice(0, 400)}` : reason,
-      amount: Number(order.amount ?? 0),
-      status: "open",
-      raisedAt: new Date(),
-    } as never,
+  // Serialized open-or-return: check-then-create double-tapped twin "open"
+  // rows for one order (queue dupes + double seller pages). The order-row
+  // lock serializes concurrent opens; the re-read inside observes committed
+  // rows. Money stays safe either way (shared-title settlement guards), but
+  // the desk queue must not fork.
+  const outcome = await prisma.$transaction(async (tx: any) => {
+    // No fail-open catch on the lock: a lock failure must abort the tx (503,
+    // no row), never proceed to an unlocked check-then-create (twin rows).
+    await tx.$queryRawUnsafe(`SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`, order.id);
+    // Terminal re-check INSIDE the lock: the pre-tx read races a concurrent
+    // cancel (dispute opened on a dead order, ruling stamping mirrors on a
+    // cancelled row). The lock serializes cancel-vs-dispute.
+    const fresh = await tx.order.findUnique({ where: { id: order.id } });
+    // Vanished mid-tx: no row to rule on — abort, never fall back to the
+    // pre-tx snapshot (that fallback would recreate the race this re-read
+    // closes) and never proceed on a read blip.
+    if (!fresh) throw new Error("ORDER_CLOSED");
+    const freshStatus = String(fresh.status ?? "");
+    const freshPay = String((fresh as { paymentStatus?: unknown }).paymentStatus ?? "");
+    if (freshStatus === "cancelled" || freshPay === "refunded") {
+      throw new Error("ORDER_CLOSED");
+    }
+    const open = await tx.dispute.findFirst({
+      where: { orderId: order.trackingNumber, status: { in: ["open", "under_review"] } },
+    });
+    if (open) {
+      return { dispute: { id: open.id, orderRef: open.orderId, reason: open.reason, status: open.status }, status: 200 as const };
+    }
+    const created = await tx.dispute.create({
+      data: {
+        orderId: order.trackingNumber,
+        buyerName: order.buyerUsername ?? order.buyerName,
+        sellerName: order.sellerUsername ?? order.sellerName,
+        // The free-text complaint rides with the reason (the model has no
+        // separate body field); desk reads the full string.
+        reason: description ? `${reason} — ${description.slice(0, 400)}` : reason,
+        amount: Number(order.amount ?? 0),
+        status: "open",
+        raisedAt: new Date(),
+      } as never,
+    });
+    return { dispute: { id: created.id, orderRef: created.orderId, reason: created.reason, status: created.status }, status: 201 as const };
+  }).catch((e: unknown) => {
+    if (e instanceof Error && e.message === "ORDER_CLOSED") {
+      return { dispute: null, status: 400 as const, closed: true as const };
+    }
+    throw e;
   });
+  const created = outcome;
+  if ((created as { closed?: boolean }).closed || !created.dispute) {
+    return NextResponse.json({ error: "This order is already closed — contact support instead" }, { status: 400 });
+  }
+  const dispute = created.dispute;
   // Counterparty tell (fire-and-forget): disputes otherwise sit silent until
   // someone polls the list.
-  {
-    const counterparty = order.buyerUsername === username ? order.sellerUsername : order.buyerUsername;
-    const counterName = order.buyerUsername === username ? order.sellerName : order.buyerName;
+  if (created.status === 201) {
+    // Lowercase compare (party check above is): exact === resolved the
+    // counterparty to the CALLER on mixed-case usernames — the seller was
+    // never told, on the exact path built to replace polling.
+    const buyerLower = String(order.buyerUsername ?? "").trim().toLowerCase();
+    const counterparty = buyerLower === meLower ? order.sellerUsername : order.buyerUsername;
+    const counterName = buyerLower === meLower ? order.sellerName : order.buyerName;
     if (counterparty) {
       notifyUser(prisma, {
         username: counterparty, type: "order",
@@ -101,12 +149,12 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(
     {
       dispute: {
-        id: created.id,
-        orderRef: created.orderId,
-        reason: created.reason,
-        status: created.status,
+        id: dispute.id,
+        orderRef: dispute.orderRef,
+        reason: dispute.reason,
+        status: dispute.status,
       },
     },
-    { status: 201 }
+    { status: created.status }
   );
 }

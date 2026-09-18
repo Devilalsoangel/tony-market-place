@@ -11,7 +11,7 @@ import { resolveAvatar } from '../utils/productImages';
 type Tab = 'All' | 'Orders' | 'Social';
 const tabs: Tab[] = ['All', 'Orders', 'Social'];
 
-const ORDER_TYPES: NotifType[] = ['order'];
+const ORDER_TYPES: NotifType[] = ['order', 'wallet'];
 const SOCIAL_TYPES: NotifType[] = ['follower', 'like', 'comment', 'bookmark', 'promotion'];
 // System warnings (imageless listings, etc.) surface under BOTH tabs: they
 // are the one notification class that must never hide behind a filter.
@@ -47,6 +47,7 @@ export default function NotificationsScreen() {
       case 'comment': return 'New Comment';
       case 'bookmark': return 'New Save';
       case 'order': return 'Order Update';
+      case 'wallet': return 'Wallet Update';
       case 'promotion': return n.userName;
       default: return n.userName;
     }
@@ -60,6 +61,7 @@ export default function NotificationsScreen() {
       case 'comment': return `${n.userName} ${n.action}.`;
       case 'bookmark': return `${n.userName} ${n.action}.`;
       case 'order': return `${n.userName} ${n.action}${subject}.`;
+      case 'wallet': return `${n.userName} ${n.action}.`;
       case 'promotion': return n.action;
       default: return n.action;
     }
@@ -75,7 +77,13 @@ export default function NotificationsScreen() {
         break;
       }
       case 'order':
-        router.push('/orders');
+        // Deep-link the receipt when the tell carries it (tracking id):
+        // every order tell stamps targetId, and getOrder resolves
+        // #-prefixed numbers — landing on the generic list wasted it.
+        router.push(targetId ? `/order/${encodeURIComponent(String(targetId))}` : '/orders');
+        break;
+      case 'wallet':
+        router.push('/wallet');
         break;
       case 'bookmark':
         router.push('/saved');

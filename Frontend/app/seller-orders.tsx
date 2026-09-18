@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, Alert, TextInput } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from '../utils/icons';
@@ -59,9 +59,13 @@ function timeAgo(ts: number): string {
 export default function SellerOrdersScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { orders, loaded: ordersLoaded, updateOrderStatus, respondRefund } = useOrders();
+  const { orders, loaded: ordersLoaded, updateOrderStatus, respondRefund, cancelOrder } = useOrders();
   const { posts } = usePosts();
   const [tab, setTab] = useState<Tab>('All');
+  // Proof-of-delivery notes per order (courier tracking ID / receiver name).
+  // Mark Delivered requires one — a bare tap used to settle COD with zero
+  // evidence, and the server 400s without it.
+  const [podNotes, setPodNotes] = useState<Record<string, string>>({});
 
   // Canonical listing image: the real post's own photo when available; seeded
   // fallback only when the listing is not in the local cache.
@@ -102,8 +106,8 @@ export default function SellerOrdersScreen() {
   // formula here disagreed with hub + dashboard on identical orders.
   const earnings = sellerNetForOrders(queue);
 
-  const transition = async (order: Order, next: OrderStatus) => {
-    const ok = await updateOrderStatus(order.id, next);
+  const transition = async (order: Order, next: OrderStatus, podNote?: string) => {
+    const ok = await updateOrderStatus(order.id, next, podNote);
     if (!ok) {
       Alert.alert('Update did not go through', 'The order may have changed, or the sync failed. Refresh and try again — nothing was recorded.');
     }
@@ -122,10 +126,20 @@ export default function SellerOrdersScreen() {
         run: () =>
           Alert.alert(
             'Confirm delivery',
-            'Only mark delivered after the buyer receives the goods (POD / handover). False delivery marks settle COD earnings and can be disputed — abuse leads to suspension.',
+            'Only mark delivered after the buyer receives the goods. Enter the courier tracking ID or receiver name on the order card first — it is stored as the delivery proof the buyer sees. False delivery marks settle COD earnings and can be disputed — abuse leads to suspension.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Confirm POD', onPress: () => transition(o, 'delivered') },
+              {
+                text: 'Confirm POD',
+                onPress: () => {
+                  const note = (podNotes[o.id] ?? '').trim();
+                  if (note.length < 4) {
+                    Alert.alert('Proof needed', 'Enter the courier tracking ID or receiver name on the card before marking delivered.');
+                    return;
+                  }
+                  transition(o, 'delivered', note);
+                },
+              },
             ]
           ),
       };
@@ -300,6 +314,23 @@ export default function SellerOrdersScreen() {
                     {o.address || 'Address not yet synced — pull to refresh before shipping.'}
                   </Text>
                 </View>
+                {/* POD note: required before Mark Delivered (server 400s without
+                    it). Stored on the order; the buyer sees it on tracking. */}
+                {o.status === 'out_for_delivery' && (
+                  <View className="mt-2 px-3 py-2 rounded-figma-12" style={{ backgroundColor: colors.surfaceContainer }}>
+                    <Text className="font-inter-600 text-textSecondary" style={{ fontSize: 10, lineHeight: 12, letterSpacing: 0.8 }}>
+                      DELIVERY PROOF — TRACKING ID / RECEIVER NAME
+                    </Text>
+                    <TextInput
+                      value={podNotes[o.id] ?? ''}
+                      onChangeText={(t) => setPodNotes((prev) => ({ ...prev, [o.id]: t }))}
+                      placeholder="e.g. Delhivery 78410239655 / handed to Ramesh"
+                      placeholderTextColor={colors.textTertiary}
+                      maxLength={200}
+                      style={{ fontSize: 13, color: colors.textPrimary, paddingVertical: 6 }}
+                    />
+                  </View>
+                )}
 
                 <View className="flex-row mt-3" style={{ gap: 10 }}>
                   {o.refund && o.refund.status === 'requested' ? (
@@ -322,7 +353,7 @@ export default function SellerOrdersScreen() {
                           {action.label}
                         </Text>
                       </TouchableOpacity>
-                      {(o.status === 'placed' || o.status === 'confirmed') && (
+                      {(o.status === 'placed' || o.status === 'confirmed' || o.status === 'preparing') && (
                         <TouchableOpacity
                           className="h-11 px-3 rounded-figma-12 items-center justify-center"
                           style={{ backgroundColor: colors.surfaceContainer }}
@@ -334,7 +365,13 @@ export default function SellerOrdersScreen() {
                               `${o.orderNumber} will be cancelled and the buyer refunded to their wallet. Only decline when you cannot fulfil — repeated declines hurt your seller standing.`,
                               [
                                 { text: 'Keep order', style: 'cancel' },
-                                { text: 'Decline & refund buyer', style: 'destructive', onPress: () => transition(o, 'cancelled') },
+                                { text: 'Decline & refund buyer', style: 'destructive', onPress: () => {
+                                  void cancelOrder(o.id, 'Declined by seller — buyer refunded to wallet').then((ok) => {
+                                    if (!ok) {
+                                      Alert.alert('Decline did not go through', 'The server refused the cancel — nothing was refunded. Refresh and try again.');
+                                    }
+                                  });
+                                } },
                               ]
                             )
                           }

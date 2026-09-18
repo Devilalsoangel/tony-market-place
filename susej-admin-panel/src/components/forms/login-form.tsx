@@ -45,7 +45,7 @@ export function LoginForm() {
         setLoading(false);
         return;
       }
-      setAuth(data.user, data.token);
+      setAuth(data.user);
       router.push(from);
     } catch {
       setError("Login failed. Please try again.");

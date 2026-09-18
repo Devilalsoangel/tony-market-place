@@ -4,6 +4,22 @@
 // can never match real post ids, so every lookup was dead weight.)
 
 /**
+ * Buyer-visible listing title (server `title` is indexed truth since the
+ * title rollout; legacy rows fall back to the first description line).
+ * Seller surfaces MUST use this — description-first naming made sellers
+ * search in vain for their own buyer-visible titles.
+ */
+export function listingTitle(
+  post: { title?: unknown; description?: unknown } | null | undefined,
+  fallback = 'Untitled listing'
+): string {
+  const t = typeof post?.title === 'string' ? post.title.trim() : '';
+  if (t) return t;
+  const d = typeof post?.description === 'string' ? post.description.split('\n')[0].trim() : '';
+  return d || fallback;
+}
+
+/**
  * Unified listing-image resolution chain.
  * Prefers the item's own image, then its first carousel entry,
  * then a stable seed-based fallback (same image for the same item everywhere).
@@ -27,13 +43,29 @@ export function resolveListingImage(
     const first = images.find((entry): entry is string => typeof entry === 'string' && !!entry);
     if (first) return { uri: first };
   }
-  // No fake photo: imageless listings get a neutral 1px tile (callers render
-  // their letter-tile / empty state on top). picsum.seed photos implied real
-  // inventory that never existed — a production-integrity violation.
+  // No fake photo: imageless listings get a transparent 1px tile that RN can
+  // actually decode (the old SVG data-URI never decoded on native — a blank
+  // lavender box). Callers overlay the item initial for a real empty state.
   void seedId;
   return {
-    uri: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="100%" height="100%" fill="%23EFECFF"/></svg>',
+    uri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   };
+}
+
+/**
+ * Deterministic initials + background for any username/id — rendered LOCALLY
+ * (no network, no third-party PII ping per row, offline-proof). Use
+ * <AvatarView> for rendered avatars; resolveAvatar remains for data-shaped
+ * positions only (followers lists, hub string) until those migrate too.
+ */
+const AVATAR_BGS = ['#5d5fef', '#00796b', '#c2185b', '#6a1b9a', '#e65100', '#1565c0', '#2e7d32', '#5d4037'];
+export function avatarInitials(name: string): { initials: string; bg: string } {
+  const clean = String(name ?? '').trim() || 'S';
+  const parts = clean.replace(/^@/, '').split(/[\s_.-]+/).filter(Boolean);
+  const initials = ((parts[0]?.[0] ?? 'S') + (parts.length > 1 ? parts[parts.length - 1][0] ?? '' : '')).toUpperCase().slice(0, 2);
+  let h = 0;
+  for (let i = 0; i < clean.length; i++) h = (h * 31 + clean.charCodeAt(i)) >>> 0;
+  return { initials, bg: AVATAR_BGS[h % AVATAR_BGS.length] };
 }
 
 /**

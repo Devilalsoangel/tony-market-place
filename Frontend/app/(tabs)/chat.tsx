@@ -396,16 +396,45 @@ export default function ChatScreen() {
           text: `Pay ${formatPrice(pinPrice)}`,
           onPress: async () => {
             const threadId = chat.serverThreadId!;
-            const ref = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+            // Sticky idempotency ref per pin intent (thread+days, payout
+            // pattern): a fresh ref per tap turned every timeout-retry into a
+            // SECOND full debit — the server dedupes same-ref only. The ref
+            // persists until the server acks; retries reuse it. TTL 24h.
+            const PIN_REF_KEY = `@susej_pin_ref:${threadId}:${pinDays}`;
+            let ref: string | null = null;
+            try {
+              const raw = await AsyncStorage.getItem(PIN_REF_KEY);
+              if (raw) {
+                try {
+                  const p = JSON.parse(raw);
+                  if (p && typeof p.ref === 'string' && typeof p.at === 'number' && Date.now() - p.at < 24 * 3600 * 1000) {
+                    ref = p.ref;
+                  }
+                } catch {}
+              }
+            } catch {}
+            if (!ref) {
+              ref = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+              try {
+                await AsyncStorage.setItem(PIN_REF_KEY, JSON.stringify({ ref, at: Date.now() }));
+              } catch {}
+            }
             try {
               const res = await serverApi.pinThread(threadId, pinDays, ref);
               if (!res.ok || !res.data?.pinnedUntil) {
+                // 409 (price moved / ref collision): the server explicitly
+                // orders a FRESH ref — drop the sticky one so the next tap
+                // mints a new intent instead of 409-looping for 24h.
+                if (String(res?.error ?? "").includes("fresh request")) {
+                  try { await AsyncStorage.removeItem(PIN_REF_KEY); } catch {}
+                }
                 const msg = res.error === 'offline'
                   ? 'Could not reach the server — no money was charged.'
                   : String(res.error || 'The pin could not be saved — no money was charged.');
                 Alert.alert('Pin not applied', msg);
                 return;
               }
+              try { await AsyncStorage.removeItem(PIN_REF_KEY); } catch {}
               const until = res.data.pinnedUntil;
               setServerChats((prev) => prev.map((c) => (c.id === chat.id ? { ...c, pinnedUntil: until } : c)));
               setActiveChat((cur) => (cur && cur.id === chat.id ? { ...cur, pinnedUntil: until } : cur));

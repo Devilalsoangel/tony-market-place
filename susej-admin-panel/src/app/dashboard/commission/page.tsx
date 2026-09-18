@@ -60,6 +60,10 @@ function PromoPricingCard() {
   );
   const [savedOverrides, setSavedOverrides] = useState<Record<string, number>>({});
   const [saved, setSaved] = useState(false);
+  // Manager write-denied on app-settings: the old save flipped badges to
+  // Custom + "Saved" on a 403 that never persisted. Errors now surface and
+  // badges stay truthful.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const loadSaved = useCallback(async () => {
     try {
@@ -100,11 +104,16 @@ function PromoPricingCard() {
   }
 
   async function save() {
-    const overrides = extractOverrides(prices);
-    await persistPromoPrices(overrides);
-    setSavedOverrides(overrides);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setSaveError(null);
+    try {
+      const overrides = extractOverrides(prices);
+      await persistPromoPrices(overrides);
+      setSavedOverrides(overrides);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Save failed — nothing was written.");
+    }
   }
 
   return (
@@ -153,6 +162,9 @@ function PromoPricingCard() {
           </Button>
           {saved && (
             <span className="text-[12px] font-medium text-[#16A34A]">Saved — the seller app picks this up live</span>
+          )}
+          {saveError && (
+            <span className="text-[12px] font-medium text-[#DC2626]">{saveError}</span>
           )}
         </div>
         <p className="text-[12px] leading-5 text-[#71717A]">
@@ -267,8 +279,8 @@ export default function CommissionPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Delivered GMV" value={inr(deliveredGmv)} tone="purple" />
-        <StatTile label={`Commission on delivered (${rate}%)`} value={inr(commissionOnDelivered)} tone="green" />
+        <StatTile label={`Delivered GMV${typeof orderTotal === "number" && orderTotal > (orderRows ?? []).length ? " · first 100" : ""}`} value={inr(deliveredGmv)} tone="purple" />
+        <StatTile label={`Commission on delivered (${rate}%)${typeof orderTotal === "number" && orderTotal > (orderRows ?? []).length ? " · first 100" : ""}`} value={inr(commissionOnDelivered)} tone="green" />
         <StatTile label={`Promo revenue (${activePromos.length} active)${typeof promoTotal === "number" && promoTotal > (promoRows ?? []).length ? " · first 100" : ""}`} value={inr(promoRevenue)} tone="purple" />
         <StatTile label={`Payout fees (${settledPayouts.length} payouts)${typeof withdrawalTotal === "number" && withdrawalTotal > (withdrawalRows ?? []).length ? " · first 100" : ""}`} value={inr(payoutFees)} />
       </div>

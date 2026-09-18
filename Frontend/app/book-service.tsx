@@ -3,10 +3,12 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Ale
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { bookServiceImages } from '../utils/screenImages';
+import { AvatarView } from '../components/AvatarView';
 import { BackIcon, StarIcon, MapPinIcon } from '../utils/icons';
 import { colors, formatPrice } from '../utils/theme';
 import { useOrders } from '../contexts/OrderContext';
 import { serverApi } from '../utils/serverApi';
+import { getWallet, syncWalletFromServer } from '../utils/walletStore';
 
 const servicePackages = [
   { name: 'Starter', price: 149 },
@@ -14,7 +16,6 @@ const servicePackages = [
   { name: 'Business', price: 499 },
 ];
 
-const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -29,9 +30,6 @@ const TIME_SLOTS = [
   '5:00 PM',
   '6:00 PM',
 ];
-// All slots honestly available — no phantom "booked" times.
-const BOOKED_TIMES = new Set<string>();
-
 /** Minutes since midnight for a 'h:MM AM/PM' slot (NaN when unparseable). */
 function slotMinutes(slot: string): number {
   const m = slot.trim().match(/^(\d{1,2}):(\d{2})\s*([AP])M$/i);
@@ -52,13 +50,12 @@ const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDat
 const toISODate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-function buildMonthGrid(now: Date): (Date | null)[] {
-  const first = new Date(now.getFullYear(), now.getMonth(), 1);
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const cells: (Date | null)[] = [];
-  for (let i = 0; i < first.getDay(); i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(now.getFullYear(), now.getMonth(), d));
-  return cells;
+// Rolling 14-day strip (Urban Company parity): the old single-month grid
+// could not render next-month days, so up to 10 of the 14 window days were
+// unselectable at month-end.
+function buildWindowDays(now: Date): Date[] {
+  const start = startOfDay(now);
+  return Array.from({ length: BOOKING_WINDOW_DAYS }, (_, i) => new Date(start.getTime() + i * DAY_MS));
 }
 
 export default function BookServiceScreen() {
@@ -93,7 +90,14 @@ export default function BookServiceScreen() {
   const [listingLoading, setListingLoading] = useState(!!listingIdParam);
   const [listingGone, setListingGone] = useState(false);
   const [listingOwner, setListingOwner] = useState<string | null>(null);
+  const [listingImage, setListingImage] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+  // Real seller rating (PDP parity: users-route aggregate of delivered-order
+  // reviews). Silent on failure; zero-review sellers keep the honest empty
+  // line — never a fabricated score, never a hardcoded "none".
+  // NOTE: the fetch effect lives below bookingSeller (declared after the
+  // listing effect) — referencing it up here would be a TDZ crash.
+  const [sellerRating, setSellerRating] = useState<{ avg: number; count: number } | null>(null);
 
   useEffect(() => {
     if (!listingIdParam) {
@@ -106,7 +110,7 @@ export default function BookServiceScreen() {
     let cancelled = false;
     serverApi.getPost(listingIdParam).then((res) => {
       if (cancelled) return;
-      const post = (res.data as { post?: { price?: unknown; isSold?: unknown; status?: unknown; sellerUsername?: unknown; authorUsername?: unknown; type?: unknown } } | null)?.post;
+      const post = (res.data as { post?: { price?: unknown; isSold?: unknown; status?: unknown; sellerUsername?: unknown; authorUsername?: unknown; type?: unknown; image?: unknown; images?: unknown } } | null)?.post;
       const price = Math.round(Number(post?.price ?? NaN));
       const gone = !res.ok || !post || post.isSold === true || (typeof post.status === 'string' && post.status !== 'published' && post.status !== 'active');
       if (gone || !Number.isFinite(price) || price <= 0) {
@@ -114,6 +118,10 @@ export default function BookServiceScreen() {
       } else {
         const owner = String((post as { authorUsername?: unknown })?.authorUsername ?? (post as { sellerUsername?: unknown })?.sellerUsername ?? '');
         if (owner) setListingOwner(owner);
+        // Real listing photo (not stock art): the hero shows what is booked.
+        const imgs = Array.isArray(post?.images) ? (post.images as unknown[]).filter((u): u is string => typeof u === 'string' && !!u) : [];
+        const cover = typeof post?.image === 'string' && post.image ? post.image : imgs[0] ?? null;
+        if (cover) setListingImage(cover);
         const single = [{ name: 'Standard', price }];
         setPkgs(single);
         setSelectedPackage(single[0]);
@@ -129,14 +137,30 @@ export default function BookServiceScreen() {
   }, [listingIdParam]);
 
   const today = startOfDay(new Date());
-  const monthDays = buildMonthGrid(new Date());
-  const windowStart = today.getTime();
-  const windowEnd = windowStart + (BOOKING_WINDOW_DAYS - 1) * DAY_MS;
+  const windowDays = buildWindowDays(new Date());
   // Seller identity fail-closed (chat-parity): an ownerless booking skips the
   // server's seller binding as falsy — refuse instead of minting a stroker row.
   const bookingSeller = listingOwner || sellerUsernameParam || '';
   const ownerless = !!listingIdParam && !listingLoading && !listingGone && !bookingSeller;
   const canBook = !!selectedDate && !!selectedTime && !placing && !listingLoading && !listingGone && !!listingIdParam && !!bookingSeller;
+
+  useEffect(() => {
+    setSellerRating(null);
+    if (!bookingSeller) return;
+    let alive = true;
+    serverApi
+      .getUserProfile(bookingSeller)
+      .then((res) => {
+        if (!alive) return;
+        const avg = Number((res.data as { user?: { avgRating?: unknown } } | null)?.user?.avgRating);
+        const count = Number((res.data as { user?: { reviewCount?: unknown } } | null)?.user?.reviewCount);
+        if (Number.isFinite(avg) && avg > 0 && count > 0) setSellerRating({ avg, count });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [bookingSeller]);
 
   // Same-day past slots are unbookable (a 10 AM slot at 9 PM used to mint a
   // real order row in the past).
@@ -152,6 +176,23 @@ export default function BookServiceScreen() {
     if (!selectedDate || !selectedTime || placing || !listingIdParam || listingGone || !bookingSeller) return;
     if (slotInPast(selectedTime)) {
       Alert.alert('Slot passed', 'That time already passed today — pick a later slot.');
+      return;
+    }
+    // Wallet pre-check (checkout parity): bookings debit the wallet on the
+    // server, so a ₹0 wallet must hear "top up" BEFORE the confirm screen —
+    // not a live tracking page for a doomed order that later syncFails.
+    const price = Math.round(selectedPackage.price);
+    await syncWalletFromServer().catch(() => {});
+    const wallet = await getWallet().catch(() => null);
+    if (wallet && wallet.balance < price) {
+      Alert.alert(
+        'Insufficient wallet balance',
+        `Your wallet has ${formatPrice(wallet.balance)} but this booking costs ${formatPrice(price)}. Add money in the Wallet tab first.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open Wallet', onPress: () => router.push('/wallet') },
+        ]
+      );
       return;
     }
     // Consent gate (Urban Company parity): one tap used to instant-charge the
@@ -180,7 +221,7 @@ export default function BookServiceScreen() {
                   },
                 ],
                 undefined,
-                undefined,
+                'wallet',
                 { bookingDate: toISODate(selectedDate), bookingTime: selectedTime, deliveryFee: 0 }
               );
               if (order) {
@@ -235,12 +276,18 @@ export default function BookServiceScreen() {
           </View>
         )}
         <View className="w-full h-48 bg-surfaceContainer overflow-hidden">
-          <Image source={bookServiceImages.hero} className="w-full h-full" resizeMode="cover" />
+          {listingImage ? (
+            <Image source={{ uri: listingImage }} className="w-full h-full" resizeMode="cover" />
+          ) : (
+            <Image source={bookServiceImages.hero} className="w-full h-full" resizeMode="cover" />
+          )}
         </View>
 
         <View className="px-4 pt-4">
           <View className="flex-row items-center gap-1 mb-2">
-            <Image source={bookServiceImages.avatar} className="w-10 h-10 rounded-full" style={{ backgroundColor: colors.surfaceContainer }} />
+            {/* Deterministic initials avatar (map/feed parity) — never one
+                shared stock face for every provider. */}
+            <AvatarView name={sellerNameParam || bookingSeller || 'Service Provider'} size={40} />
             <Text className="text-figma-14 font-inter-600 text-textPrimary">{sellerNameParam || 'Service Provider'}</Text>
             <Text className="text-figma-14 font-inter-400 text-textSecondary ml-1">{serviceCategory}</Text>
           </View>
@@ -269,73 +316,40 @@ export default function BookServiceScreen() {
 
           <Text className="text-figma-16 font-inter-600 text-textPrimary mb-3">Select Date & Time</Text>
 
-          <View className="bg-surfaceContainerLowest rounded-figma-16 p-3 mb-4">
-            <Text className="text-figma-14 font-inter-600 text-textPrimary text-center mb-3">
-              {MONTHS[new Date().getMonth()]} {new Date().getFullYear()}
-            </Text>
-            <View className="flex-row mb-2">
-              {WEEKDAY_LABELS.map((label, i) => (
-                <View key={i} className="items-center" style={{ width: `${100 / 7}%` }}>
-                  <Text className="text-figma-11 font-inter-500 text-textTertiary">{label}</Text>
-                </View>
-              ))}
-            </View>
-            <View className="flex-row flex-wrap">
-              {monthDays.map((day, i) => {
-                if (!day) {
-                  return <View key={`empty-${i}`} style={{ width: `${100 / 7}%` }} />;
-                }
-                const time = day.getTime();
-                const inWindow = time >= windowStart && time <= windowEnd;
-                const isToday = sameDay(day, today);
-                const isSelected = !!selectedDate && sameDay(selectedDate, day);
-                const disabled = !inWindow;
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    disabled={disabled}
-                    onPress={() => setSelectedDate(day)}
-                    className="items-center justify-center py-1"
-                    style={{ width: `${100 / 7}%` }}
-                  >
-                    <View
-                      className={`w-10 h-10 rounded-full items-center justify-center ${
-                        isSelected
-                          ? 'bg-primaryContainer'
-                          : isToday
-                            ? 'bg-surfaceContainerLow'
-                            : disabled
-                              ? ''
-                              : 'bg-surfaceContainerLow'
-                      }`}
-                      style={isToday && !isSelected ? { borderWidth: 1, borderColor: colors.primaryContainer } : undefined}
-                    >
-                      <Text
-                        className={`text-figma-12 ${
-                          isSelected
-                            ? 'text-white font-inter-600'
-                            : disabled
-                              ? 'text-textTertiary font-inter-400'
-                              : isToday
-                                ? 'text-primary font-inter-600'
-                                : 'text-textPrimary font-inter-400'
-                        }`}
-                      >
-                        {day.getDate()}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
+          {/* Rolling 14-day strip: every window day is selectable, including
+              across month boundaries. */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4" contentContainerStyle={{ gap: 8 }}>
+            {windowDays.map((day) => {
+              const isToday = sameDay(day, today);
+              const isSelected = !!selectedDate && sameDay(selectedDate, day);
+              return (
+                <TouchableOpacity
+                  key={toISODate(day)}
+                  onPress={() => setSelectedDate(day)}
+                  className={`items-center justify-center px-3 py-2 rounded-figma-12 ${
+                    isSelected ? 'bg-primaryContainer' : 'bg-surfaceContainerLow'
+                  }`}
+                  style={isToday && !isSelected ? { borderWidth: 1, borderColor: colors.primaryContainer } : undefined}
+                >
+                  <Text className={`text-figma-11 font-inter-500 ${isSelected ? 'text-white' : 'text-textTertiary'}`}>
+                    {WEEKDAYS[day.getDay()]}
+                  </Text>
+                  <Text className={`text-figma-14 font-inter-600 ${isSelected ? 'text-white' : 'text-textPrimary'}`}>
+                    {day.getDate()} {MONTHS[day.getMonth()]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
-          <Text className="text-figma-12 font-inter-400 text-textSecondary mb-3">Available slots (next 14 days)</Text>
+          <Text className="text-figma-12 font-inter-400 text-textSecondary mb-3">Available slots (next 14 days — seller confirms your pick)</Text>
           <View className="flex-row flex-wrap gap-3 mb-4">
             {TIME_SLOTS.map((t) => {
-              const booked = BOOKED_TIMES.has(t);
-              const past = !booked && slotInPast(t);
-              const disabled = booked || past;
+              // No seller calendar exists (capacity unmodeled — the seller
+              // confirms the slot after booking); same-day past slots are the
+              // only honest disable.
+              const past = slotInPast(t);
+              const disabled = past;
               const active = selectedTime === t;
               return (
                 <TouchableOpacity
@@ -365,9 +379,15 @@ export default function BookServiceScreen() {
           </View>
 
           <Text className="text-figma-18 font-inter-700 text-textPrimary mb-3">Reviews</Text>
-          <Text className="text-figma-14 font-inter-400 text-textSecondary mb-6">
-            No reviews yet. Book this service and be the first to leave one.
-          </Text>
+          {sellerRating ? (
+            <Text className="text-figma-14 font-inter-600 text-textPrimary mb-6">
+              ★ {sellerRating.avg.toFixed(1)} · {sellerRating.count} verified review{sellerRating.count === 1 ? '' : 's'}
+            </Text>
+          ) : (
+            <Text className="text-figma-14 font-inter-400 text-textSecondary mb-6">
+              No reviews yet. Book this service and be the first to leave one.
+            </Text>
+          )}
         </View>
       </ScrollView>
 

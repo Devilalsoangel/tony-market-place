@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table/data-table";
+import { ServerTableBar } from "@/components/data-table/server-table-bar";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,15 @@ const makeColumns = (
 ];
 
 export default function WithdrawalsPage() {
-  const { data: withdrawals, total: withdrawalsTotal, refresh } = useDbResource<WithdrawalRequest>("withdrawals", { take: 100 });
+  // Server-driven queue (?q=&skip=&take=) + snapshot revert on refusal:
+  // money decisions must never ghost-approved on a 409/offline.
+  const [q, setQ] = useState("");
+  const [skip, setSkip] = useState(0);
+  const { data: withdrawals, total: withdrawalsTotal, refresh } = useDbResource<WithdrawalRequest>("withdrawals", {
+    take: 100,
+    ...(q.trim() ? { q: q.trim() } : {}),
+    ...(skip > 0 ? { skip } : {}),
+  });
   const [items, setItems] = useState<WithdrawalRequest[] | null>(withdrawals);
   const [confirm, setConfirm] = useState<{ w: WithdrawalRequest; decision: "approve" | "reject" | "complete" } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,9 +110,12 @@ export default function WithdrawalsPage() {
   const pending = (items ?? []).filter((w) => w.status === "requested");
   const approved = (items ?? []).filter((w) => w.status === "approved");
   const paidOut = (items ?? []).filter((w) => w.status === "completed").reduce((s, w) => s + w.amount, 0);
+  // Window qualifier shared by every count tile below (single source).
+  const win = typeof withdrawalsTotal === "number" && withdrawalsTotal > (items ?? []).length ? " · first 100" : "";
 
   async function patchRow(w: WithdrawalRequest, data: Partial<WithdrawalRequest>) {
     setError(null);
+    const snapshot = items;
     setItems((prev) => (prev ?? []).map((x) => (x.id === w.id ? { ...x, ...data } : x)));
     try {
       // credentials:"include" so the server session identifies the deciding
@@ -117,13 +129,17 @@ export default function WithdrawalsPage() {
       });
       if (!res.ok) {
         const j: { error?: string } = await res.json().catch(() => ({}));
-        setError(j.error || `Payout update failed (HTTP ${res.status})`);
+        // Revert the optimistic flip: a maker-check 409 or offline refresh
+        // failure used to leave approved rows the server refused.
+        setItems(snapshot);
+        setError(j.error || `Payout update failed (HTTP ${res.status}) — reverted.`);
       }
       // Audit trail is written server-side in the data-plane PATCH
       // (writeAuditSafe: action=data.update, admin identity from the session
       // cookie, before/after diff) — no client-side audit call needed.
     } catch {
-      setError("Network error — payout decision was not saved.");
+      setItems(snapshot);
+      setError("Network error — payout decision was not saved, reverted.");
     } finally {
       setConfirm(null);
       refresh();
@@ -158,8 +174,8 @@ export default function WithdrawalsPage() {
 
       <div className="grid grid-cols-4 gap-4">
         <StatTile label={`Total requested${typeof withdrawalsTotal === "number" && withdrawalsTotal > (withdrawals ?? []).length ? " (first 100)" : ""}`} value={formatCurrency((items ?? []).reduce((s, w) => s + w.amount, 0))} />
-        <StatTile label="Requested" value={pending.length} tone="amber" />
-        <StatTile label="Approved, pending pay" value={approved.length} tone="purple" />
+        <StatTile label={`Requested${win}`} value={pending.length} tone="amber" />
+        <StatTile label={`Approved, pending pay${win}`} value={approved.length} tone="purple" />
         <StatTile label={`Paid out${typeof withdrawalsTotal === "number" && withdrawalsTotal > (withdrawals ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(paidOut)} tone="green" />
       </div>
 
@@ -174,6 +190,15 @@ export default function WithdrawalsPage() {
           <CardTitle>Payout Requests</CardTitle>
         </CardHeader>
         <CardContent>
+          <ServerTableBar
+            q={q}
+            onQ={(v) => { setQ(v); setSkip(0); }}
+            skip={skip}
+            onSkip={setSkip}
+            total={withdrawalsTotal}
+            loaded={(items ?? []).length}
+            searchPlaceholder="Search seller, method, status…"
+          />
           <DataTable
             columns={makeColumns(
               (w) => setConfirm({ w, decision: "approve" }),

@@ -64,7 +64,7 @@ function TwoFactorPage() {
         setLoading(false);
         return;
       }
-      setAuth(data.user, data.token);
+      setAuth(data.user);
       router.push(target);
     } catch {
       setError("Verification failed. Try again.");

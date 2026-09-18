@@ -54,7 +54,7 @@ const makeColumns = (onDecide: (b: MockBooking, status: "confirmed" | "cancelled
 ];
 
 export default function BookingsPage() {
-  const { data: rows, refresh } = useDbResource<MockBooking>("bookings");
+  const { data: rows, total: bookingsTotal, refresh } = useDbResource<MockBooking>("bookings", { take: 100 });
   const [items, setItems] = useState<MockBooking[] | null>(rows);
 
   useEffect(() => {
@@ -68,11 +68,14 @@ export default function BookingsPage() {
       refresh();
     } catch (e) {
       setItems(rows ?? []);
-      console.error(e);
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Booking update failed — reverted.");
     }
   }
 
   const revenue = (items ?? []).filter((b) => b.status === "confirmed" || b.status === "completed").reduce((s, b) => s + b.price, 0);
+  // Window qualifier shared by revenue + counts below (single source).
+  const win = typeof bookingsTotal === "number" && bookingsTotal > (items ?? []).length ? " · first 100" : "";
 
   return (
     <div className="space-y-6">
@@ -82,10 +85,10 @@ export default function BookingsPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Confirmed revenue" value={formatCurrency(revenue)} tone="green" />
-        <StatTile label="Placed requests" value={(items ?? []).filter((b) => b.status === "placed").length} tone="amber" />
-        <StatTile label="Completed" value={(items ?? []).filter((b) => b.status === "completed").length} tone="green" />
-        <StatTile label="Cancelled" value={(items ?? []).filter((b) => b.status === "cancelled").length} tone="red" />
+        <StatTile label={`Confirmed revenue${win}`} value={formatCurrency(revenue)} tone="green" />
+        <StatTile label={`Placed requests${win}`} value={(items ?? []).filter((b) => b.status === "placed").length} tone="amber" />
+        <StatTile label={`Completed${win}`} value={(items ?? []).filter((b) => b.status === "completed").length} tone="green" />
+        <StatTile label={`Cancelled${win}`} value={(items ?? []).filter((b) => b.status === "cancelled").length} tone="red" />
       </div>
 
       <Card>

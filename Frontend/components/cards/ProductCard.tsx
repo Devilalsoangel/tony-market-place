@@ -6,6 +6,7 @@ import { colors, formatPrice } from '../../utils/theme';
 import { useBookmark } from '../../contexts/BookmarkContext';
 import { useRecentlyViewed } from '../../contexts/RecentlyViewedContext';
 import { usePosts } from '../../contexts/PostContext';
+import { extractHashtags } from '../../contexts/HashtagContext';
 import { CommentsSheet, LikersSheet, ShareSheet } from '../sheets/PostEngagementSheets';
 
 interface ProductCardProps {
@@ -81,14 +82,14 @@ export function ProductCard({
   }, [posts, id, comments]);
 
   // Hashtags: explicit prop wins, otherwise parsed from description
+  // (Unicode-aware shared parser — same tags the indexer sees).
   const tagList = useMemo(() => {
     if (hashtags && hashtags.length > 0) return hashtags.slice(0, 6);
-    const found = description.match(/#\w+/g);
-    return found ? found.slice(0, 6) : [];
+    return extractHashtags(description).slice(0, 6);
   }, [hashtags, description]);
 
   // Description text without hashtags (hashtags render in their own row)
-  const cleanDescription = useMemo(() => description.replace(/#\w+/g, '').replace(/\s+/g, ' ').trim(), [description]);
+  const cleanDescription = useMemo(() => description.replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\s+/g, ' ').trim(), [description]);
 
   const handleToggleLike = () => {
     toggleLike(id);

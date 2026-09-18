@@ -160,6 +160,15 @@ export async function POST(req: NextRequest) {
 
   } else {
 
+    // Fail-closed: generic-lane debits move wallet money with no ledgerEntry
+    // mirror (LedgerEntry.orderId is required, and this lane has no order),
+    // so the Settlements page could never reconcile them. No live caller
+    // spends through here (top-ups are credits; orders/payouts/promos/pins
+    // all debit through their own mirrored routes) — refuse outright.
+    if (amount < 0) {
+      return NextResponse.json({ error: "Direct debits are disabled — use the order, payout, or promotion flow" }, { status: 400 });
+    }
+
     const rawTitle = String(body.title ?? "Wallet transaction");
 
     // Guard (H6): client must not be able to poison ledger titles that double
@@ -167,7 +176,12 @@ export async function POST(req: NextRequest) {
     // make the real ruling's count-guard see 1 and skip the buyer's credit;
     // same for clawback/payout titles (seller keeps funds on refunded
     // orders). Covers every settlement taxonomy, not just Order-*.
-    const blocked = /Order (cancelled|earnings|clawback|refund)|Dispute (refund|split)|Withdrawal rejected refund|Withdrawal to bank|Payout rejected|Wallet top-up/i.test(rawTitle);
+    // Extended: Chat Pin titles double as the pin route's dedupe key (a
+    // pre-minted "Chat Pin · 7d · ref" for -1 turned the paid pin into a free
+    // deduped claim); Promotion/Withdrawal titles are server-minted only
+    // (promo debits/refunds, payout debits/reject-refunds) — the app never
+    // sends a legitimate generic-lane debit under these names.
+    const blocked = /Order (cancelled|earnings|clawback|refund)|Dispute (refund|split)|Withdrawal|Payout rejected|Wallet top-up|Chat Pin|Promotion/i.test(rawTitle);
 
     if (blocked) {
 
@@ -204,6 +218,29 @@ export async function POST(req: NextRequest) {
       const suffix = ` · ref-${rawDebitRef}`;
       title = `${title.slice(0, Math.max(0, 150 - suffix.length))}${suffix}`;
     }
+    // Cross-title same-ref replay guard: the UNIQUE key is (username,title),
+    // so the same ref under a DIFFERENT base title would debit twice. A ref
+    // that already settled under ANY title replays as deduped. EXACT ref
+    // equality (parsed after the last `ref-`): a suffix-substring match let
+    // ref X false-hit settled ref Y when X was Y's tail (self-denial of the
+    // caller's own credit — fail-closed, but wrong).
+    // (Pre-tx read: closes sequential replays; concurrent cross-title same-ref
+    // needs a unique ref column — migration-tracked. Self-scope only: rows are
+    // always username-bound to the caller, so no cross-user effect.)
+    if (/^[A-Za-z0-9_-]{8,64}$/.test(rawDebitRef)) {
+      const candidates = await prisma.walletTransaction.findMany({
+        where: { username: auth.user.username!, title: { endsWith: `ref-${rawDebitRef}` } },
+        select: { title: true, amount: true, detail: true },
+      }).catch(() => []);
+      const priorRef = candidates.find((r) => {
+        const m = String(r.title ?? "").match(/ref-([A-Za-z0-9_-]{8,64})$/);
+        return m?.[1] === rawDebitRef;
+      });
+      if (priorRef) {
+        const bal = await prisma.user.findUnique({ where: { id: auth.user.id }, select: { walletBalance: true } });
+        return NextResponse.json({ balance: bal?.walletBalance ?? 0, transaction: { title: priorRef.title, detail: priorRef.detail, amount: priorRef.amount }, deduped: true });
+      }
+    }
 
   }
 
@@ -221,7 +258,10 @@ export async function POST(req: NextRequest) {
 
     // Serialize concurrent top-ups on the user row: the 24h cap reads below
     // are non-locking, so a retry storm could slip past them together.
-    await (tx as any).$queryRawUnsafe?.(`SELECT id FROM "User" WHERE id = $1 FOR UPDATE`, auth.user.id).catch(() => {});
+    // Fail-closed (no catch): a lock failure aborts the tx, never proceeds
+    // unlocked past the caps. The `?.` stays for providers without raw
+    // queries — absent lock primitive, absent lock (documented, Neon has it).
+    await (tx as any).$queryRawUnsafe?.(`SELECT id FROM "User" WHERE id = $1 FOR UPDATE`, auth.user.id);
 
     const existing = await tx.user.findUnique({ where: { id: auth.user.id }, select: { id: true, username: true } });
 
@@ -322,7 +362,7 @@ export async function PUT(req: NextRequest) {
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
-  let body: { amount?: number; method?: string; ref?: unknown; destination?: unknown };
+  let body: { amount?: number; method?: string; ref?: unknown; destination?: unknown; feePreview?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -410,6 +450,17 @@ export async function PUT(req: NextRequest) {
     const f = Number(setting?.payoutFee);
     if (Number.isFinite(f) && f >= 0 && f <= 1000) fee = Math.floor(f);
   } catch {}
+  // Fee reconfirm (fail-closed, never fail-charged): the app gates on a fee
+  // preview that can go stale mid-session. When the caller states what it
+  // showed and the live fee moved, 400 with both figures instead of debiting
+  // more than the seller approved (bounded by the 1000 clamp, still a
+  // surprise). Absent preview (undefined AND null) = legacy client, charge
+  // live fee as before.
+  const feePreviewRaw = (body as { feePreview?: unknown }).feePreview;
+  const feePreview = feePreviewRaw === undefined || feePreviewRaw === null ? null : Math.floor(Number(feePreviewRaw));
+  if (feePreview !== null && Number.isFinite(feePreview) && feePreview !== fee) {
+    return NextResponse.json({ error: `Payout fee changed (was ₹${feePreview}, now ₹${fee}) — review and submit again` }, { status: 400 });
+  }
   const totalDebit = amount + fee;
 
   // Beneficiary resolution — the rail travels AND the account does (a payout
@@ -464,6 +515,29 @@ export async function PUT(req: NextRequest) {
         select: { id: true, username: true, name: true },
       });
       if (!user) throw new PayoutError("User not found", 404);
+      // LOCK ORDER (deadlock discipline, system-wide): Order rows BEFORE User
+      // rows, matching every refund/dispute/cancel/deliver path. The payout
+      // used to lock User first while settlement paths lock Order first —
+      // same-tick payout + refund-approve deadlocked or, worse, both passed
+      // on split snapshots (withdraw-after-refund). Locking this seller's
+      // delivered rows first serializes payout against any concurrent
+      // settlement on those rows; the guard re-read below then observes
+      // committed paymentStatus/freeze state.
+      // Case-insensitive like every identity check (write lanes are):
+      // legacy mixed-case sellerUsername rows missed an exact-match lock and
+      // deserialized payout vs refund-approve again.
+      // Fail-closed (no catch): a lock failure aborts the tx, never proceeds
+      // unlocked past the earnings guard. `?.` stays for raw-less providers.
+      await (tx as any).$queryRawUnsafe?.(
+        `SELECT id FROM "Order" WHERE lower("sellerUsername") = lower($1) AND status = 'delivered' FOR UPDATE`,
+        user.username!
+      );
+      await (tx as any).$queryRawUnsafe?.(`SELECT id FROM "User" WHERE id = $1 FOR UPDATE`, user.id);
+      // Serialize concurrent payouts on the user row: the earnings guard
+      // below is a non-locking read, so two parallel requests with different
+      // refs both passed lifetimeNet-paidOut and cashed out top-ups as bank
+      // cash. The loser now blocks until the winner commits, then reads the
+      // winner's withdrawal row in priorWd and fails the guard honestly.
       // Earnings guard: payouts draw from delivered-order earnings, never
       // from top-up balance (previously anyone could cash out top-ups minus
       // the fee). Lifetime coupon-aware goods-net minus non-rejected payouts
@@ -475,7 +549,10 @@ export async function PUT(req: NextRequest) {
       // (clawback already took the money back). Partial (split) refunds also
       // exclude the whole order: understates withdrawable, never overstates.
       const soldRows = await tx.order.findMany({
-        where: { sellerUsername: user.username!, status: "delivered", paymentStatus: { not: "refunded" } },
+        // Case-insensitive party match (write lanes already are — an
+        // exact-match guard hid rows the PATCH lane would happily mutate,
+        // and the lock above would miss them).
+        where: { sellerUsername: { equals: user.username!, mode: "insensitive" }, status: "delivered", paymentStatus: { not: "refunded" } },
         select: { itemsList: true, actualDelivery: true, trackingNumber: true },
       });
       // Disputed-funds freeze (Amazon pattern): an open/under_review dispute
@@ -531,13 +608,49 @@ export async function PUT(req: NextRequest) {
         lifetimeNet += legNet;
       }
       const priorWd = await tx.withdrawal.findMany({
+        // Case-insensitive party match (lock + soldRows already are — exact
+        // here missed legacy mixed-case rows, understating paidOut and
+        // overstating withdrawable; split-casing across users merges in
+        // soldRows, so this must match that semantics exactly).
         where: {
-          userName: { in: [user.username!, user.name || ""].filter(Boolean) },
+          OR: [
+            { userName: { equals: user.username!, mode: "insensitive" } },
+            { userName: { equals: user.name || "", mode: "insensitive" } },
+          ],
           status: { in: ["requested", "approved", "completed"] },
         },
-        select: { amount: true },
+        select: { id: true, amount: true },
       });
-      const paidOut = priorWd.reduce((s, w) => s + Math.max(0, Number((w as { amount?: unknown }).amount ?? 0)), 0);
+      // Committed in TOTAL-DEBIT terms (amount + fee): each payout locked
+      // amount+fee from the balance, so the earnings check must subtract the
+      // same. The fee rides in the debit row's detail (`Payout request <id> ·
+      // ₹<fee> fee`); unparseable legacy rows conservatively assume the
+      // CURRENT fee (overstates committed → understates withdrawable, never
+      // the reverse).
+      let paidOut = 0;
+      if (priorWd.length) {
+        const debitRows = await tx.walletTransaction.findMany({
+          where: {
+            OR: [
+              { username: { equals: user.username!, mode: "insensitive" } },
+              { username: { equals: user.name || "", mode: "insensitive" } },
+            ],
+            amount: { lt: 0 },
+            detail: { startsWith: "Payout request " },
+          },
+          select: { detail: true },
+        }).catch(() => [] as Array<{ detail: string | null }>);
+        const feeByWd = new Map<string, number>();
+        for (const r of debitRows) {
+          const m = String(r.detail ?? "").match(/^Payout request (\S+).*?([\d,]+) fee/);
+          if (m) feeByWd.set(m[1], Number(m[2].replace(/,/g, "")) || 0);
+        }
+        for (const w of priorWd) {
+          const principal = Math.max(0, Number((w as { amount?: unknown }).amount ?? 0));
+          const wfee = feeByWd.get(String((w as { id?: unknown }).id ?? ""));
+          paidOut += principal + (wfee !== undefined ? Math.max(0, wfee) : fee);
+        }
+      }
       if (amount > lifetimeNet - paidOut) {
         throw new PayoutError(
           frozenBack > 0

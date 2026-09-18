@@ -4,7 +4,8 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { BackIcon, SearchIcon, HeartIcon } from '../../utils/icons';
 import { colors, CATEGORIES, formatPrice } from '../../utils/theme';
 import { usePosts } from '../../contexts/PostContext';
-import { resolveListingImage } from '../../utils/productImages';
+import { resolveListingImage, hasRealImage } from '../../utils/productImages';
+import { avatarInitials } from '../../utils/productImages';
 import { serverApi } from '../../utils/serverApi';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -50,19 +51,19 @@ const SLUG_SYNONYMS: Record<string, string> = {
 // parent vertical so admin sub-categories still show real marketplace content.
 // Shared with Explore: same slug must show the same set in both surfaces
 // (exact match first, legacy fuzzy fallback for old labels).
+// Containment runs ONE way only (child ⊂ parent: "kids fashion" belongs to
+// "fashion", never the reverse — bidirectional matching bled Services into
+// Home Services and back). Word-based so short stems can't fuzzy-match, and
+// the legacy 2-char prefix rule is gone (it fired on any short stem).
 export const matchesCategory = (postCategory: string, active: string): boolean => {
-  const a = postCategory.toLowerCase();
-  const b = active.toLowerCase();
+  const a = postCategory.toLowerCase().trim();
+  const b = active.toLowerCase().trim();
   if (a === b) return true;
   if (a === 'home' && (b === 'home services' || b === 'home living')) return true;
-  // containment either way with a real word stem ("fashion" ⊂ "kids fashion")
-  const na = a.replace(/[^a-z]/g, '');
-  const nb = b.replace(/[^a-z]/g, '');
-  if (na.length >= 5 && nb.length >= 5 && (na.includes(nb) || nb.includes(na))) return true;
-  // Short verticals ("Art" ⊂ "Art & Crafts"): prefix match so short labels
-  // still surface under their own family instead of vanishing.
-  if (na.length >= 2 && nb.length >= 2 && (na.startsWith(nb) || nb.startsWith(na))) return true;
-  return false;
+  if (!b || !a) return false;
+  const words = a.split(/\s+/);
+  if (!words.includes(b) && !(b.includes(' ') && a.includes(b))) return false;
+  return true;
 };
 
 export default function CategoryDetailScreen() {
@@ -101,24 +102,32 @@ export default function CategoryDetailScreen() {
     }, [slug])
   );
   const insets = useSafeAreaInsets();
-  const { posts } = usePosts();
+  const { posts, hiddenPostIds, mutedSellers } = usePosts();
 
-  // Filter posts by active category + search term
+  // Filter posts by active category + search term. Moderation parity with
+  // Search/Explore: hidden posts, muted sellers and imageless rows render
+  // nowhere else — Category is not an exemption.
+  // Unicode NFC like search.tsx: composed vs decomposed Indic/accented text
+  // must match identically on both screens.
+  const norm = (s: string) => (s ?? '').normalize('NFC').toLowerCase();
   const categoryPosts = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = norm(search.trim());
     return posts.filter(
       (p) =>
+        !hiddenPostIds.includes(p.id) &&
+        !mutedSellers.includes(p.sellerUsername) &&
+        hasRealImage(p) &&
         (allowedNames
           ? allowedNames.some((n) => n.toLowerCase() === p.category.toLowerCase())
           : matchesCategory(p.category, activeCategory)) &&
         (!term ||
-          (p.title ?? '').toLowerCase().includes(term) ||
-          p.description.toLowerCase().includes(term) ||
-          p.hashtags.some((h) => h.toLowerCase().includes(term)) ||
-          p.sellerName.toLowerCase().includes(term) ||
-          p.sellerUsername.toLowerCase().includes(term))
+          norm(p.title ?? '').includes(term) ||
+          norm(p.description).includes(term) ||
+          p.hashtags.some((h) => norm(h).includes(term)) ||
+          norm(p.sellerName).includes(term) ||
+          norm(p.sellerUsername).includes(term))
     );
-  }, [posts, activeCategory, search, allowedNames]);
+  }, [posts, activeCategory, search, allowedNames, hiddenPostIds, mutedSellers]);
 
   const isServiceCategory = activeCategory === 'Services' || activeCategory === 'Home Services';
 
@@ -157,12 +166,19 @@ export default function CategoryDetailScreen() {
               </View>
             </View>
 
-            {/* Book a Service affordance for service categories */}
-            {isServiceCategory ? (
+            {/* Book a Service affordance for service categories. Booking needs a
+                REAL listing (book-service fail-closes without listingId), so
+                the CTA carries the first service listing — and hides when the
+                category holds none instead of landing on a dead wall. */}
+            {isServiceCategory && categoryPosts.some((p) => p.type === 'service') ? (
               <TouchableOpacity
                 className="self-start px-4 py-2 rounded-figma-full mb-2"
                 style={{ backgroundColor: colors.surfaceContainer }}
-                onPress={() => router.push('/book-service')}
+                onPress={() => {
+                  const svc = categoryPosts.find((p) => p.type === 'service');
+                  if (!svc) return;
+                  router.push(`/book-service?listingId=${encodeURIComponent(svc.id)}&title=${encodeURIComponent(svc.title ?? '')}`);
+                }}
               >
                 <Text className="text-figma-12 font-inter-600 text-primary">
                   Book a Service
@@ -170,7 +186,9 @@ export default function CategoryDetailScreen() {
               </TouchableOpacity>
             ) : null}
 
-            {/* Category Pills — horizontal scroll */}
+            {/* Category Pills — horizontal scroll. Chips NAVIGATE (each chip is
+                its own category screen): the old in-place setActiveCategory
+                re-rendered the same slug-family grid — a dead filter row. */}
             <FlatList
               horizontal
               data={chipNames ?? allCategories}
@@ -180,7 +198,11 @@ export default function CategoryDetailScreen() {
               renderItem={({ item }) => (
                 <TouchableOpacity
                   className={`px-5 py-2 rounded-figma-full ${item === activeCategory ? 'bg-primaryContainer' : 'bg-surfaceContainerLow'}`}
-                  onPress={() => setActiveCategory(item)}
+                  onPress={() => {
+                    if (item === activeCategory) return;
+                    const target = item.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+                    router.push(`/category/${target}`);
+                  }}
                 >
                   <Text className={`text-figma-12 font-inter-500 ${item === activeCategory ? 'text-white' : 'text-secondary'}`}>
                     {item}
@@ -218,10 +240,17 @@ export default function CategoryDetailScreen() {
           >
             <View className="w-full aspect-square bg-surfaceContainer">
               <Image source={resolveListingImage(item, item.id)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
+              {!hasRealImage(item) && (
+                <View className="absolute inset-0 items-center justify-center">
+                  <Text className="text-figma-22 font-inter-700 text-secondary">
+                    {(item.title?.trim()?.[0] ?? item.description.trim()[0] ?? '?').toUpperCase()}
+                  </Text>
+                </View>
+              )}
             </View>
             <View className="p-2.5">
               <Text className="text-figma-12 font-inter-400 text-secondary mb-0.5">{item.category}</Text>
-              <Text className="text-figma-13 font-inter-500 text-textPrimary mb-1" numberOfLines={1}>{item.description.split('#')[0].trim()}</Text>
+              <Text className="text-figma-13 font-inter-500 text-textPrimary mb-1" numberOfLines={1}>{(item.title?.trim() || item.description).split('#')[0].trim()}</Text>
               <View className="flex-row items-center justify-between">
                 <Text className="text-figma-14 font-inter-700 text-primaryContainer">
                   {formatPrice(item.price)}

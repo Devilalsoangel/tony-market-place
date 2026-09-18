@@ -9,7 +9,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +22,14 @@ const TICKETS_KEY = TICKETS_KEY_BASE;
 // Outbox for admin-queue mirrors that failed (offline at raise time).
 // Flushed on every mount; entries are keyed by ticket id (server POST is
 // id-shaped, replays converge) so a retry can never duplicate the queue.
-const TICKET_OUTBOX_KEY = '@susej_ticket_outbox';
+// PER-USER key + owner stamp: the old global outbox flushed A's offline
+// ticket under B's session after an account switch (wrong attribution).
+// Legacy global entries are orphaned, never flushed (one-time, documented).
+const TICKET_OUTBOX_KEY_BASE = '@susej_ticket_outbox';
+const outboxKey = (username?: string | null) => {
+  const u = username?.trim();
+  return u ? `${TICKET_OUTBOX_KEY_BASE}:${u}` : TICKET_OUTBOX_KEY_BASE;
+};
 
 interface TicketMirrorPayload {
   id: string;
@@ -31,28 +38,39 @@ interface TicketMirrorPayload {
   status: string;
   createdAt: string;
   messageText?: string;
+  owner?: string;
 }
 
-async function queueTicketMirror(p: TicketMirrorPayload): Promise<void> {
+async function queueTicketMirror(p: TicketMirrorPayload, owner?: string | null): Promise<void> {
   try {
-    const raw = await AsyncStorage.getItem(TICKET_OUTBOX_KEY);
+    const key = outboxKey(owner);
+    const raw = await AsyncStorage.getItem(key);
     const list = raw ? JSON.parse(raw) : [];
     if (Array.isArray(list)) {
-      if (!list.some((q) => (q as TicketMirrorPayload).id === p.id)) list.push(p);
-      await AsyncStorage.setItem(TICKET_OUTBOX_KEY, JSON.stringify(list));
+      const stamped = owner?.trim() ? { ...p, owner: owner.trim() } : p;
+      if (!list.some((q) => (q as TicketMirrorPayload).id === stamped.id)) list.push(stamped);
+      await AsyncStorage.setItem(key, JSON.stringify(list));
     }
   } catch {}
 }
 
-async function flushTicketOutbox(): Promise<void> {
+async function flushTicketOutbox(owner?: string | null): Promise<void> {
   try {
-    const raw = await AsyncStorage.getItem(TICKET_OUTBOX_KEY);
+    const me = owner?.trim() ?? '';
+    const raw = await AsyncStorage.getItem(outboxKey(owner));
     if (!raw) return;
     const list = JSON.parse(raw);
     if (!Array.isArray(list) || list.length === 0) return;
     const m = await import('../utils/adminSync');
     const left: unknown[] = [];
     for (const p of list) {
+      // Belt-and-braces: never flush another account's ticket even if keys
+      // ever collide — skip (don't drop) foreign entries.
+      const entryOwner = String((p as TicketMirrorPayload).owner ?? '').trim();
+      if (entryOwner && me && entryOwner.toLowerCase() !== me.toLowerCase()) {
+        left.push(p);
+        continue;
+      }
       try {
         const ok = await m.syncTicket(p as TicketMirrorPayload);
         if (!ok) left.push(p);
@@ -60,7 +78,7 @@ async function flushTicketOutbox(): Promise<void> {
         left.push(p);
       }
     }
-    await AsyncStorage.setItem(TICKET_OUTBOX_KEY, JSON.stringify(left));
+    await AsyncStorage.setItem(outboxKey(owner), JSON.stringify(left));
   } catch {}
 }
 
@@ -102,6 +120,7 @@ const PRIORITY_COLOR: Record<SupportTicket['priority'], string> = {
 export default function SupportScreen() {
   const insets = useSafeAreaInsets();
   const { user, tokenSeq } = useAuth();
+  const params = useLocalSearchParams<{ topic?: string | string[] }>();
   const [loaded, setLoaded] = useState(false);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [formOpen, setFormOpen] = useState(false);
@@ -111,6 +130,19 @@ export default function SupportScreen() {
   const [message, setMessage] = useState('');
   const [justRaised, setJustRaised] = useState(false);
   const ticketsKey = user?.username ? `${TICKETS_KEY_BASE}:${user.username}` : TICKETS_KEY_BASE;
+
+  // Dispute handoff prefill (?topic=dispute:<orderRef>): dispute replies have
+  // no server thread, so the dispute screen routes follow-ups here where the
+  // ticket + opener message ARE server-backed. One-shot per mount.
+  useEffect(() => {
+    const raw = Array.isArray(params.topic) ? params.topic[0] : params.topic;
+    if (!raw) return;
+    const m = String(raw).match(/^dispute:(.+)$/);
+    if (!m) return;
+    setSubject(`Dispute follow-up — order ${m[1]}`);
+    setFormOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,21 +161,10 @@ export default function SupportScreen() {
             }
           } catch {}
         }
-        if (ticketsKey !== TICKETS_KEY_BASE) {
-          const legacy = await AsyncStorage.getItem(TICKETS_KEY_BASE);
-          if (!cancelled && legacy) {
-            try {
-              const parsed = JSON.parse(legacy);
-              if (Array.isArray(parsed)) {
-                const real = (parsed as SupportTicket[]).filter((t) => t && !/^SJ-TK-09\d\d$/.test(String(t.id)));
-                setTickets(real);
-                try { await AsyncStorage.setItem(ticketsKey, JSON.stringify(real)); } catch {}
-                setLoaded(true);
-                return;
-              }
-            } catch {}
-          }
-        }
+        // NO legacy-global copy for logged-in accounts: the global key may
+        // hold the PRIOR account's tickets (clearMoneyCache wipes globals at
+        // login, so a logged-in global hit is someone else's or stale).
+        // Logged-out sessions (base key) read their own rows above.
         if (!cancelled) { setTickets([]); setLoaded(true); }
       })
       .catch(() => { if (!cancelled) setLoaded(true); });
@@ -156,14 +177,15 @@ export default function SupportScreen() {
   }, [tickets, loaded, ticketsKey]);
 
   // Flush any ticket mirrors that failed while offline (raise-time retry).
+  // Owner-scoped: never flush another account's outbox after a switch.
   useEffect(() => {
     let dead = false;
     (async () => {
       if (dead) return;
-      await flushTicketOutbox();
+      await flushTicketOutbox(user?.username);
     })();
     return () => { dead = true; };
-  }, [tokenSeq]);
+  }, [tokenSeq, user?.username]);
 
   const openCount = tickets.filter((t) => t.status === 'open').length;
 
@@ -200,9 +222,9 @@ export default function SupportScreen() {
       };
       try {
         const ok = await m.syncTicket(payload);
-        if (!ok) await queueTicketMirror(payload);
+        if (!ok) await queueTicketMirror(payload, user?.username);
       } catch {
-        await queueTicketMirror(payload);
+        await queueTicketMirror(payload, user?.username);
       }
     });
     setSubject('');

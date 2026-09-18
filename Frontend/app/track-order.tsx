@@ -50,9 +50,24 @@ export default function TrackOrderScreen() {
   const statusLabel = STATUS_LABELS[order.status];
   const orderNumber = order.orderNumber.startsWith('#') ? order.orderNumber : `#${order.orderNumber}`;
   const orderDate = new Date(order.placedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // Delivered date truth: tracking step time → delivery stamp → dateless.
+  // The purchase date is never the delivery date.
+  const deliveredMs = (() => {
+    const step = order.tracking.find((s) => s.done && s.label === 'Delivered');
+    const t = step ? new Date(step.time).getTime() : NaN;
+    if (!Number.isNaN(t)) return t;
+    const raw = (order as { actualDelivery?: unknown }).actualDelivery;
+    if (typeof raw === 'string' && raw) {
+      const s = Date.parse(raw);
+      if (Number.isFinite(s)) return s;
+    }
+    return NaN;
+  })();
   const etaLine =
     order.status === 'delivered'
-      ? `Delivered on ${orderDate}`
+      ? (!Number.isNaN(deliveredMs)
+          ? `Delivered on ${new Date(deliveredMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+          : 'Delivered')
       : order.status === 'cancelled'
         ? 'Order cancelled'
         : statusLabel;
@@ -72,11 +87,19 @@ export default function TrackOrderScreen() {
   const productImage = firstItem?.imageUrl ? { uri: firstItem.imageUrl } : resolveListingImage(null, firstItem?.listingId ?? (order as any)?.id);
 
   const isLive = ['placed', 'confirmed', 'preparing', 'out_for_delivery'].includes(order.status);
+  // Return-window gate (receipt parity): out-of-window delivered orders must
+  // not offer Return — the refund screen 400s them into a dead-end. Unknown
+  // delivery date stays open (the server decides, never a false "over").
+  const RETURN_WINDOW_MS = 7 * 86400000;
+  const withinReturnWindow =
+    order.status === 'delivered' &&
+    !order.refund &&
+    (Number.isNaN(deliveredMs) || Date.now() <= deliveredMs + RETURN_WINDOW_MS);
 
   const handleShare = () => {
     Share.share({
       title: `Order ${orderNumber}`,
-      message: `Order ${orderNumber} (${statusLabel}) — ${productName} x ${quantity} at ${productPrice}.`,
+      message: `Order ${orderNumber} (${statusLabel}) — ${productName} x ${quantity} at ${productPrice}.\nsusej://product/${firstItem?.listingId ?? ''}`,
     }).catch(() => {});
   };
 
@@ -223,7 +246,14 @@ export default function TrackOrderScreen() {
             </View>
             <View className="flex-1">
               <Text className="text-figma-14 font-inter-600 text-textPrimary">Delivered</Text>
-              <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">Delivered on {orderDate}</Text>
+              <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">{!Number.isNaN(deliveredMs) ? `Delivered on ${new Date(deliveredMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Delivered'}</Text>
+              {(() => {
+                const log = (order as { deliveryLog?: Array<{ note?: string }> }).deliveryLog;
+                const note = Array.isArray(log) && log.length ? String(log[log.length - 1]?.note ?? '') : '';
+                return note ? (
+                  <Text className="text-figma-12 font-inter-400 text-textSecondary mt-1">Delivery proof: {note}</Text>
+                ) : null;
+              })()}
             </View>
           </View>
           {!order.reviewed && (
@@ -235,12 +265,20 @@ export default function TrackOrderScreen() {
             </TouchableOpacity>
           )}
           <View className="flex-row gap-3">
-            <TouchableOpacity
-              className="flex-1 h-11 rounded-figma-12 bg-surfaceContainer items-center justify-center"
-              onPress={() => router.push(`/refund/${order.id}`)}
-            >
-              <Text className="text-figma-13 font-inter-600 text-textPrimary">Return</Text>
-            </TouchableOpacity>
+            {withinReturnWindow ? (
+              <TouchableOpacity
+                className="flex-1 h-11 rounded-figma-12 bg-surfaceContainer items-center justify-center"
+                onPress={() => router.push(`/refund/${order.id}`)}
+              >
+                <Text className="text-figma-13 font-inter-600 text-textPrimary">Return</Text>
+              </TouchableOpacity>
+            ) : (
+              <View className="flex-1 h-11 rounded-figma-12 bg-surfaceContainer items-center justify-center" style={{ opacity: 0.6 }}>
+                <Text className="text-figma-13 font-inter-600 text-textSecondary">
+                  {order.refund ? 'Refund in progress' : 'Return window over'}
+                </Text>
+              </View>
+            )}
             <TouchableOpacity
               className="flex-1 h-11 rounded-figma-12 bg-surfaceContainer items-center justify-center"
               onPress={() => router.push('/support')}

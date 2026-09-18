@@ -69,6 +69,11 @@ export default function LoyaltyPage() {
     setReason("");
   }
 
+  // Points are spendable value: optimistic adjust with snapshot revert +
+  // named error. The old `.finally(refresh)` left refused adjustments
+  // painted (400/403/race/offline) with the dialog simply closed.
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+
   function submitAdjust() {
     if (!target) return;
     const amount = Number(delta);
@@ -76,19 +81,35 @@ export default function LoyaltyPage() {
     // Points are spendable value: the audit trail must carry the justification.
     // The desk blocks submission until a reason is typed (footer copy promises it).
     if (!reason.trim()) return;
+    const snapshot = items;
     const points = Math.max(0, target.points + amount);
     const tier = tierFromPoints(points);
     setItems((prev) =>
       (prev ?? []).map((u) => (u.id === target.id ? { ...u, points, tier } : u))
     );
+    setAdjustError(null);
     fetch("/api/data/loyalty", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ id: target.id, data: { points, tier }, reason: reason.trim().slice(0, 500) }),
     })
-      .finally(() => {
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          setItems(snapshot);
+          setAdjustError(
+            String((body as { error?: unknown } | null)?.error || `Adjustment refused (HTTP ${res.status}). Reverted — no points moved.`)
+          );
+          return;
+        }
         setTarget(null);
+      })
+      .catch(() => {
+        setItems(snapshot);
+        setAdjustError("Could not reach the server. Reverted — no points moved.");
+      })
+      .finally(() => {
         refresh();
       });
   }
@@ -182,11 +203,13 @@ export default function LoyaltyPage() {
               />
             </div>
 
+            {adjustError && (
+              <p className="text-[13px] font-medium text-[#DC2626]">{adjustError}</p>
+            )}
             <div className="flex justify-end gap-3">
               <Button variant="secondary" onClick={() => setTarget(null)}>
                 Cancel
-              </Button>
-              <Button
+              </Button>              <Button
                 onClick={submitAdjust}
                 disabled={!delta || Number(delta) === 0 || !reason.trim()}
               >

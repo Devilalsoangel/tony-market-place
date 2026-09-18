@@ -111,7 +111,20 @@ function ReceiptIcon({ size = 18, color = colors.primaryContainer }: { size?: nu
 // credit (arrow down, green) or debit (arrow up, error red) direction icon.
 const isReceiptTx = (t: Transaction) => /order|promo/i.test(t.title);
 
+// Synchronous in-flight flag: setState (payoutBusy) applies on re-render, so
+// two taps in the same frame BOTH passed the guard, both read a null sticky
+// ref, minted distinct refs, and double-debited. A module ref flips
+// synchronously — the second tap dies before its first await.
+const payoutFlightRef: { current: boolean } = { current: false };
+
 export default function WalletScreen() {
+  // A crash/unmount mid-payout used to leave the module flight-flag set —
+  // payouts dead until app reload. Reset on mount/unmount (in-flight work
+  // cannot survive either; the sticky per-intent ref still guards retries).
+  useEffect(() => {
+    payoutFlightRef.current = false;
+    return () => { payoutFlightRef.current = false; };
+  }, []);
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { orders } = useOrders();
@@ -302,8 +315,9 @@ export default function WalletScreen() {
   const netEarnings = sellerNetForOrders(sellerOrders);
   // 7-day settlement hold (mirrors the server payout guard exactly): delivered
   // legs unlock 7 days after actualDelivery (return window). Missing stamp =
-  // UNMATURED (still settling) — counting it as matured let a seller tap Mark
-  // Delivered and withdraw the same second, bypassing the hold entirely.
+  // pre-hold-era legacy = matured (every new delivery is stamped server-side,
+  // so unstamped can only be legacy). The server is the money guard with its
+  // own clock — this gate is display-only and fail-closed server-side.
   const HOLD_MS = 7 * 24 * 3600 * 1000;
   // Maturity matches the server payout guard exactly: a missing stamp means
   // pre-hold-era = matured (every deliver path stamps new rows server-side,
@@ -322,8 +336,10 @@ export default function WalletScreen() {
   // unmatured-frozen was never inside it (subtracting all frozen understated
   // withdrawable by the unmatured slice).
   const frozenOrders = sellerOrders.filter((o) => o.status === 'delivered' && (o as { disputeFrozen?: boolean }).disputeFrozen === true);
-  const frozenNet = sellerNetForOrders(frozenOrders);
-  const frozenMaturedNet = sellerNetForOrders(frozenOrders.filter((o) => isMatured(o)));
+  // includeFrozen: these buckets measure the frozen slice itself — the
+  // shared headline exclusion would zero them (double-exclusion).
+  const frozenNet = sellerNetForOrders(frozenOrders, { includeFrozen: true });
+  const frozenMaturedNet = sellerNetForOrders(frozenOrders.filter((o) => isMatured(o)), { includeFrozen: true });
   const maturedNet = Math.max(0, sellerNetForOrders(maturedOrders) - frozenMaturedNet);
   const settlingNet = Math.max(0, netEarnings - maturedNet - frozenNet);
   // Next unlock date ("available on"): the earliest settling leg's unlock day.
@@ -350,7 +366,7 @@ export default function WalletScreen() {
   // Display commission = goods − settled net (matches the shared fn exactly).
   const commissionTotal = Math.max(0, earningsTotal - netEarnings);
   const submitPayout = async () => {
-    if (payoutBusy) return;
+    if (payoutBusy || payoutFlightRef.current) return;
     const amount = Math.round(Number(payoutAmount));
     if (!amount || amount < 100 || amount > withdrawableEarnings) {
       if (amount && amount < 100) Alert.alert('Minimum payout', `Minimum withdrawal is ${formatPrice(100)}.`);
@@ -358,6 +374,7 @@ export default function WalletScreen() {
       return;
     }
     setPayoutBusy(true);
+    payoutFlightRef.current = true;
     try {
     const totalDebit = amount + payoutFee;
     if (balance < totalDebit) {
@@ -402,8 +419,17 @@ export default function WalletScreen() {
         await AsyncStorage.setItem(PAYOUT_REF_KEY, JSON.stringify({ ref: payoutRef, at: Date.now() }));
       } catch {}
     }
-    const res = await mod.serverApi.requestPayout(amount, payoutMethod, payoutRef, payoutMethod === 'upi' ? vpa : undefined).catch(() => null);
+    const res = await mod.serverApi.requestPayout(amount, payoutMethod, payoutRef, payoutMethod === 'upi' ? vpa : undefined, payoutFee).catch(() => null);
     if (!res?.ok || !res.data?.withdrawalId) {
+      const msg = String(res?.error ?? '');
+      // Fee moved mid-session: refresh the live fee so the NEXT tap sends a
+      // current preview instead of 400-looping on the stale one.
+      if (/fee changed/i.test(msg)) {
+        try {
+          const c = await loadMarketplaceConfig();
+          if (typeof c.payoutFee === 'number') setPayoutFee(c.payoutFee);
+        } catch {}
+      }
       Alert.alert('Withdrawal failed', res?.error || 'Could not submit payout. Check your connection and try again. Safe to retry — the same attempt can never debit twice.');
       // Re-sync so the UI reflects server truth (the debit never happened on
       // failure — the transaction rolled back).
@@ -436,6 +462,7 @@ export default function WalletScreen() {
       [{ text: 'OK' }]
     );
     } finally {
+      payoutFlightRef.current = false;
       setPayoutBusy(false);
     }
   };
@@ -743,6 +770,7 @@ export default function WalletScreen() {
                       style={{ fontSize: 15, lineHeight: 20, color: colors.textPrimary }}
                       value={payoutVpa}
                       onChangeText={setPayoutVpa}
+                      editable={!payoutBusy}
                     />
                   </View>
                 ) : null}
@@ -755,6 +783,7 @@ export default function WalletScreen() {
                     style={{ fontSize: 15, lineHeight: 20, color: colors.textPrimary }}
                     value={payoutAmount}
                     onChangeText={(text) => setPayoutAmount(text.replace(/[^0-9]/g, ''))}
+                    editable={!payoutBusy}
                   />
                 </View>
                 {payoutAmount ? (

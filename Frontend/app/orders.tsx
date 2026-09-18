@@ -133,7 +133,7 @@ export default function OrdersScreen() {
                       {formatPrice(item.chargedTotal ?? item.total)}
                     </Text>
                     <View className="flex-row items-center gap-4">
-                      {(item.status === 'placed' || item.status === 'confirmed') && (
+                      {(item.status === 'placed' || item.status === 'confirmed' || item.status === 'preparing') && (
                         <TouchableOpacity
                           onPress={(e) => {
                             e.stopPropagation();
@@ -145,11 +145,13 @@ export default function OrdersScreen() {
                                 {
                                   text: 'Cancel order',
                                   style: 'destructive',
-                                  onPress: () => {
-                                    if (!cancelOrder(item.id, 'Cancelled by buyer')) {
-                                      Alert.alert('Cannot cancel', 'This order can no longer be cancelled. Contact support for help.');
-                                    }
-                                  },
+                                   onPress: () => {
+                                     void cancelOrder(item.id, 'Cancelled by buyer').then((ok) => {
+                                       if (!ok) {
+                                         Alert.alert('Cannot cancel', 'This order can no longer be cancelled. Contact support for help.');
+                                       }
+                                     });
+                                   },
                                 },
                               ]
                             );
@@ -163,7 +165,7 @@ export default function OrdersScreen() {
                           </Text>
                         </TouchableOpacity>
                       )}
-                      {item.status === 'delivered' && !item.reviewed && (
+                      {item.status === 'delivered' && !item.reviewed && (item.buyerUsername ?? '').toLowerCase() === myStore && (
                         <TouchableOpacity
                           onPress={(e) => { e.stopPropagation(); router.push(`/rate-review?id=${item.id}`); }}
                           hitSlop={{ top: 8, bottom:	8, left:	8, right:	8 }}
@@ -206,17 +208,29 @@ export default function OrdersScreen() {
         ListEmptyComponent={
           <View className="items-center justify-center py-20">
             <Text className="font-inter-600 text-textPrimary mb-2" style={{ fontSize: 18, lineHeight: 28 }}>
-              No orders yet
+              {orders.length > 0 && statusTab !== 'All' ? `No ${statusTab.toLowerCase()} orders` : 'No orders yet'}
             </Text>
-            <TouchableOpacity
-              className="px-6 py-3 rounded-full"
-              style={{ backgroundColor: colors.primaryContainer }}
-              onPress={() => router.push('/(tabs)/feed')}
-            >
-              <Text className="font-inter-600 text-white" style={{ fontSize: 14, lineHeight: 16 }}>
-                Browse Feed
-              </Text>
-            </TouchableOpacity>
+            {orders.length > 0 && statusTab !== 'All' ? (
+              <TouchableOpacity
+                className="px-6 py-3 rounded-full"
+                style={{ backgroundColor: colors.surfaceContainer }}
+                onPress={() => setStatusTab('All')}
+              >
+                <Text className="font-inter-600 text-primary" style={{ fontSize: 14, lineHeight: 16 }}>
+                  Show all orders
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                className="px-6 py-3 rounded-full"
+                style={{ backgroundColor: colors.primaryContainer }}
+                onPress={() => router.push('/(tabs)/feed')}
+              >
+                <Text className="font-inter-600 text-white" style={{ fontSize: 14, lineHeight: 16 }}>
+                  Browse Feed
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
       />

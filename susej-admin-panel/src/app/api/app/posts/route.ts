@@ -3,6 +3,46 @@ import { getPrisma } from "@/lib/db";
 import { getAppUser } from "@/lib/app-auth";
 import { validateMediaRefs } from "@/lib/media";
 
+/**
+ * Variant shape gate (POST + PATCH share it): at most 20 groups, 50 values
+ * each; names/labels clipped; priceDelta within ±10M (a negative delta
+ * undercharges every order and distorts fee legs); stock integer 0..100000.
+ * Returns 400-grade errors, never silent clips of money fields.
+ */
+export function sanitizeVariants(raw: unknown): { ok: true; variants: null | unknown } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, variants: null };
+  if (!Array.isArray(raw)) return { ok: false, error: "Invalid variants" };
+  if (raw.length > 20) return { ok: false, error: "Too many variant groups (max 20)" };
+  const out: Array<{ name: string; values: Array<{ label: string; priceDelta?: number; stock?: number }> }> = [];
+  for (const g of raw as Array<{ name?: unknown; values?: unknown }>) {
+    const name = String(g?.name ?? "").trim().slice(0, 60);
+    if (!name) return { ok: false, error: "Variant group needs a name" };
+    if (!Array.isArray(g?.values) || (g.values as unknown[]).length === 0) {
+      return { ok: false, error: `Variant "${name}" needs at least one value` };
+    }
+    if ((g.values as unknown[]).length > 50) return { ok: false, error: `Too many values in "${name}" (max 50)` };
+    const values: Array<{ label: string; priceDelta?: number; stock?: number }> = [];
+    for (const v of g.values as Array<{ label?: unknown; priceDelta?: unknown; stock?: unknown }>) {
+      const label = String(v?.label ?? "").trim().slice(0, 60);
+      if (!label) return { ok: false, error: `Variant "${name}" has an empty value` };
+      const row: { label: string; priceDelta?: number; stock?: number } = { label };
+      if (v?.priceDelta !== undefined) {
+        const d = Number(v.priceDelta);
+        if (!Number.isFinite(d) || Math.abs(d) > 10000000) return { ok: false, error: `Bad price adjustment in "${name}"` };
+        row.priceDelta = Math.round(d);
+      }
+      if (v?.stock !== undefined) {
+        const s = Number(v.stock);
+        if (!Number.isFinite(s) || s < 0 || s > 100000) return { ok: false, error: `Bad stock in "${name}"` };
+        row.stock = Math.floor(s);
+      }
+      values.push(row);
+    }
+    out.push({ name, values });
+  }
+  return { ok: true, variants: out as never };
+}
+
 function toAppPost(p: {
   id: string;
   title: string;
@@ -85,23 +125,83 @@ export async function GET(req: NextRequest) {
   const qRaw = req.nextUrl.searchParams.get("q");
   const q = qRaw ? qRaw.slice(0, 100).toLowerCase() : undefined;
 
+  // Extracted (shared by the page query + hashtag-suppression backfill below).
+  const baseWhere: any = {
+    status: "published",
+    ...(seller ? { authorUsername: seller } : {}),
+    ...(cat ? { category: { equals: cat, mode: "insensitive" } } : {}),
+    ...(q
+      ? {
+          // Marketplace-wide coverage (was title/desc only): category,
+          // seller identity, and hashtag terms must hit cross-device, or
+          // sellers/tags/categories are unfindable from a fresh install.
+          OR: [
+            { title: { contains: q, mode: "insensitive" } },
+            { description: { contains: q, mode: "insensitive" } },
+            { category: { contains: q, mode: "insensitive" } },
+            { authorName: { contains: q, mode: "insensitive" } },
+            { authorUsername: { contains: q, mode: "insensitive" } },
+            { hashtags: { array_contains: q } },
+          ],
+        }
+      : {}),
+  };
   const posts = await prisma.post.findMany({
-    where: {
-      status: "published",
-      ...(seller ? { authorUsername: seller } : {}),
-      ...(cat ? { category: { equals: cat, mode: "insensitive" } } : {}),
-      ...(q
-        ? {
-            OR: [
-              { title: { contains: q, mode: "insensitive" } },
-              { description: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
+    where: baseWhere,
     orderBy: { createdAt: "desc" },
     take: 100,
   });
+
+  // Desk-wired hashtag moderation: tags the moderators Block actually
+  // suppress content. hashtags is Json (no scalar-list filter), so the
+  // exclusion runs here over the window — WITH backfill (up to 4 pages):
+  // filtering without it silently shrank pages whenever blocked rows sat in
+  // the window.
+  const PAGE = 100;
+  let blockedSet = new Set<string>();
+  try {
+    const blocked = await prisma.hashtag.findMany({ where: { status: "blocked" }, select: { tag: true } });
+    blockedSet = new Set(
+      (blocked as Array<{ tag?: unknown }>).map((h) => String(h.tag ?? "").replace(/^#+/, "").trim().toLowerCase()).filter(Boolean)
+    );
+  } catch (e) {
+    // Fail-OPEN by design (availability beats moderation on a read blip —
+    // fail-closed would blank paid rails + feed on a transient), but LOUD:
+    // a silent empty set would serve blocked-tag rows indefinitely.
+    console.error("[posts] blocked-hashtag read failed — serving unfiltered:", e instanceof Error ? e.message : e);
+  }
+  const isBlockedPost = (p: { hashtags?: unknown }) => {
+    const tags = Array.isArray(p.hashtags)
+      ? (p.hashtags as unknown[]).map((h) => String(h ?? "").replace(/^#+/, "").trim().toLowerCase())
+      : [];
+    return tags.some((t) => blockedSet.has(t));
+  };
+  let visible: typeof posts = [];
+  if (!blockedSet.size) {
+    visible = posts;
+  } else {
+    // Id-dedupe across backfill pages: concurrent inserts shift the
+    // skip-window and the same row can arrive twice (duplicate feed cards).
+    const seen = new Set(posts.map((p) => p.id));
+    visible = posts.filter((p) => !isBlockedPost(p));
+    let skip = PAGE;
+    for (let page = 0; page < 3 && visible.length < PAGE; page++) {
+      const more = await prisma.post.findMany({
+        where: baseWhere,
+        orderBy: { createdAt: "desc" },
+        take: PAGE,
+        skip,
+      });
+      if (!more.length) break;
+      skip += PAGE;
+      for (const p of more) {
+        if (visible.length >= PAGE) break;
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        if (!isBlockedPost(p)) visible.push(p);
+      }
+    }
+  }
 
   const likedSet = new Set<string>();
   if (username) {
@@ -114,7 +214,7 @@ export async function GET(req: NextRequest) {
 
   // Resolve current author display names (business name first, real rows only).
   const authorNames = new Map<string, string>();
-  const authorUsernames = Array.from(new Set(posts.map((p) => p.authorUsername).filter(Boolean))) as string[];
+  const authorUsernames = Array.from(new Set(visible.map((p) => p.authorUsername).filter(Boolean))) as string[];
   if (authorUsernames.length) {
     const authors = await prisma.user.findMany({
       where: { username: { in: authorUsernames } },
@@ -125,7 +225,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ posts: posts.map((p) => toAppPost({ ...p, likedByMe: likedSet.has(p.id) }, authorNames.get(p.authorUsername ?? ""))) });
+  return NextResponse.json({ posts: visible.map((p) => toAppPost({ ...p, likedByMe: likedSet.has(p.id) }, authorNames.get(p.authorUsername ?? ""))) });
 }
 
 export async function POST(req: NextRequest) {
@@ -150,11 +250,13 @@ export async function POST(req: NextRequest) {
   const rawMrp = typeof body.mrp === "number" ? body.mrp : Number(body.mrp ?? 0);
   const mrp = Number.isFinite(rawMrp) && rawMrp > price ? rawMrp : null;
   const images = Array.isArray(body.images) ? (body.images as string[]) : body.image ? [body.image] : [];
-  // Guard: cap hashtags count + length to prevent DB abuse.
+  // Guard: cap hashtags count + length to prevent DB abuse. Normalized to
+  // lowercase: hashtag search is case-insensitive (array_contains is
+  // case-sensitive, so mixed-case storage would silently miss).
   const rawHashtags = Array.isArray(body.hashtags) ? (body.hashtags as unknown[]) : [];
   const hashtags = rawHashtags
     .filter((h): h is string => typeof h === "string")
-    .map((h) => h.trim().slice(0, 50))
+    .map((h) => h.trim().toLowerCase().slice(0, 50))
     .filter((h) => h.length > 0)
     .slice(0, 30);
   // Optional per-listing selling location (store location stays separate).
@@ -180,7 +282,15 @@ export async function POST(req: NextRequest) {
   // Guard: cap description length to prevent DB abuse / DoS.
   const description = String(body.description ?? "").slice(0, 5000);
   const categoryStr = String(body.category ?? "").trim().slice(0, 60);
-  const variants = Array.isArray((body as unknown as { variants?: unknown }).variants) ? ((body as unknown as { variants: unknown[] }).variants.slice(0, 20) as never) : null;
+  // Variant shape validation (both lanes share it): raw JSON used to accept
+  // negative/unbounded priceDelta (undercharge every order + distort fee
+  // legs), unbounded labels/stock, and 1000-value groups. Clipped, not just
+  // sliced — a negative delta must 400, not silently pass.
+  const variantCheck = sanitizeVariants((body as unknown as { variants?: unknown }).variants);
+  if (!variantCheck.ok) {
+    return NextResponse.json({ error: variantCheck.error }, { status: 400 });
+  }
+  const variants = variantCheck.variants;
   const rawSubs = (body as unknown as { subCategories?: unknown }).subCategories;
   const subCategories = Array.isArray(rawSubs) ? rawSubs.map((s) => String(s).slice(0, 60)).filter(Boolean).slice(0, 20) as never : null;
   const stockLeftRaw = (body as unknown as { stockLeft?: unknown }).stockLeft;
@@ -220,7 +330,11 @@ export async function POST(req: NextRequest) {
       likes: 0,
       comments: 0,
       status: "published",
-      isSold: false,
+      // Zero-stock listings start sold (out-of-stock shelf state): the client
+      // sends isSold with stockLeft 0, and a 0-stock Active row can never
+      // sell (placement 400s). isSold is honored ONLY in that consistent
+      // pair — never as a free flag.
+      isSold: body.isSold === true && stockLeft === 0,
       featured: false,
       condition: body.condition ? String(body.condition) : null,
       brand: body.brand ? String(body.brand) : null,

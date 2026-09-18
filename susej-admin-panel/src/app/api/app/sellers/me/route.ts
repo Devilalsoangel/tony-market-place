@@ -3,19 +3,30 @@ import { getPrisma } from "@/lib/db";
 import { getAppUser } from "@/lib/app-auth";
 
 /** Find the caller's own seller application: primary key app_<username>,
- *  falling back to an EXACT phone match for rows filed before the id clamp.
+ *  falling back to an EXACT phone match for rows filed before the id clamp —
+ *  gated on EMAIL match with the caller's token identity. Without it, any
+ *  exact phone match (shared family phone, recycled number) returned another
+ *  user's businessName/status/docCount to the caller.
  *  No endsWith fallback (cross-user last-10 collisions would leak another
  *  seller's application + KYC state to the caller). */
-async function findMine(prisma: NonNullable<Awaited<ReturnType<typeof getPrisma>>>, username: string, phone: string | null) {
+async function findMine(
+  prisma: NonNullable<Awaited<ReturnType<typeof getPrisma>>>,
+  username: string,
+  phone: string | null,
+  email?: string | null
+) {
   const byId = await prisma.seller.findUnique({ where: { id: `app_${username}` } }).catch(() => null);
   if (byId) return byId;
   const digits = String(phone ?? "").replace(/\D/g, "");
-  if (digits) {
+  const mail = String(email ?? "").trim().toLowerCase();
+  if (digits && mail) {
     const byPhone = await prisma.seller.findFirst({
       where: { phone: digits },
       orderBy: { submittedAt: "desc" },
     }).catch(() => null);
-    if (byPhone) return byPhone;
+    // Ownership proof: the row's email must be the caller's — otherwise this
+    // is someone else's application sharing the phone number.
+    if (byPhone && String(byPhone.email ?? "").trim().toLowerCase() === mail) return byPhone;
   }
   return null;
 }
@@ -34,7 +45,7 @@ export async function GET(req: NextRequest) {
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
   const username = auth.user.username!;
-  const row = await findMine(prisma, username, auth.user.phone);
+  const row = await findMine(prisma, username, (auth.user as { phone?: unknown }).phone as string | null, (auth.user as { email?: unknown }).email as string | null);
   if (!row) return NextResponse.json({ application: null });
 
   const [docCount, verifiedDocs, lastAudit] = await Promise.all([
@@ -71,18 +82,23 @@ export async function DELETE(req: NextRequest) {
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
   const username = auth.user.username!;
-  const row = await findMine(prisma, username, auth.user.phone);
+  const row = await findMine(prisma, username, (auth.user as { phone?: unknown }).phone as string | null, (auth.user as { email?: unknown }).email as string | null);
   if (!row) return NextResponse.json({ ok: true, withdrawn: false });
   if (row.kycStatus !== "pending") {
     return NextResponse.json({ error: "Only a pending application can be withdrawn" }, { status: 409 });
   }
   // Pending applicants cannot own products/orders (creation gates on
   // approved), but refuse rather than strand if that ever changes.
-  const [products, orders] = await Promise.all([
-    prisma.product.count({ where: { sellerName: { contains: row.businessName, mode: "insensitive" } } }),
-    prisma.order.count({ where: { sellerName: { contains: row.businessName, mode: "insensitive" } } }),
+  // Keyed on Post.authorUsername (exact, stable identity) — the old guard
+  // matched Product/Order.sellerName by CONTAINS on the mutable businessName:
+  // similar names false-refused withdrawals while renamed sellers slipped
+  // through. Posts are the live-data signal (products mirror them).
+  const [posts, products, orders] = await Promise.all([
+    prisma.post.count({ where: { authorUsername: username } }),
+    prisma.product.count({ where: { sellerName: row.businessName } }),
+    prisma.order.count({ where: { sellerName: row.businessName } }),
   ]);
-  if (products || orders) {
+  if (posts || products || orders) {
     return NextResponse.json({ error: "This application holds live store data — contact support" }, { status: 409 });
   }
   await prisma.seller.delete({ where: { id: row.id } });

@@ -60,14 +60,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       ? `Chat Pin · ${days}d · ${rawRef}`
       : `Chat Pin · ${days} days · ${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
     // Idempotent retry: the same ref returns the live pin without re-debiting.
+    // STRICT dedupe: title-existence alone is not proof of payment (a
+    // poisoned -1 row under the same title used to convert the paid pin into
+    // a free claim that also lied about thread state). The row must carry
+    // THIS thread in its detail and the exact price as its amount.
+    // Price-move safety: a same-ref retry after an admin price change matches
+    // the title but NOT the amount — 409 with a fresh-ref instruction instead
+    // of debiting the new price on top of the old (double charge).
     if (hasRef) {
       const dup = await prisma.walletTransaction.findFirst({
         where: { username, title: priceTitle },
-        select: { title: true },
+        select: { title: true, amount: true, detail: true },
       });
       if (dup) {
-        const cur = await prisma.chatThread.findUnique({ where: { id: thread.id }, select: { pinnedUntil: true } });
-        return NextResponse.json({ pinnedUntil: cur?.pinnedUntil?.getTime() ?? Date.now() + days * 864e5, days, charged: 0, deduped: true }, { status: 200 });
+        // Mismatch (amount or thread) usually means a poisoned row — 409 with
+        // a fresh-ref instruction. EXCEPT the timeout-after-commit edge: the
+        // first attempt may have pinned the thread under an older price
+        // (admin moved it mid-retry). The pin write is atomic with the debit,
+        // so a live self-pin proves payment — return it deduped instead of
+        // charging a second time.
+        const livePin = await prisma.chatThread.findUnique({ where: { id: thread.id }, select: { pinnedUntil: true, pinnedBy: true } }).catch(() => null);
+        const pinTs = livePin?.pinnedUntil instanceof Date ? livePin.pinnedUntil.getTime() : Number(livePin?.pinnedUntil ?? NaN);
+        if (String((livePin as { pinnedBy?: unknown } | null)?.pinnedBy ?? "") === username && Number.isFinite(pinTs) && (pinTs as number) > Date.now()) {
+          return NextResponse.json({ pinnedUntil: pinTs, days, charged: 0, deduped: true }, { status: 200 });
+        }
+        return NextResponse.json({ error: "Pin price changed since this attempt — retry with a fresh request, never the same ref" }, { status: 409 });
       }
     }
     let debited: Date | null = null;
@@ -83,7 +100,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         });
         if (res.count === 0) throw new Error("BALANCE");
         await tx.walletTransaction.create({
-          data: { username, title: priceTitle, detail: `Pinned chat ${thread.id.slice(0, 8)} · ${days}d`, amount: -pinPrice },
+          data: { username, title: priceTitle, detail: `Pinned chat ${thread.id} · ${days}d`, amount: -pinPrice },
         });
         const pinnedUntil = new Date(now.getTime() + days * 864e5);
         await tx.chatThread.update({ where: { id: thread.id }, data: { pinnedUntil, pinnedBy: username } });
@@ -93,10 +110,29 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.startsWith("LIMIT:")) return NextResponse.json({ error: `Pinned-chat limit reached (${MAX_CONCURRENT_PINS}). Wait for one to expire or unpurchase.` }, { status: 403 });
       if (msg === "BALANCE") return NextResponse.json({ error: "Insufficient wallet balance" }, { status: 400 });
-      // Concurrent retry already committed (UNIQUE username+title): report the winner.
+      // Concurrent retry already committed (UNIQUE username+title): report the
+      // winner — but VERIFIED like the pre-check above. The old code returned
+      // success for any P2002, so the same ref POSTed against two threads
+      // reported a pin on a thread never pinned. Winner row must carry this
+      // thread + this price, or a live self-pin must prove payment.
       if ((e as { code?: string })?.code === "P2002") {
-        const cur = await prisma.chatThread.findUnique({ where: { id: thread.id }, select: { pinnedUntil: true } });
-        return NextResponse.json({ pinnedUntil: cur?.pinnedUntil?.getTime() ?? Date.now() + days * 864e5, days, charged: 0, deduped: true }, { status: 200 });
+        const winner = await prisma.walletTransaction.findFirst({
+          where: { username, title: priceTitle },
+          select: { amount: true, detail: true },
+        }).catch(() => null);
+        const winnerOk = !!winner
+          && Number(winner.amount ?? 0) === -pinPrice
+          && String(winner.detail ?? "").includes(thread.id);
+        if (winnerOk) {
+          const cur = await prisma.chatThread.findUnique({ where: { id: thread.id }, select: { pinnedUntil: true } });
+          return NextResponse.json({ pinnedUntil: cur?.pinnedUntil?.getTime() ?? Date.now() + days * 864e5, days, charged: 0, deduped: true }, { status: 200 });
+        }
+        const livePin = await prisma.chatThread.findUnique({ where: { id: thread.id }, select: { pinnedUntil: true, pinnedBy: true } }).catch(() => null);
+        const pinTs = livePin?.pinnedUntil instanceof Date ? livePin.pinnedUntil.getTime() : Number((livePin as { pinnedUntil?: unknown } | null)?.pinnedUntil ?? NaN);
+        if (String((livePin as { pinnedBy?: unknown } | null)?.pinnedBy ?? "") === username && Number.isFinite(pinTs) && (pinTs as number) > Date.now()) {
+          return NextResponse.json({ pinnedUntil: pinTs, days, charged: 0, deduped: true }, { status: 200 });
+        }
+        return NextResponse.json({ error: "Pin conflict — retry with a fresh request, never the same ref" }, { status: 409 });
       }
       throw e;
     }

@@ -1,4 +1,4 @@
-import { useMemo, ReactNode } from 'react';
+import { useEffect, useMemo, useState, ReactNode } from 'react';
 import { View, Text, Image, ScrollView, TouchableOpacity } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, VerifiedIcon, HeartIcon } from '../utils/icons';
 import { colors, formatPrice, getCategoryColor } from '../utils/theme';
 import { usePosts, Post } from '../contexts/PostContext';
+import { serverApi } from '../utils/serverApi';
 
 const MAX_COMPARE = 3;
 const LABEL_WIDTH = 96;
@@ -33,8 +34,9 @@ const conditionOf = (post: Post): string => {
   // mislabeled "renewed" as New on this surface only.
   const d = (post.description ?? '').toLowerCase();
   if (/\blike new\b/.test(d) || /\bmint\b/.test(d)) return 'Like New';
+  if (/\brefurbished\b/.test(d) || /\brefurb\b/.test(d)) return 'Refurbished';
   if (/\bnew\b/.test(d)) return 'New';
-  if (/\bused\b/.test(d) || /\bpre-owned\b/.test(d) || /\bpre owned\b/.test(d) || /\bsecond hand\b/.test(d) || /\brefurbished\b/.test(d)) return 'Used';
+  if (/\bused\b/.test(d) || /\bpre-owned\b/.test(d) || /\bpre owned\b/.test(d) || /\bsecond hand\b/.test(d)) return 'Used';
   return 'Unknown';
 };
 
@@ -56,16 +58,65 @@ function CompareContent() {
   const params = useLocalSearchParams<{ ids?: string | string[] }>();
   const { posts } = usePosts();
 
-  const products = useMemo(() => {
+  const ids = useMemo(() => {
     const raw = Array.isArray(params.ids) ? params.ids.join(',') : params.ids ?? '';
-    const ids = raw
+    return raw
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
       .slice(0, MAX_COMPARE);
-    const byId = new Map(posts.map((p) => [p.id, p]));
+  }, [params.ids]);
+
+  // Server fallback (PDP parity): shared /compare?ids= links opened on a
+  // fresh install resolved nothing — "Nothing to compare yet" for listings
+  // that exist. Missing ids are fetched once each.
+  const [fetched, setFetched] = useState<Post[]>([]);
+  useEffect(() => {
+    const byId = new Set([...posts.map((p) => p.id), ...fetched.map((p) => p.id)]);
+    const missing = ids.filter((id) => !byId.has(id));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const rows: Post[] = [];
+      for (const id of missing) {
+        try {
+          const res = await serverApi.getPost(id);
+          const p = (res as { ok?: boolean; data?: { post?: any } })?.data?.post;
+          if (res.ok && p && p.id) {
+            rows.push({
+              type: 'product',
+              id: String(p.id),
+              title: String(p.title ?? ''),
+              description: String(p.description ?? ''),
+              price: Number(p.price ?? 0),
+              mrp: typeof p.mrp === 'number' ? p.mrp : undefined,
+              category: String(p.category ?? 'General'),
+              subCategories: undefined,
+              hashtags: [],
+              likes: 0,
+              comments: 0,
+              createdAt: Date.now(),
+              image: typeof p.image === 'string' ? p.image : '',
+              images: Array.isArray(p.images) ? p.images.filter((u: unknown): u is string => typeof u === 'string') : [],
+              status: typeof p.status === 'string' ? p.status : undefined,
+              sellerUsername: String(p.sellerUsername ?? ''),
+              sellerName: String(p.sellerName ?? ''),
+              sellerLocation: String(p.sellerLocation ?? ''),
+              verified: Boolean(p.verified),
+            });
+          }
+        } catch {}
+      }
+      if (!cancelled && rows.length) setFetched((prev) => [...prev, ...rows.filter((r) => !prev.some((x) => x.id === r.id))]);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids, posts]);
+
+  const products = useMemo(() => {
+    const byId = new Map([...posts, ...fetched].map((p) => [p.id, p]));
     return ids.map((id) => byId.get(id)).filter((p): p is Post => !!p);
-  }, [params.ids, posts]);
+  }, [ids, posts, fetched]);
 
   const rows: { label: string; render: (post: Post) => ReactNode }[] = useMemo(
     () => [
@@ -155,6 +206,14 @@ function CompareContent() {
           </Text>
         </View>
       ) : (
+        <View className="flex-1">
+          {products.length === 1 && (
+            <View className="mx-4 mt-2 mb-1 px-4 py-2.5 rounded-figma-12" style={{ backgroundColor: colors.surfaceContainer }}>
+              <Text style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary }}>
+                Only one product — open another listing and tap Compare to add it here.
+              </Text>
+            </View>
+          )}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="px-4 pb-8" style={{ paddingTop: 8 }}>
           <View className="flex-row">
             {/* Label column */}
@@ -203,6 +262,7 @@ function CompareContent() {
             })}
           </View>
         </ScrollView>
+        </View>
       )}
     </View>
   );

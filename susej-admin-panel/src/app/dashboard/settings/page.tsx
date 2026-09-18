@@ -58,18 +58,22 @@ function SaveChangesButton({ onSave }: { onSave: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Refusals (e.g. manager role-denied on app-settings) used to close the
+  // dialog with only a console.error — the desk believed the save landed.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   async function confirm() {
     setSaving(true);
+    setSaveError(null);
     try {
       await onSave();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      setOpen(false);
     } catch (e) {
-      console.error(e);
+      setSaveError(e instanceof Error ? e.message : "Save failed — nothing was written.");
     } finally {
       setSaving(false);
-      setOpen(false);
     }
   }
 
@@ -88,6 +92,7 @@ function SaveChangesButton({ onSave }: { onSave: () => Promise<void> }) {
           </div>
           <h3 className="mt-4 text-lg font-semibold text-[#18181B] ">Save Changes</h3>
           <p className="mt-2 text-sm text-gray-500">Are you sure you want to save these settings?</p>
+          {saveError && <p className="mt-2 text-sm text-[#DC2626]">{saveError}</p>}
           <div className="mt-6 flex justify-center gap-3">
             <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={confirm} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</Button>

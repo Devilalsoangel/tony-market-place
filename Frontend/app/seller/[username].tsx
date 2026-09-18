@@ -542,7 +542,16 @@ function StorefrontRoute({
       return;
     }
     if (lower.includes('book')) {
-      router.push('/book-service');
+      // Booking needs a REAL service listing (book-service fail-closes
+      // without listingId): carry the seller's first service row; sellers
+      // with no service listing fall back to chat instead of a dead wall.
+      const svc = sellerPosts.find((p) => (p as { type?: string })?.type === 'service') ?? sellerPosts[0];
+      if (svc) {
+        const t = (svc as { title?: string })?.title ?? '';
+        router.push(`/book-service?listingId=${encodeURIComponent(String(svc.id))}${t ? `&title=${encodeURIComponent(t)}` : ''}`);
+      } else {
+        chatWithSeller(`Hi! I'd like to book a service. What's available?`);
+      }
       return;
     }
     if (lower.includes('apply')) {

@@ -92,11 +92,27 @@ export default function AdminsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [createdAdmin, setCreatedAdmin] = useState<AdminUser | null>(null);
 
+  // Every mutation is optimistic with snapshot-revert + toast: the server
+  // refuses self-modify, last-super-admin removal, and sub-8-char passwords,
+  // and the old `.then(refresh)` showed the refused row until a reload.
+  async function revertFail(promise: Promise<unknown>, rollback: () => void) {
+    try {
+      await promise;
+      refresh();
+    } catch (e: unknown) {
+      rollback();
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Change refused — reverted.");
+    }
+  }
+
   function handleSave(data: Partial<AdminUser>) {
     if (editAdmin) {
-      setAdmins((prev) => prev.map((a) => (a.id === editAdmin.id ? { ...a, ...data } : a)));
-      void apiPatch("admins", editAdmin.id, data).then(refresh);
+      const prev = admins;
+      const id = editAdmin.id;
+      setAdmins((p) => p.map((a) => (a.id === id ? { ...a, ...data } : a)));
       setEditAdmin(null);
+      void revertFail(apiPatch("admins", id, data), () => setAdmins(prev));
     } else {
       const newAdmin: AdminUser = {
         id: `admin_${Date.now()}`,
@@ -108,23 +124,30 @@ export default function AdminsPage() {
         status: data.status || "active",
         createdAt: new Date().toISOString(),
       };
-      setAdmins((prev) => [...prev, newAdmin]);
-      void apiPost("admins", newAdmin).then(refresh);
+      const prev = admins;
+      setAdmins((p) => [...p, newAdmin]);
       setCreatedAdmin(newAdmin);
+      void revertFail(apiPost("admins", newAdmin), () => {
+        setAdmins(prev);
+        setCreatedAdmin(null);
+      });
     }
   }
 
   function handleToggleStatus(admin: AdminUser) {
+    const prev = admins;
     const status = admin.status === "active" ? "inactive" : "active";
-    setAdmins((prev) => prev.map((a) => (a.id === admin.id ? { ...a, status } : a)));
-    void apiPatch("admins", admin.id, { status }).then(refresh);
+    setAdmins((p) => p.map((a) => (a.id === admin.id ? { ...a, status } : a)));
+    void revertFail(apiPatch("admins", admin.id, { status }), () => setAdmins(prev));
   }
 
   function handleDelete() {
     if (!deleteTarget) return;
-    setAdmins((prev) => prev.filter((a) => a.id !== deleteTarget.id));
-    void apiDelete("admins", deleteTarget.id).then(refresh);
+    const prev = admins;
+    const id = deleteTarget.id;
+    setAdmins((p) => p.filter((a) => a.id !== id));
     setDeleteTarget(null);
+    void revertFail(apiDelete("admins", id), () => setAdmins(prev));
   }
 
   function formatDate(dateStr: string): string {

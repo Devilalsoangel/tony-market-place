@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 
@@ -37,7 +37,6 @@ interface CartContextType {
   cart: CartItem[];
   cartCount: number;
   subtotal: number;
-  itemInCart: (listingId: string) => boolean;
   /** Returns false when rejected by the single-seller guard so callers can
    *  explain (industry-standard: never silently ignore an add-to-cart tap). */
   addToCart: (item: Omit<CartItem, 'quantity'>) => boolean;
@@ -71,6 +70,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const { user, tokenSeq } = useAuth();
   const username = user?.username ?? null;
   const cartKey = username ? `${CART_KEY_BASE}:${username}` : CART_KEY_BASE;
+  // Synchronous mirror: the outer single-seller guard must read THIS render's
+  // cart, not a stale closure — back-to-back cross-seller adds pre-render
+  // both reported success while the updater dropped the second.
+  const cartRef = useRef<CartItem[]>([]);
+  cartRef.current = cart;
 
   useEffect(() => {
     let cancelled = false;
@@ -96,17 +100,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = Math.round(cart.reduce((sum, item) => sum + item.price * item.quantity, 0));
 
-  const itemInCart = useCallback(
-    (listingId: string) => cart.some((item) => item.listingId === listingId),
-    [cart]
-  );
-
   const addToCart = useCallback(
     (item: Omit<CartItem, 'quantity'>) => {
-      // Single-seller guard runs synchronously HERE (not inside the async
-      // setCart updater, whose return value the caller can never see).
+      // Single-seller guard reads the ref mirror (this render's cart), so the
+      // boolean is exact for every UI-reachable call sequence. The in-updater
+      // re-check stays as the STATE backstop for same-tick double-taps (cart
+      // can never hold two sellers); the boolean cannot cover that
+      // unreachable case — updaters run after return by design, so no return
+      // value ever could. Callers navigate to the cart, which shows truth.
       // CRITICAL: Cart is single-seller only. Orders can only be placed with one seller.
-      if (cart.length > 0 && cart[0].sellerUsername !== item.sellerUsername) {
+      const cur = cartRef.current;
+      if (cur.length > 0 && cur[0].sellerUsername !== item.sellerUsername) {
         return false;
       }
       setCart((prev) => {
@@ -126,7 +130,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       });
       return true;
     },
-    [persist, cart]
+    [persist]
   );
 
   const removeFromCart = useCallback(
@@ -218,7 +222,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ cart, cartCount, subtotal, itemInCart, addToCart, updatePrices, removeFromCart, updateQuantity, restoreSavedItem, clearCart }}
+      value={{ cart, cartCount, subtotal, addToCart, updatePrices, removeFromCart, updateQuantity, restoreSavedItem, clearCart }}
     >
       {children}
     </CartContext.Provider>

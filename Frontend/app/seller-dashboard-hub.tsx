@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { router } from 'expo-router';
-import { resolveAvatar, resolveListingImage } from '../utils/productImages';
+import { resolveAvatar, resolveListingImage, listingTitle } from '../utils/productImages';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -79,9 +79,15 @@ export default function SellerDashboardHubScreen() {
   const username = user?.username ?? '';
   const shopName = user?.businessName || user?.name || 'My Store';
   const avatar = user?.avatar || resolveAvatar(username ?? 'user').uri;
-  // Banner: real uploaded photo from edit-shop when set — no stock placeholder (per-user).
+  // Hero photo, cross-device truth first: edit-shop uploads + server-syncs
+  // user.avatar, so it wins; the device-local @susej_shop_profile photo is the
+  // offline fallback (avatar-only local reads stranded phone B on gradient).
   const [bannerUri, setBannerUri] = useState<string | null>(null);
   useEffect(() => {
+    if (user?.avatar) {
+      setBannerUri(user.avatar);
+      return;
+    }
     const key = username ? `@susej_shop_profile:${username}` : '@susej_shop_profile';
     let cancelled = false;
     setBannerUri(null);
@@ -97,7 +103,7 @@ export default function SellerDashboardHubScreen() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [username]);
+  }, [username, user?.avatar]);
   const verified = user?.verification === 'approved';
   const category = user?.category ? findMainCategory(user.category)?.label ?? user.category : null;
 
@@ -146,9 +152,11 @@ export default function SellerDashboardHubScreen() {
   const revenue = useMemo(() => sellerNetForOrders(myOrders), [myOrders]);
 
 
-  // Orders waiting on the seller — the actionable number (placed + confirmed + preparing).
+  // Orders waiting on the seller — the actionable number. Includes
+  // out_for_delivery: the parcel is still undelivered and the seller still
+  // owes the delivered mark (+POD note).
   const toFulfill = useMemo(
-    () => myOrders.filter((o) => o.status === 'placed' || o.status === 'confirmed' || o.status === 'preparing').length,
+    () => myOrders.filter((o) => o.status === 'placed' || o.status === 'confirmed' || o.status === 'preparing' || o.status === 'out_for_delivery').length,
     [myOrders]
   );
 
@@ -193,8 +201,35 @@ export default function SellerDashboardHubScreen() {
       revPerDay[dayIdx(Number.isFinite(stamp) ? stamp : o.placedAt || Date.now())] += sellerNetForOrders([o]);
     }
     const maxRev = Math.max(...revPerDay, 1);
-    const top = [...myPosts].sort((a, b) => (b.likes || 0) - (a.likes || 0))[0];
-    return { revBars: revPerDay.map((v) => Math.round((v / maxRev) * 72) + 4), top };
+    // Top listing by DELIVERED revenue (units tiebreak), not likes: a
+    // 100-like/0-sale row is not anyone's top listing (Amazon/Meesho norm).
+    // Order net splits across its lines price-proportionally (shares sum to
+    // the order net exactly).
+    const revByListing = new Map<string, { revenue: number; units: number }>();
+    for (const o of myOrders) {
+      if (o.status !== 'delivered') continue;
+      const net = sellerNetForOrders([o]);
+      const lines = o.items ?? [];
+      const goods = lines.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0);
+      for (const item of lines) {
+        const key = String(item.listingId ?? '');
+        if (!key) continue;
+        const share = goods > 0 ? ((Number(item.price) || 0) * (Number(item.quantity) || 0)) / goods : 1 / Math.max(1, lines.length);
+        const cur = revByListing.get(key) ?? { revenue: 0, units: 0 };
+        cur.revenue += net * share;
+        cur.units += Number(item.quantity) || 0;
+        revByListing.set(key, cur);
+      }
+    }
+    let topId: string | null = null;
+    for (const [lid, v] of revByListing) {
+      const cur = topId ? revByListing.get(topId)! : null;
+      if (!cur || v.revenue > cur.revenue || (v.revenue === cur.revenue && v.units > cur.units)) topId = lid;
+    }
+    const top = (topId ? myPosts.find((p) => p.id === topId) : undefined)
+      ?? [...myPosts].sort((a, b) => (b.likes || 0) - (a.likes || 0))[0];
+    const topUnits = topId ? revByListing.get(topId)?.units ?? 0 : 0;
+    return { revBars: revPerDay.map((v) => Math.round((v / maxRev) * 72) + 4), top, topUnits };
   }, [myOrders, myPosts]);
 
   const removeListing = (id: string) => {
@@ -570,7 +605,7 @@ export default function SellerDashboardHubScreen() {
                     </Text>
                     {analytics.top && (
                       <Text className="font-inter-400 text-textSecondary mt-3" style={{ fontSize: 12, lineHeight: 16 }} numberOfLines={1}>
-                        Top listing: <Text className="font-inter-600" style={{ color: colors.textPrimary }}>{(analytics.top.description || '').split('\n')[0]}</Text> ({analytics.top.likes || 0} likes)
+                        Top listing: <Text className="font-inter-600" style={{ color: colors.textPrimary }}>{listingTitle(analytics.top)}</Text> ({analytics.topUnits > 0 ? `${analytics.topUnits} sold` : `${analytics.top.likes || 0} likes`})
                       </Text>
                     )}
                   </>
@@ -689,12 +724,12 @@ export default function SellerDashboardHubScreen() {
                 />
                 <View className="flex-1 ml-3">
                   <Text className="font-inter-600 text-textPrimary" style={{ fontSize: 14, lineHeight: 19 }} numberOfLines={1}>
-                    {(p.description || '').split('\n')[0]}
+                    {listingTitle(p)}
                   </Text>
                   <Text className="font-inter-700 text-primary mt-1" style={{ fontSize: 15, lineHeight: 20 }}>
                     {formatPrice(p.price)}
                   </Text>
-                  <TouchableOpacity onPress={() => toggleSold(p.id)}>
+                  <TouchableOpacity onPress={() => { void toggleSold(p.id).then((ok) => { if (!ok) Alert.alert('Not saved', 'Check your connection — the listing was restored.'); }); }}>
                     <View className="self-start px-2 py-0.5 rounded-full" style={{ backgroundColor: p.isSold ? colors.surfaceContainer : '#22c55e22' }}>
                       <Text className="font-inter-500" style={{ fontSize: 10, lineHeight: 12, color: p.isSold ? colors.secondary : '#16a34a' }}>
                         {p.isSold ? 'Sold Out · tap to restock' : 'Active · tap to mark sold'}
@@ -703,7 +738,7 @@ export default function SellerDashboardHubScreen() {
                   </TouchableOpacity>
                 </View>
                 <View className="items-center justify-center self-stretch py-1" style={{ gap: 14 }}>
-                  <TouchableOpacity onPress={() => router.push(`/edit-listing/${p.id}`)} accessibilityRole="button" accessibilityLabel={`Edit ${((p.description || '').split('\n')[0] || 'listing').slice(0, 40)}`}>
+                  <TouchableOpacity onPress={() => router.push(`/edit-listing/${p.id}`)} accessibilityRole="button" accessibilityLabel={`Edit ${listingTitle(p, 'listing').slice(0, 40)}`}>
                     <PencilIcon size={16} color={colors.textSecondary} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => removeListing(p.id)}>

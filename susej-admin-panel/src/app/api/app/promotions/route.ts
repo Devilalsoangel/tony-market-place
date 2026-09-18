@@ -175,7 +175,11 @@ export async function POST(req: NextRequest) {
         await tx.walletTransaction.create({
           data: {
             username,
-            title: `Promotion · ${pkg.name}`,
+            // checkoutRef-suffixed: re-buying the same package (new ref, post
+            // expiry or stacked) must not collide on UNIQUE(username,title) —
+            // the bare `Promotion · name` title 500d every second buy while
+            // charging nothing. Ref stays readable for the wallet statement.
+            title: `Promotion · ${pkg.name} · ${checkoutRef}`,
             detail: `${pkg.durationDays}d · ${String((post as any).description ?? (post as any).title ?? "").slice(0, 40)}`,
             amount: -amount,
           },

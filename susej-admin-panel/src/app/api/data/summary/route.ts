@@ -47,8 +47,8 @@ export async function GET(req: NextRequest) {
     orderCount,
     ordersToday,
     deliveredAgg,
-    refundsAgg,
-    disputeRefundsAgg,
+    deliveredTrackings,
+    disputeGroups,
     communityCount,
     reportedCount,
     openTickets,
@@ -65,16 +65,24 @@ export async function GET(req: NextRequest) {
     prisma.order.count(),
     prisma.order.count({ where: { createdAt: { gte: startOfDay } } }),
     prisma.order.aggregate({ where: { status: "delivered" }, _sum: { amount: true }, _count: { _all: true } }),
-    prisma.refund.aggregate({ where: { status: { in: ["approved", "refunded"] } }, _sum: { amount: true } }),
+    // Delivered-order trackings: refundsOut counts ONLY refunds on delivered
+    // rows (gross is delivered-only GMV). Cancel-path and pre-delivery
+    // approve/dispute legs never entered gross — subtracting them
+    // double-subtracts (net understated 2x per cancel).
+    prisma.order.findMany({ where: { status: "delivered" }, select: { trackingNumber: true } }),
+    // Refund rows are resolved delivered-only in JS below (aggregate can't
+    // join to orders) — see refundsOut.
     // Dispute rulings move buyer money with NO Refund row — without this leg
-    // the net overstates by every dispute payout.
-    prisma.walletTransaction.aggregate({
+    // the net overstates by every dispute payout. Delivered-filtered in JS
+    // below (pre-delivery rulings never entered gross).
+    prisma.walletTransaction.groupBy({
+      by: ["title"],
       where: {
         OR: [{ title: { startsWith: "Dispute refund ·" } }, { title: { startsWith: "Dispute split refund ·" } }],
         amount: { gt: 0 },
       },
       _sum: { amount: true },
-    }).catch(() => ({ _sum: { amount: 0 } })),
+    }).catch(() => [] as Array<{ title: string; _sum: { amount: number | null } }>),
     prisma.community.count().catch(() => 0),
     prisma.reportedUser.count().catch(() => 0),
     prisma.supportTicket.count({ where: { status: "open" } }).catch(() => 0),
@@ -83,7 +91,33 @@ export async function GET(req: NextRequest) {
   ]);
 
   const gross = Number(deliveredAgg._sum.amount ?? 0);
-  const refundsOut = Number(refundsAgg._sum.amount ?? 0) + Number((disputeRefundsAgg as { _sum?: { amount?: unknown } })._sum?.amount ?? 0);
+  // Delivered-only, single-counted refundsOut:
+  // - Refund rows: approved/refunded rows whose orderRef is a DELIVERED
+  //   tracking (pre-delivery approvals cancelled out of gross already; their
+  //   rows must not subtract). Needs the row list (aggregate can't join), so
+  //   this is one bounded-by-delivered query, exact at any scale.
+  // - Dispute legs: no Refund row exists — sum per-title groups whose
+  //   tracking suffix is delivered.
+  // - Cancel legs: excluded — cancel never fires on delivered rows, so those
+  //   legs never entered gross (subtracting them double-subtracted).
+  // - `Order refund ·` approve legs: excluded — every approve flips its
+  //   Refund row (counted above); counting both doubled every approval.
+  const deliveredSet = new Set(
+    (deliveredTrackings as Array<{ trackingNumber?: unknown }>).map((o) => String(o.trackingNumber ?? "")).filter(Boolean)
+  );
+  const refundsDelivered = await prisma.refund.findMany({
+    where: { status: { in: ["approved", "refunded"] }, orderRef: { in: [...deliveredSet] } },
+    select: { amount: true },
+  }).catch(() => [] as Array<{ amount?: unknown }>);
+  const rowsOut = refundsDelivered.reduce((s: number, r) => s + Math.max(0, Number(r.amount ?? 0)), 0);
+  const disputeOut = (disputeGroups as Array<{ title: string; _sum: { amount: number | null } }>).reduce(
+    (s: number, g) => {
+      const tracking = String(g.title ?? "").split("·").pop()?.trim() ?? "";
+      return deliveredSet.has(tracking) ? s + Math.max(0, Number(g._sum?.amount ?? 0)) : s;
+    },
+    0
+  );
+  const refundsOut = rowsOut + disputeOut;
 
   // Revenue by month (delivered GMV) + user growth by month need dates —
   // bounded recent-window queries (5k) keep charts exact at any real scale;

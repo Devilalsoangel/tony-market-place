@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import Link from "next/link";
 import { createColumnHelper } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table/data-table";
@@ -54,11 +55,14 @@ const baseColumns = [
   }),
 ];
 
-function PendingQueue({ sellers }: { sellers: Seller[] }) {
+function PendingQueue({ sellers, total }: { sellers: Seller[]; total: number | null }) {
   const pending = sellers.filter((s) => s.kycStatus === "pending");
 
   return (
     <div className="space-y-3">
+      {typeof total === "number" && total > sellers.length && (
+        <p className="text-[12px] text-[#71717A]">Server queue holds {total} — paging above pages the full queue.</p>
+      )}
       {pending.length === 0 ? (
         <div className="flex items-center justify-center py-12">
           <p className="text-sm text-gray-500">No pending verification requests.</p>
@@ -108,10 +112,21 @@ const tabs = [
 export default function SellersPage() {
   const router = useRouter();
   const { data: sellers, total: sellersTotal, refresh } = useDbResource<Seller>("sellers", { take: 100 });
+  // Pending queue pages the SERVER (?status=pending → kycStatus): the
+  // in-memory filter over the first 100 hid pendings at row 101+.
+  const [pendingSkip, setPendingSkip] = useState(0);
+  const { data: pendingRows, total: pendingTotal } = useDbResource<Seller>("sellers", {
+    take: 100,
+    status: "pending",
+    ...(pendingSkip > 0 ? { skip: pendingSkip } : {}),
+  });
   const allSellers = sellers ?? [];
-  const pendingCount = allSellers.filter((s) => s.kycStatus === "pending").length;
+  const pendingCount = typeof pendingTotal === "number" ? pendingTotal : allSellers.filter((s) => s.kycStatus === "pending").length;
   const verifiedCount = allSellers.filter((s) => s.kycStatus === "approved").length;
   const rejectedCount = allSellers.filter((s) => s.kycStatus === "rejected").length;
+  // Window qualifier for the in-memory tabs (the pending queue pages the
+  // server; verified/rejected filter the loaded window).
+  const win = typeof sellersTotal === "number" && sellersTotal > allSellers.length ? " · first 100" : "";
 
   return (
     <div className="space-y-6">
@@ -126,7 +141,7 @@ export default function SellersPage() {
             {active === "all" && (
               <Card>
                 <CardHeader>
-                  <CardTitle>All Sellers ({allSellers.length})</CardTitle>
+                  <CardTitle>All Sellers ({allSellers.length}{win})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <DataTable
@@ -173,14 +188,37 @@ export default function SellersPage() {
                   <CardTitle>Pending Queue ({pendingCount})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <PendingQueue sellers={allSellers} />
+                  <PendingQueue sellers={pendingRows ?? []} total={pendingTotal} />
+                  {typeof pendingTotal === "number" && pendingTotal > (pendingRows ?? []).length && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={pendingSkip === 0}
+                        onClick={() => setPendingSkip(Math.max(0, pendingSkip - 100))}
+                      >
+                        Prev 100
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={pendingSkip + (pendingRows ?? []).length >= pendingTotal}
+                        onClick={() => setPendingSkip(pendingSkip + 100)}
+                      >
+                        Next 100
+                      </Button>
+                      <span className="text-[12px] text-[#71717A]">
+                        Showing {pendingSkip + 1}–{pendingSkip + (pendingRows ?? []).length} of {pendingTotal}
+                      </span>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
             {active === "verified" && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Verified Sellers ({verifiedCount})</CardTitle>
+                  <CardTitle>Verified Sellers ({verifiedCount}{win})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <DataTable
@@ -196,7 +234,7 @@ export default function SellersPage() {
             {active === "rejected" && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Rejected Sellers ({rejectedCount})</CardTitle>
+                  <CardTitle>Rejected Sellers ({rejectedCount}{win})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <DataTable

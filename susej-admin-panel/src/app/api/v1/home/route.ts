@@ -41,9 +41,12 @@ export async function GET(request: NextRequest) {
     // Featured posts: paid promo placements (promo engine writes them on
     // purchase). Previously write-only — orphans rendered nowhere while money
     // was taken. Now a real home rail, ordered pinned-first then position.
+    // Rail contract is 3 rows like every other rail (unbounded payloads broke
+    // the app contract the moment the engine sold depth).
     prisma.featuredPost.findMany({
       where: { status: ACTIVE },
       orderBy: [{ isPinned: "desc" }, { position: "asc" }, { createdAt: "desc" }],
+      take: 3,
     }),
     // Spotlight: paid position-1 feed pin (promo engine writes it on
     // purchase). Was write-only — money taken, rendered nowhere. Served here
@@ -83,6 +86,52 @@ export async function GET(request: NextRequest) {
     return Number.isNaN(t) || t <= Date.now();
   });
 
+  // Desk-wired hashtag moderation on paid rails: a blocked tag suppresses the
+  // rail rows whose listing carries it (featured/spotlight/hotDeal). Without
+  // this, blocking a tag left paid placements for blocked-tag posts on home.
+  // HotDeal.productId is the `lst_<postId>` mirror id — strip the prefix.
+  const normTag = (t: unknown) => String(t ?? "").replace(/^#+/, "").trim().toLowerCase();
+  const blockedPostIds = new Set<string>();
+  // No inner catches: any read failure must reach the LOUD handler below —
+  // swallowed empties served blocked-tag paid rails with zero signal.
+  try {
+    const blocked = await prisma.hashtag.findMany({ where: { status: "blocked" }, select: { tag: true } });
+    const blockedTags = new Set(
+      (blocked as Array<{ tag?: unknown }>).map((h) => normTag(h.tag)).filter(Boolean)
+    );
+    if (blockedTags.size) {
+      const postIds = new Set<string>();
+      const collect = (v: unknown) => {
+        const s = String(v ?? "").trim();
+        if (!s) return;
+        postIds.add(s.replace(/^lst_/, ""));
+      };
+      liveFeatured.forEach((p) => collect((p as { postId?: unknown }).postId));
+      liveSpotlight.forEach((p) => {
+        collect((p as { postId?: unknown }).postId);
+        collect((p as { productId?: unknown }).productId);
+      });
+      liveHotDeals.forEach((d) => collect((d as { productId?: unknown }).productId));
+      if (postIds.size) {
+        const listings = await prisma.post
+          .findMany({ where: { id: { in: [...postIds] } }, select: { id: true, hashtags: true } });
+        for (const l of listings as Array<{ id: string; hashtags?: unknown }>) {
+          const tags = Array.isArray(l.hashtags) ? (l.hashtags as unknown[]).map(normTag) : [];
+          if (tags.some((t) => blockedTags.has(t))) blockedPostIds.add(String(l.id));
+        }
+      }
+    }
+  } catch (e) {
+    // Fail-OPEN by design (a read blip must not blank paid rails), but LOUD.
+    console.error("[home] blocked-hashtag suppression failed — serving unfiltered:", e instanceof Error ? e.message : e);
+  }
+  const postBlocked = (v: unknown) => blockedPostIds.has(String(v ?? "").trim().replace(/^lst_/, ""));
+  const serveFeatured = liveFeatured.filter((p) => !postBlocked((p as { postId?: unknown }).postId));
+  const serveSpotlight = liveSpotlight.filter(
+    (p) => !postBlocked((p as { postId?: unknown }).postId) && !postBlocked((p as { productId?: unknown }).productId)
+  );
+  const serveHotDeals = liveHotDeals.filter((d) => !postBlocked((d as { productId?: unknown }).productId));
+
   // Live sales truth: TopSeller snapshots go stale the moment the next
   // order delivers, so re-resolve delivered-order units + review aggregates
   // per row at serve time (max 3 rows — cheap). Snapshot stays as fallback.
@@ -121,7 +170,13 @@ export async function GET(request: NextRequest) {
     // Global fallback: snapshots below.
   }
 
-  return NextResponse.json({
+  // Highest-traffic route (every app cold start): same payload for every
+  // caller, serve-time resolve already tolerates staleness — client-cache
+  // 30s. PRIVATE (never shared-edge): the gate is the x-app-key header and
+  // edge keys are URL-only, so s-maxage served cached 200s to keyless
+  // callers (fail-closed bypass) or cached 401s to legit ones. Payload is
+  // non-personal, so per-client caching is the safe shape.
+  const response = NextResponse.json({
     sections: {
       "top-sellers": !sectionOff.has("top-sellers"),
       "hot-deals": !sectionOff.has("hot-deals"),
@@ -144,7 +199,7 @@ export async function GET(request: NextRequest) {
         isPinned: t.isPinned,
       };
     }),
-    hotDeals: (sectionOff.has("hot-deals") ? [] : liveHotDeals).map((d) => ({
+    hotDeals: (sectionOff.has("hot-deals") ? [] : serveHotDeals).map((d) => ({
       productId: d.productId,
       productName: d.productName,
       productImage: d.productImage,
@@ -164,7 +219,7 @@ export async function GET(request: NextRequest) {
       size: b.size,
       position: b.position,
     })),
-    featuredPosts: (sectionOff.has("featured-posts") ? [] : liveFeatured).map((p) => ({
+    featuredPosts: (sectionOff.has("featured-posts") ? [] : serveFeatured).map((p) => ({
       id: p.id,
       postId: p.postId,
       title: p.title,
@@ -173,17 +228,19 @@ export async function GET(request: NextRequest) {
       position: p.position,
       isPinned: p.isPinned,
     })),
-    spotlight: sectionOff.has("spotlight") || !liveSpotlight.length
+    spotlight: sectionOff.has("spotlight") || !serveSpotlight.length
       ? null
       : {
-          id: liveSpotlight[0].id,
-          postId: liveSpotlight[0].postId,
-          productId: liveSpotlight[0].productId,
-          sellerId: liveSpotlight[0].sellerId,
-          sellerName: liveSpotlight[0].sellerName,
-          sellerLogo: liveSpotlight[0].sellerLogo,
-          title: liveSpotlight[0].title,
-          imageUrl: liveSpotlight[0].imageUrl,
+          id: serveSpotlight[0].id,
+          postId: serveSpotlight[0].postId,
+          productId: serveSpotlight[0].productId,
+          sellerId: serveSpotlight[0].sellerId,
+          sellerName: serveSpotlight[0].sellerName,
+          sellerLogo: serveSpotlight[0].sellerLogo,
+          title: serveSpotlight[0].title,
+          imageUrl: serveSpotlight[0].imageUrl,
         },
   });
+  response.headers.set("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
+  return response;
 }

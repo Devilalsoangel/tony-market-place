@@ -311,6 +311,10 @@ export const serverApi = {
 
   // ── Auctions ─────────────────────────────────────────────────────────────
   getAuctions: () => request<{ auctions: any[] }>('/auctions'),
+  /** Single auction with server-resolved top bid (winner truth — the local
+   *  thread never sees rival phones' bids). */
+  getAuction: (auctionId: string) =>
+    request<{ auction: any }>(`/auctions/${encodeURIComponent(auctionId)}`),
   placeBid: (auctionId: string, amount: number) =>
     request<{ bid: any; currentBid: number }>('/auctions', { method: 'POST', body: { auctionId, amount } }),
   /** Seller creates a live auction (server row — every device sees it). */
@@ -412,6 +416,12 @@ export const serverApi = {
     requestWithAppKey<{ addresses: { id: string; type: string; name: string; street: string; city: string; phone: string; isDefault: boolean }[] }>('/api/app/addresses'),
   addAddress: (body: { type: string; street: string; city: string; phone: string; isDefault?: boolean }) =>
     requestWithAppKey<{ address: { id: string } }>('/api/app/addresses', { method: 'POST', body }),
+  /** Edit an owned address (server validates + persists; owner-checked). */
+  updateAddress: (body: { id: string; type?: string; street?: string; city?: string; phone?: string }) =>
+    requestWithAppKey<{ ok: boolean }>('/api/app/addresses', { method: 'PATCH', body }),
+  /** Delete an owned address (server re-homes the default). */
+  deleteAddress: (id: string) =>
+    requestWithAppKey<{ ok: boolean }>(`/api/app/addresses?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // ─── Marketing banners (seller dashboard → admin sync) ─────────────────
   // Upload a banner image picked in the seller dashboard. Returns a
@@ -426,8 +436,10 @@ export const serverApi = {
   // ref is a per-tap idempotency key (reused across timeout-retries): the
   // server mints a deterministic walletTx title per ref so a retry collides
   // instead of double-debiting.
-  requestPayout: (amount: number, method: 'bank' | 'upi' = 'bank', ref?: string, destination?: string) =>
-    requestWithAppKey<{ ok: boolean; withdrawalId: string; deduped?: boolean; destination?: string }>('/api/app/wallet/payout', { method: 'PUT', body: { amount, method, ...(ref ? { ref } : {}), ...(destination ? { destination } : {}) } }),
+  // feePreview is the fee the gate showed: the server 400s when the live fee
+  // moved since (fail-closed reconfirm, never a surprise debit).
+  requestPayout: (amount: number, method: 'bank' | 'upi' = 'bank', ref?: string, destination?: string, feePreview?: number) =>
+    requestWithAppKey<{ ok: boolean; withdrawalId: string; deduped?: boolean; destination?: string }>('/api/app/wallet/payout', { method: 'PUT', body: { amount, method, ...(ref ? { ref } : {}), ...(destination ? { destination } : {}), ...(typeof feePreview === 'number' ? { feePreview } : {}) } }),
 
   // Upload a local image and get back a hosted /uploads/... URL (root-relative
   // — prefix with getAdminUrl()). Used by the shared media upload pipeline.

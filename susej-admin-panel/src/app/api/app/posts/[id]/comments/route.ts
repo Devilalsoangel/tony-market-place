@@ -85,7 +85,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await tx.post.update({ where: { id }, data: { comments: { increment: 1 } } });
     return c;
   });
-  if (post.authorUsername && post.authorUsername !== auth.user.username) {
+  // Case-insensitive self check (same class as the like route).
+  const cmtCaller = String(auth.user.username ?? "").trim().toLowerCase();
+  const cmtOwner = String(post.authorUsername ?? "").trim().toLowerCase();
+  if (post.authorUsername && cmtOwner !== cmtCaller) {
     await prisma.userNotification.create({
       data: {
         username: post.authorUsername,

@@ -8,7 +8,7 @@ import { ChevronLeftIcon, SearchIcon, PlusIcon, StarIcon, EyeIcon, PencilIcon, C
 import { colors, formatPrice } from '../utils/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePosts } from '../contexts/PostContext';
-import { resolveListingImage, hasRealImage } from '../utils/productImages';
+import { resolveListingImage, hasRealImage, listingTitle } from '../utils/productImages';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useEffect, useRef } from 'react';
 import { isApprovedSeller } from '../utils/marketplace';
@@ -37,7 +37,7 @@ function RefreshIcon({ size = 18, color = '#464555' }: { size?: number; color?: 
   );
 }
 
-const TABS = ['All', 'Active', 'Sold', 'Featured'] as const;
+const TABS = ['All', 'Active', 'Sold'] as const;
 
 const timeAgo = (ts: number) => {
   const diff = Date.now() - ts;
@@ -94,7 +94,7 @@ export default function ListingsManagerScreen() {
       if (!hasRealImage(p) && !warnedRef.current.has(p.id)) {
         warnedRef.current.add(p.id);
         added = true;
-        const title = (p.description || '').split('\n')[0]?.slice(0, 32) || 'your listing';
+        const title = listingTitle(p, 'your listing').slice(0, 32);
         addNotification({
           type: 'warning',
           userName: 'susej',
@@ -117,10 +117,9 @@ export default function ListingsManagerScreen() {
   const filtered = myPosts.filter((l) => {
     if (tab === 'Active' && l.isSold) return false;
     if (tab === 'Sold' && !l.isSold) return false;
-    if (tab === 'Featured' && !l.featured) return false;
     if (category !== 'All Categories' && l.category !== category) return false;
     if (query) {
-      const title = (l.description || '').split('\n')[0].toLowerCase();
+      const title = listingTitle(l).toLowerCase();
       if (!title.includes(query.toLowerCase())) return false;
     }
     return true;
@@ -128,14 +127,11 @@ export default function ListingsManagerScreen() {
 
   const activeCount = myPosts.filter((l) => !l.isSold).length;
   const soldCount = myPosts.filter((l) => l.isSold).length;
-  const featuredCount = myPosts.filter((l) => l.featured).length;
 
-  const toggleFeatured = (id: string) => {
+  const openBoost = () => {
     // Featuring is a PAID placement owned by the Promotions engine — the
-    // server deliberately ignores author-set featured flags, so flipping it
-    // here only lied to this device (no cross-device effect, no charge, no
-    // placement). Route to the real paid flow instead.
-    void id;
+    // server deliberately ignores author-set featured flags, so a local star
+    // only lied to this device. Route to the real paid flow instead.
     router.push('/promotions');
   };
 
@@ -189,8 +185,7 @@ export default function ListingsManagerScreen() {
           {TABS.map((t) => {
             const on = tab === t;
             const activeTab = t === 'Active';
-            const featuredTab = t === 'Featured';
-            const count = t === 'All' ? myPosts.length : t === 'Active' ? activeCount : t === 'Sold' ? soldCount : featuredCount;
+            const count = t === 'All' ? myPosts.length : t === 'Active' ? activeCount : soldCount;
             return (
               <TouchableOpacity
                 key={t}
@@ -198,14 +193,13 @@ export default function ListingsManagerScreen() {
                 className="flex-row items-center px-4 h-9 rounded-full"
                 style={{
                   backgroundColor: on ? colors.primaryContainer : activeTab ? colors.surfaceContainerLowest : 'transparent',
-                  borderWidth: on || featuredTab ? 0 : 1,
+                  borderWidth: on ? 0 : 1,
                   borderColor: colors.outlineVariant,
                 }}
               >
                 {activeTab && (
                   <View className="mr-1.5" style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: on ? '#ffffff' : '#22c55e' }} />
                 )}
-                {featuredTab && <StarIcon size={14} color={on ? colors.onPrimary : colors.primary} />}
                 <Text className="font-inter-500" style={{ fontSize: 13, lineHeight: 18, color: on ? colors.onPrimary : activeTab ? '#22c55e' : colors.textSecondary }}>
                   {t}
                 </Text>
@@ -273,7 +267,7 @@ export default function ListingsManagerScreen() {
             </View>
           )}
           {filtered.map((l) => {
-            const title = (l.description || '').split('\n')[0];
+            const title = listingTitle(l);
             const img = resolveListingImage(l, l.id);
             const noImage = !hasRealImage(l);
             return (
@@ -282,8 +276,8 @@ export default function ListingsManagerScreen() {
                 className="p-3 rounded-figma-20"
                 style={{
                   backgroundColor: colors.surfaceContainerLowest,
-                  borderWidth: noImage ? 2 : l.featured ? 2 : 1,
-                  borderColor: noImage ? colors.error : l.featured ? colors.primary : colors.outlineVariant,
+                  borderWidth: noImage ? 2 : 1,
+                  borderColor: noImage ? colors.error : colors.outlineVariant,
                   shadowColor: '#000',
                   shadowOffset: { width: 0, height: 3 },
                   shadowOpacity: 0.05,
@@ -326,13 +320,6 @@ export default function ListingsManagerScreen() {
                           </Text>
                         </View>
                       )}
-                      {l.featured && (
-                        <View className="px-2 py-0.5 rounded-full mr-1.5" style={{ backgroundColor: colors.surfaceContainerLow }}>
-                          <Text className="font-inter-500" style={{ fontSize: 10, lineHeight: 12, color: colors.primary }}>
-                            ★ Top Deal
-                          </Text>
-                        </View>
-                      )}
                       <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: l.isSold ? colors.surfaceContainer : colors.surfaceContainerLow }}>
                         <Text className="font-inter-500" style={{ fontSize: 10, lineHeight: 12, color: l.isSold ? colors.secondary : '#22c55e' }}>
                           {l.isSold ? 'Sold Out' : 'Active'}
@@ -352,12 +339,12 @@ export default function ListingsManagerScreen() {
                   <TouchableOpacity
                     className="flex-1 items-center py-2.5"
                     accessibilityRole="button"
-                    accessibilityLabel={l.featured ? 'Remove from Top Deal' : 'Feature as Top Deal'}
-                    onPress={() => toggleFeatured(l.id)}
+                    accessibilityLabel="Boost listing with a paid promotion"
+                    onPress={openBoost}
                   >
-                    <StarIcon size={16} color={l.featured ? colors.primary : colors.textSecondary} />
-                    <Text className="font-inter-500 mt-1" style={{ fontSize: 11, lineHeight: 14, color: l.featured ? colors.primary : colors.textSecondary }}>
-                      Top Deal
+                    <StarIcon size={16} color={colors.textSecondary} />
+                    <Text className="font-inter-500 mt-1" style={{ fontSize: 11, lineHeight: 14, color: colors.textSecondary }}>
+                      Boost
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -389,7 +376,7 @@ export default function ListingsManagerScreen() {
                     style={{ borderLeftWidth: 1, borderLeftColor: colors.surfaceContainer }}
                     accessibilityRole="button"
                     accessibilityLabel={l.isSold ? 'Restock listing' : 'Mark as sold'}
-                    onPress={() => toggleSold(l.id)}
+                    onPress={() => { void toggleSold(l.id).then((ok) => { if (!ok) Alert.alert('Not saved', 'Check your connection — the listing was restored.'); }); }}
                   >
                     {l.isSold ? (
                       <RefreshIcon size={16} color={colors.primary} />
@@ -434,7 +421,7 @@ export default function ListingsManagerScreen() {
         pointerEvents="none"
       >
         <Text className="font-inter-600" style={{ fontSize: 13, lineHeight: 18, color: '#ffffff' }}>
-          ● {activeCount} active · {soldCount} sold · ★ {featuredCount}
+          ● {activeCount} active · {soldCount} sold
         </Text>
       </View>
     </View>

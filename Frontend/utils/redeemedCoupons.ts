@@ -78,7 +78,9 @@ export function previewDiscount(
   if (promo.freeDelivery || promo.kind === 'free_delivery') {
     discount = Math.round(delivery);
   } else if ((promo.kind === 'percent' || promo.kind === 'percentage') && typeof promo.value === 'number') {
-    discount = Math.round((base * promo.value) / 100);
+    // Desk parity: the server clamps effective percent at 90 — mirror it or
+    // a 100%-off coupon previews ₹1 and charges 10% of base.
+    discount = Math.round((base * Math.min(promo.value, 90)) / 100);
   } else if ((promo.kind === 'flat' || promo.kind === 'fixed') && typeof promo.value === 'number') {
     discount = Math.round(promo.value);
   } else {

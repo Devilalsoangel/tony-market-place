@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { ChevronLeftIcon, SearchIcon } from '../../utils/icons';
 import { colors, CATEGORIES } from '../../utils/theme';
 import { usePosts } from '../../contexts/PostContext';
-import { resolveListingImage } from '../../utils/productImages';
+import { resolveListingImage, hasRealImage } from '../../utils/productImages';
 import { serverApi } from '../../utils/serverApi';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,7 +15,7 @@ const CARD_W = 169;
 export default function CategoryHubScreen() {
   const [search, setSearch] = useState('');
   const insets = useSafeAreaInsets();
-  const { posts } = usePosts();
+  const { posts, hiddenPostIds, mutedSellers } = usePosts();
 
   // Figma 1:2198 "Explore Industries" — tiles come from the ADMIN-OWNED
   // catalog in Postgres (/api/app/categories) so a category added in the
@@ -33,10 +33,16 @@ export default function CategoryHubScreen() {
   }, []);
   const industries = adminCats.length > 0 ? adminCats : CATEGORIES;
 
-  // Trending Now — top posts by likes, Figma shows 3
+  // Most liked — top posts by likes. Gated like every other surface
+  // (hidden/muted/imageless never trend), and labeled honestly: no velocity
+  // or recency signal exists, so "Trending Now" would be a lie.
   const trending = useMemo(
-    () => [...posts].sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0)).slice(0, 4),
-    [posts]
+    () =>
+      posts
+        .filter((p) => !hiddenPostIds.includes(p.id) && !mutedSellers.includes(p.sellerUsername) && hasRealImage(p))
+        .sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0))
+        .slice(0, 4),
+    [posts, hiddenPostIds, mutedSellers]
   );
 
   // Navigate by the catalog id (the server slug, e.g. "home-living").
@@ -100,14 +106,12 @@ export default function CategoryHubScreen() {
               onPress={() => router.push(`/category/${slugFor(cat)}`)}
             >
               <View
-                className="w-full rounded-figma-16 overflow-hidden"
+                className="w-full rounded-figma-16 overflow-hidden items-center justify-center"
                 style={{ height: TILE_W * 0.9, backgroundColor: colors.surfaceContainer }}
               >
-                <Image
-                  source={resolveListingImage(null, cat.id)}
-                  className="w-full h-full"
-                  resizeMode="cover"
-                />
+                <Text className="font-inter-700 text-secondary" style={{ fontSize: 28, lineHeight: 34 }}>
+                  {cat.label.trim()[0]?.toUpperCase() ?? '?'}
+                </Text>
               </View>
               <Text
                 className="font-inter-500 mt-1.5"
@@ -120,9 +124,9 @@ export default function CategoryHubScreen() {
           ))}
         </View>
 
-        {/* Trending Now — Figma: title 20/600 + See All 14/600 */}
+        {/* Most liked — Figma: title 20/600 + See All 14/600 */}
         <View className="flex-row items-center justify-between mt-2 mb-3">
-          <Text className="text-figma-20 font-inter-600 text-textPrimary">Trending Now</Text>
+          <Text className="text-figma-20 font-inter-600 text-textPrimary">Most liked</Text>
           <TouchableOpacity onPress={() => router.push('/search')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text className="text-figma-14 font-inter-600 text-primary">See All</Text>
           </TouchableOpacity>
@@ -142,15 +146,18 @@ export default function CategoryHubScreen() {
               onPress={() => router.push(`/product/${post.id}`)}
             >
               <View className="w-full" style={{ height: CARD_W }}>
-                {post.image ? (
-                  <Image source={{ uri: post.image }} className="w-full h-full" resizeMode="cover" />
-                ) : (
-                  <Image source={resolveListingImage(null, post.id)} className="w-full h-full" resizeMode="cover" />
+                <Image source={resolveListingImage(post, post.id)} className="w-full h-full" resizeMode="cover" />
+                {!hasRealImage(post) && (
+                  <View className="absolute inset-0 items-center justify-center">
+                    <Text className="font-inter-700 text-secondary" style={{ fontSize: 30, lineHeight: 36 }}>
+                      {(post.title?.trim()?.[0] ?? post.description.trim()[0] ?? '?').toUpperCase()}
+                    </Text>
+                  </View>
                 )}
               </View>
               <View className="p-3">
                 <Text className="text-figma-14 font-inter-600 text-textPrimary" numberOfLines={1}>
-                  {post.description.split('#')[0].trim()}
+                  {(post.title?.trim() || post.description).split('#')[0].trim()}
                 </Text>
                 <Text className="text-figma-14 font-inter-400 text-textSecondary mt-0.5" numberOfLines={1}>
                   {post.category}

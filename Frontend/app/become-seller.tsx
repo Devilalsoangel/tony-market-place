@@ -9,7 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { sellerImages } from '../utils/screenImages';
 import { CATEGORY_TREE } from '../utils/categories';
 import { serverApi } from '../utils/serverApi';
-import { uriToDataUrl, resolveImageUrl } from '../utils/mediaUpload';
+import { resolveImageUrl, shrinkForUpload } from '../utils/mediaUpload';
 import { getAdminUrl } from '../utils/adminSync';
 import { MapLocationPicker, type PickedLocation } from '../components/MapLocationPicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -257,10 +257,24 @@ export default function BecomeSellerScreen() {
           }
           // Self-heal legacy drafts: strip any stored identity numbers once
           // (older builds mirrored them). From here on they are never written.
-          if (SENSITIVE_IDENTITY_KEYS.some((k) => d[k] !== undefined)) {
-            const clean: Record<string, unknown> = { ...(d as Record<string, unknown>) };
-            for (const k of SENSITIVE_IDENTITY_KEYS) delete clean[k];
-            AsyncStorage.setItem(draftKey, JSON.stringify(clean)).catch(() => {});
+          // Local doc-picker URIs go too (re-pickable; a cached file:// URI
+          // outlives its file and restores a dead photo box). Scrubbed from
+          // BOTH the stored copy and this restore pass — the old code cleaned
+          // storage but kept trusting the in-memory `d` below ("uploaded" on
+          // a dead URI, submit dying in shrinkForUpload).
+          {
+            const DRAFT_URI_KEYS = ['idUri', 'idBackUri', 'addrProofUri', 'gstCertUri', 'logoUri', 'selfieUri'];
+            const needsScrub =
+              SENSITIVE_IDENTITY_KEYS.some((k) => d[k] !== undefined) ||
+              DRAFT_URI_KEYS.some((k) => typeof d[k] === 'string' && String(d[k]).startsWith('file://'));
+            if (needsScrub) {
+              const clean: Record<string, unknown> = { ...(d as Record<string, unknown>) };
+              for (const k of SENSITIVE_IDENTITY_KEYS) delete clean[k];
+              for (const k of DRAFT_URI_KEYS) delete clean[k];
+              AsyncStorage.setItem(draftKey, JSON.stringify(clean)).catch(() => {});
+              for (const k of SENSITIVE_IDENTITY_KEYS) delete (d as Record<string, unknown>)[k];
+              for (const k of DRAFT_URI_KEYS) delete (d as Record<string, unknown>)[k];
+            }
           }
           if (d.sellerType) setSellerType(d.sellerType);
           if (d.businessName) setBusinessName(d.businessName);
@@ -382,12 +396,29 @@ export default function BecomeSellerScreen() {
               const res = await serverApi.withdrawSellerApplication();
               if (res.ok) {
                 const u = user?.username;
+                const meLower = String(u ?? '').trim().toLowerCase();
                 try {
                   const raw = await AsyncStorage.getItem('@susej_seller_applicants');
                   const list = raw ? JSON.parse(raw) : [];
-                  const next = Array.isArray(list) ? list.filter((a: { username?: string }) => a.username !== u) : [];
+                  const next = Array.isArray(list) ? list.filter((a: { username?: string }) => String(a.username ?? '').trim().toLowerCase() !== meLower) : [];
                   await AsyncStorage.setItem('@susej_seller_applicants', JSON.stringify(next));
                   if (u) await AsyncStorage.removeItem(`${DRAFT_KEY_BASE}:${u}`);
+                  if (meLower && meLower !== String(u ?? '')) await AsyncStorage.removeItem(`${DRAFT_KEY_BASE}:${meLower}`);
+                  // Unregister from the storefront roster: it was added
+                  // pre-ack at submit time, and a withdrawn never-seller
+                  // routed to an empty storefront instead of the buyer
+                  // profile. Approved sellers never reach this path (their
+                  // row is server truth by then).
+                  try {
+                    const sRaw = await AsyncStorage.getItem(SELLERS_KEY);
+                    const sList: unknown[] = sRaw ? JSON.parse(sRaw) : [];
+                    if (Array.isArray(sList)) {
+                      await AsyncStorage.setItem(
+                        SELLERS_KEY,
+                        JSON.stringify(sList.filter((s) => String(s ?? '').toLowerCase() !== meLower))
+                      );
+                    }
+                  } catch {}
                 } catch {}
                 updateUser({ isSeller: false, verification: 'none', role: 'buyer' });
                 setServerApp(null);
@@ -411,19 +442,20 @@ export default function BecomeSellerScreen() {
   // are NEVER mirrored — vault rule: they live in memory only until submit
   // (the submit-time applicant record carries them, scrubbed on server ack).
   // A user who abandons mid-wizard leaves zero identity numbers at rest.
+  // Doc-picker URIs are NEVER mirrored either: a cached file:// URI outlives
+  // its file and restores dead "uploaded" boxes (upload flags ride along
+  // only when a live in-memory URI backs them — i.e. same-session bounces).
   useEffect(() => {
     if (!draftLoaded || !user?.username) return;
     const draft = JSON.stringify({
       savedAt: Date.now(),
       step, sellerType, businessName, category, about, city, pincode,
-      agreeTerms, idType, idUri, idUploaded,
-      idBackUri, idBackUploaded,
-      useAadhaarAsAddress, addrProofUri, addrProofUploaded,
-      gstCertUri, gstCertUploaded, logoUri,
-      selfieUri, selfieAdded, agreeVerify, storeLoc,
+      agreeTerms, idType,
+      useAadhaarAsAddress,
+      agreeVerify, storeLoc,
     });
     AsyncStorage.setItem(draftKey, draft).catch(() => {});
-  }, [draftLoaded, draftKey, step, sellerType, businessName, category, about, city, pincode, agreeTerms, idType, idUri, idUploaded, idBackUri, idBackUploaded, useAadhaarAsAddress, addrProofUri, addrProofUploaded, gstCertUri, gstCertUploaded, logoUri, selfieUri, selfieAdded, agreeVerify, storeLoc]);
+  }, [draftLoaded, draftKey, step, sellerType, businessName, category, about, city, pincode, agreeTerms, idType, useAadhaarAsAddress, agreeVerify, storeLoc]);
 
   // Shared library picker for every KYC upload box (front / back / address
   // proof / GST certificate / logo). One code path, identical permission +
@@ -610,13 +642,14 @@ export default function BecomeSellerScreen() {
       const pin = pincode.trim();
       const pinOk = /^\d{6}$/.test(pin);
       // Business sellers must supply the tax identity the step-1 card
-      // promises (GSTIN + PAN; bank account optional but collected).
-      // GSTIN: 15 chars (2-digit state + 10-char PAN + entity/checksum).
+      // promises (GSTIN + PAN + bank account): an approved business with no
+      // verified bank dead-ends at the first bank-rail payout (guaranteed
+      // server 400). Collect it here, verified server-side at submit.
       const bizOk =
         sellerType !== 'business' ||
         (/^[0-9A-Z]{15}$/i.test(gstin.trim()) &&
           /^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(pan.trim()) &&
-          (bankAccount.trim() === '' || /^\d{9,18}$/.test(bankAccount.trim())));
+          /^\d{9,18}$/.test(bankAccount.trim()));
       return !!businessName.trim() && !!category && !!city.trim() && pinOk && city.trim().length >= 2 && agreeTerms && bizOk;
     }
     if (step === 3) {
@@ -665,9 +698,11 @@ export default function BecomeSellerScreen() {
       (async () => {
         try {
           // Every required file uploads FIRST; a single failure aborts so the
-          // admin queue never receives a half-evidenced seller.
+          // admin queue never receives a half-evidenced seller. Shrink-first
+          // (same 1280px pipeline as listings): full-res ID photos used to hit
+          // the server 5MB cap that shrunk uploads pass.
           const up = async (uri: string | null) =>
-            uri ? serverApi.uploadBannerImage(await uriToDataUrl(uri)) : null;
+            uri ? serverApi.uploadBannerImage(await shrinkForUpload(uri)) : null;
           const idUp = await up(idUri);
           const backUp = await up(idBackUri);
           const addrUp = needsAddrUpload ? await up(addrProofUri) : null;
@@ -1329,7 +1364,7 @@ export default function BecomeSellerScreen() {
                 </View>
 
                 <Text className="font-inter-500 text-textSecondary mb-2" style={{ fontSize: 13, lineHeight: 18 }}>
-                  Bank account (for payouts, optional)
+                  Bank account (for payouts, required)
                 </Text>
                 <View className="flex-row items-center px-4" style={{ height: 52, borderRadius: 16, backgroundColor: colors.surfaceContainer }}>
                   <TextInput className="flex-1 font-inter-400 text-textPrimary" style={{ fontSize: 14 }} placeholder="Account number" placeholderTextColor={colors.secondary} value={bankAccount} onChangeText={(t) => setBankAccount(t.replace(/[^0-9]/g, '').slice(0, 18))} keyboardType="number-pad" />

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { getAppUser } from "@/lib/app-auth";
+import { validateMediaRefs } from "@/lib/media";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -9,7 +10,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
   const post = await prisma.post.findUnique({ where: { id } });
-  if (!post || post.status !== "published") {
+  // Owner bypass: the author sees their own hidden rows (cold-cache edit of
+  // a deactivated listing, owner preview). Strangers still 404 — hidden
+  // means hidden for buyers. Case-insensitive like every identity check.
+  const caller = String(auth?.user.username ?? "").trim().toLowerCase();
+  const owner = String(post?.authorUsername ?? "").trim().toLowerCase();
+  const isOwner = !!caller && !!owner && caller === owner;
+  if (!post || (post.status !== "published" && !isOwner)) {
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
@@ -54,6 +61,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       commentList: comments,
       createdAt: post.createdAt.getTime(),
       isSold: post.isSold,
+      // Owner lifecycle state (removed vs hidden): reactivate prunes truly
+      // deleted ids instead of resurrecting them. Buyers never branch on it.
+      status: post.status,
       featured: post.featured,
       // Full fidelity with the list endpoint: detail must never be poorer
       // than the card (condition/fulfillment/negotiation drive the PDP).
@@ -85,7 +95,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const post = await prisma.post.findUnique({ where: { id } });
   if (!post) return NextResponse.json({ error: "Post not found" }, { status: 404 });
-  if (post.authorUsername !== auth.user.username) {
+  // Case-insensitive owner check (GET lane already is): a mixed-case owner
+  // read their hidden row fine, then PATCH 403d it — reactivate/deactivate
+  // reported partial failures on their own listings.
+  const patchCaller = String(auth.user.username ?? "").trim().toLowerCase();
+  const patchOwner = String(post.authorUsername ?? "").trim().toLowerCase();
+  if (!patchCaller || patchCaller !== patchOwner) {
     return NextResponse.json({ error: "Not your post" }, { status: 403 });
   }
 
@@ -116,26 +131,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // `featured` is deliberately NOT author-settable: boosting is owned by the
   // paid-promotion engine, never a free client flag.
   if (Array.isArray(body.images)) {
-    const imgs = body.images as string[];
-    if (imgs.length === 0 || imgs.length > 10) {
-      return NextResponse.json({ error: "Images must be 1-10" }, { status: 400 });
+    // Same shared gate as POST (first-party hosts only) — the old hand-rolled
+    // URL check accepted any external hotlink here while POST refused it.
+    const mediaCheck = validateMediaRefs(body.images, { min: 1, max: 10, field: "image" });
+    if (!mediaCheck.ok) {
+      return NextResponse.json({ error: mediaCheck.error }, { status: 400 });
     }
-    for (const u of imgs) {
-      const s = String(u).trim();
-      if (s.length > 2048) return NextResponse.json({ error: "Image URL too long" }, { status: 400 });
-      try {
-        const parsed = new URL(s);
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-          return NextResponse.json({ error: "Image must be http(s)" }, { status: 400 });
-        }
-      } catch {
-        return NextResponse.json({ error: "Invalid image URL" }, { status: 400 });
-      }
-    }
-    data.images = imgs;
+    data.images = mediaCheck.urls;
   }
   if (Array.isArray((body as unknown as { variants?: unknown }).variants)) {
-    data.variants = ((body as unknown as { variants: unknown[] }).variants.slice(0, 20) as never);
+    // Shared shape gate with POST (negative/unbounded deltas used to sail
+    // through this lane while POST refused them).
+    const { sanitizeVariants } = await import("../route");
+    const check = sanitizeVariants((body as unknown as { variants?: unknown }).variants);
+    if (!check.ok) {
+      return NextResponse.json({ error: (check as { error: string }).error }, { status: 400 });
+    }
+    data.variants = ((check as { variants: unknown }).variants as never);
   }
   if (Array.isArray((body as unknown as { subCategories?: unknown }).subCategories)) {
     data.subCategories = ((body as unknown as { subCategories: unknown[] }).subCategories.map((s) => String(s).slice(0, 60)).filter(Boolean).slice(0, 20) as never);
@@ -175,6 +187,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const updated = await prisma.post.update({ where: { id }, data });
 
+  // Paid-placement burn notice: rails suppress non-published/sold listings,
+  // so hiding/selling/deleting a promoted listing silently burns paid days.
+  // Tell the seller once per affected campaign (fire-and-forget).
+  try {
+    const wentDark =
+      data.status === "hidden" ||
+      (data as { isSold?: unknown }).isSold === true;
+    if (wentDark) {
+      const { notifyUser } = await import("@/lib/notifications");
+      const live = await (prisma as any).promotionPurchase.findMany({
+        where: { postId: id, status: "active" },
+        select: { id: true, sellerId: true, packageName: true },
+      }).catch(() => []);
+      for (const p of live as Array<{ id: string; sellerId?: unknown; packageName?: unknown }>) {
+        const uname = String(p.sellerId ?? "");
+        if (!uname) continue;
+        notifyUser(prisma, {
+          username: uname, type: "promotion",
+          action: `paused "${String(p.packageName ?? "campaign")}" — its listing left the live feed`,
+          target: "Paid days pause while the listing is hidden or sold; republish to resume visibility (no pro-rata refund).",
+          targetId: p.id,
+        });
+      }
+    }
+  } catch {}
+
   // Keep the admin Product mirror in sync (status vocab: active/featured/hidden).
   const productData: Record<string, unknown> = {};
   if (data.title !== undefined) productData.title = data.title;
@@ -197,10 +235,38 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const post = await prisma.post.findUnique({ where: { id } });
   if (!post) return NextResponse.json({ error: "Post not found" }, { status: 404 });
-  if (post.authorUsername !== auth.user.username) {
+  // Case-insensitive owner check (GET/PATCH lanes already are).
+  const delCaller = String(auth.user.username ?? "").trim().toLowerCase();
+  const delOwner = String(post.authorUsername ?? "").trim().toLowerCase();
+  if (!delCaller || delCaller !== delOwner) {
     return NextResponse.json({ error: "Not your post" }, { status: 403 });
   }
   await prisma.post.update({ where: { id }, data: { status: "removed" } });
   await prisma.product.delete({ where: { id: `lst_${id}` } }).catch(() => {});
+  // Orphan-lot guard: live auctions backed by this listing would keep
+  // accepting funded bids on a removed item (cover join misses, winner
+  // settles via chat for nothing). End them with the listing.
+  await prisma.auction.updateMany({
+    where: { imageKey: id, status: "live" },
+    data: { status: "ended" },
+  }).catch(() => {});
+  // Same burn notice as PATCH-hide/sold (deletion also darkens paid rails).
+  try {
+    const { notifyUser } = await import("@/lib/notifications");
+    const live = await (prisma as any).promotionPurchase.findMany({
+      where: { postId: id, status: "active" },
+      select: { id: true, sellerId: true, packageName: true },
+    }).catch(() => []);
+    for (const p of live as Array<{ id: string; sellerId?: unknown; packageName?: unknown }>) {
+      const uname = String(p.sellerId ?? "");
+      if (!uname) continue;
+      notifyUser(prisma, {
+        username: uname, type: "promotion",
+        action: `ended "${String(p.packageName ?? "campaign")}" — its listing was deleted`,
+        target: "Paid placement removed with the listing (no pro-rata refund).",
+        targetId: p.id,
+      });
+    }
+  } catch {}
   return NextResponse.json({ ok: true });
 }

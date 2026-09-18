@@ -156,25 +156,33 @@ export function getCommissionRate(): number {
  *  persisted at placement (netPrice + commission per line, category-aware).
  *  Falls back to base-rate math only for legacy rows predating settled legs.
  *  Refunded rows are EXCLUDED (clawed back — never earnings, exactly like the
- *  server payout guard). SINGLE definition: every seller surface (hub,
- *  dashboard, seller-orders, wallet) must use this — three hardcoded variants
- *  previously disagreed on identical orders, and a re-derived flat rate
- *  disagreed with the server whenever admin category overrides exist. */
+ *  server payout guard). Dispute-frozen rows are EXCLUDED too (locked until
+ *  ruling — the wallet discloses them separately; counting them as earned
+ *  showed sellers frozen money as spendable on hub + seller-orders).
+ *  SINGLE definition: every seller surface (hub, dashboard, seller-orders,
+ *  wallet) must use this — three hardcoded variants previously disagreed on
+ *  identical orders, and a re-derived flat rate disagreed with the server
+ *  whenever admin category overrides exist. */
 export function sellerNetForOrders(
   orders: {
     status: string;
     paymentStatus?: string;
+    disputeFrozen?: boolean;
     items: {
       price: number;
       quantity: number;
       netPrice?: number;
       commission?: number;
     }[];
-  }[]
+  }[],
+  // Set for the wallet's frozen-bucket math (it partitions frozen OUT of the
+  // headline itself — the shared exclusion would zero its frozen buckets).
+  opts?: { includeFrozen?: boolean }
 ): number {
   const rate = getCommissionRate();
+  const allowFrozen = opts?.includeFrozen === true;
   return orders
-    .filter((o) => o.status === 'delivered' && o.paymentStatus !== 'refunded')
+    .filter((o) => o.status === 'delivered' && o.paymentStatus !== 'refunded' && (allowFrozen || !o.disputeFrozen))
     .reduce((sum, o) => {
       const net = o.items.reduce((t, i) => {
         const qty = Math.max(1, Math.round(Number(i.quantity ?? 1)));

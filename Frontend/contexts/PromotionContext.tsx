@@ -36,14 +36,14 @@ interface PromotionContextValue {
     productTitle?: string;
     sellerUsername: string;
   }) => Promotion | null;
-  endPromotion: (id: string) => void;
+  endPromotion: (id: string) => Promise<boolean>;
 }
 
 const PromotionContext = createContext<PromotionContextValue>({
   promotions: [],
   loaded: false,
   createPromotion: () => null,
-  endPromotion: () => {},
+  endPromotion: () => Promise.resolve(false),
 });
 
 export function PromotionProvider({ children }: { children: React.ReactNode }) {
@@ -51,6 +51,12 @@ export function PromotionProvider({ children }: { children: React.ReactNode }) {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loaded, setLoaded] = useState(false);
   const loadedRef = useRef(false);
+  // Synchronous mirror: endPromotion must read the row's postId BEFORE the
+  // async server call — capturing it inside the setPromotions updater was an
+  // impure render-phase side effect that routinely read undefined (StrictMode
+  // double-invoke), so mirror-row end-early calls 404d and stuck ACTIVE.
+  const promotionsRef = useRef<Promotion[]>([]);
+  promotionsRef.current = promotions;
 
   const getKey = useCallback(() => {
     const u = user?.username?.trim();
@@ -136,22 +142,21 @@ export function PromotionProvider({ children }: { children: React.ReactNode }) {
     [user?.username]
   );
 
-  const endPromotion = useCallback((id: string) => {
-    const target = { id, postId: undefined as string | undefined };
-    setPromotions((prev) => {
-      const row = prev.find((p) => p.id === id);
-      if (row?.postId) target.postId = row.postId;
-      return prev.map((p) => (p.id === id ? { ...p, status: 'expired' } : p));
-    });
+  const endPromotion = useCallback((id: string): Promise<boolean> => {
+    const postId = promotionsRef.current.find((p) => p.id === id)?.postId;
+    setPromotions((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'expired' } : p)));
     // Server owns billing time: ending must deactivate the paid placement
     // there too. Roll back the local mirror on refusal/offline so the two
-    // never disagree about what is still running (and billing).
-    serverApi.endPromotion(id, target.postId).then((res) => {
+    // never disagree about what is still running (and billing). Returns the
+    // ack so screens refresh server truth AFTER the deactivation lands.
+    return serverApi.endPromotion(id, postId).then((res) => {
       if (!res.ok) {
         setPromotions((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'active' } : p)));
       }
+      return res.ok;
     }).catch(() => {
       setPromotions((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'active' } : p)));
+      return false;
     });
   }, []);
 

@@ -194,9 +194,10 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  const token = signSession({ id: db.id, name: db.name, role: db.role, loginId: db.loginId });
+  const token = signSession({ id: db.id, name: db.name, role: db.role, loginId: db.loginId }, db.passwordHash);
+  // Session travels in the HttpOnly cookie ONLY — the token is never echoed
+  // in the JSON body (any XSS/log leak would yield a bearer-equivalent).
   const response = NextResponse.json({
-    token,
     user: {
       id: db.id,
       name: db.name,

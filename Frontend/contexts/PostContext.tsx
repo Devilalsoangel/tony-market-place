@@ -61,8 +61,9 @@ export interface Post {
   delivery?: boolean;
   /** Fulfillment mode picked at listing creation (pickup/shipping/local). */
   deliveryMode?: string;
-  /** Seller-declared shipping fee (applies when deliveryMode is shipping). */
-  shippingFee?: number;
+  // NOTE: no per-listing shippingFee — the platform fee is flat and
+  // server-authoritative at checkout. A seller-set figure here could never
+  // charge (bait), so the client neither maps nor sends one.
   duration?: string;
   availability?: string;
   jobType?: string;
@@ -98,14 +99,14 @@ export interface Post {
 interface PostContextType {
   posts: Post[];
   loaded: boolean;
-  addPost: (post: Omit<Post, 'id' | 'createdAt' | 'likes' | 'comments'>) => void;
+  addPost: (post: Omit<Post, 'id' | 'createdAt' | 'likes' | 'comments'>) => Promise<'acked' | 'offline' | 'rejected' | 'ambiguous'>;
   removePost: (id: string) => void;
   deletePost: (id: string) => void;
   addComment: (postId: string, comment: { author: string; text: string }) => void;
   toggleLike: (postId: string) => boolean;
   isLiked: (postId: string) => boolean;
   updatePost: (id: string, patch: Partial<Post>, opts?: { localOnly?: boolean }) => Promise<boolean>;
-  toggleSold: (id: string) => void;
+  toggleSold: (id: string) => Promise<boolean>;
   hiddenPostIds: string[];
   hidePost: (id: string) => void;
   mutedSellers: string[];
@@ -119,7 +120,7 @@ interface PostContextType {
   /** Real user-filed reports (admin/reports queue reads these). */
   reports: PostReport[];
   /** Re-fetch + reconcile server posts (pull-to-refresh). Cache wins on failure. */
-  refresh: () => Promise<void>;
+  refresh: () => Promise<boolean>;
   /**
    * Server search (cross-device truth): queries title/description server-side
    * and merges hits ADDITIVELY into the cache (upsert by id, tombstones
@@ -127,7 +128,7 @@ interface PostContextType {
    * truth. Resolves the server hits; [] on offline/failure (callers keep
    * their local filter, never a blanked screen).
    */
-  searchServer: (query: string) => Promise<Post[]>;
+  searchServer: (query: string) => Promise<{ rows: Post[]; ok: boolean }>;
 }
 
 const PostContext = createContext<PostContextType | null>(null);
@@ -315,7 +316,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
       mrp: p.mrp != null && Number(p.mrp) > Number(p.price ?? 0) ? Number(p.mrp) : undefined,
       category: String(p.category ?? 'General'),
       subCategories: Array.isArray(p.subCategories) ? p.subCategories.map(String) : undefined,
-      hashtags: Array.isArray(p.hashtags) ? p.hashtags.map(String) : [],
+      hashtags: Array.isArray(p.hashtags) ? p.hashtags.map((h: unknown) => String(h).trim().toLowerCase()).filter(Boolean) : [],
       likes: Number(p.likes ?? 0),
       comments: Number(p.comments ?? 0),
       createdAt: typeof p.createdAt === 'string' ? Date.parse(p.createdAt) : Number(p.createdAt ?? Date.now()),
@@ -334,7 +335,6 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
       brand: p.brand ? String(p.brand) : undefined,
       delivery: p.deliveryMode ? true : undefined,
       deliveryMode: typeof p.deliveryMode === 'string' ? p.deliveryMode : undefined,
-      shippingFee: typeof p.shippingFee === 'number' ? p.shippingFee : undefined,
       negotiable: typeof p.negotiable === 'boolean' ? p.negotiable : undefined,
       listingLat: typeof p.listingLat === 'number' ? p.listingLat : undefined,
       listingLng: typeof p.listingLng === 'number' ? p.listingLng : undefined,
@@ -383,10 +383,12 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
 
   // User-initiated full refresh (pull-to-refresh): re-fetch server posts and reconcile —
   // same merge as the seed above (cache wins on request failure — honest no-spinner-lie).
-  const refresh = useCallback(async () => {
-    if (!user?.username) return;
+  // Returns reachability: callers (pull-to-refresh) must distinguish a
+  // failed refresh from "no new posts" (IG shows "Couldn't refresh").
+  const refresh = useCallback(async (): Promise<boolean> => {
+    if (!user?.username) return true;
     const res = await serverApi.getPosts();
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const rawPosts = ((res.data?.posts ?? []) as any[]);
     const serverPosts = rawPosts
       .map((p) => normalizeServerPost(p))
@@ -407,16 +409,19 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
       const visible = serverPosts.filter((sp) => !tombstones.includes(sp.id));
       return [...visible, ...localOnly];
     });
+    return true;
   }, [normalizeServerPost, user?.username, tombstones, getLikedKey, persistMod]);
 
   // Server search (cross-device truth): q-scoped fetch merged ADDITIVELY.
-  // refresh() semantics would be wrong here — a search response must never
-  // delete feed posts the query didn't match.
-  const searchServer = useCallback(async (query: string): Promise<Post[]> => {
+  // refresh() semantics would be wrong here — a search response never
+  // deletes feed posts the query didn't match. Returns {rows, ok} so callers
+  // can distinguish "no matches" from "server unreachable" (offline shows an
+  // honest notice instead of presenting local-only as complete).
+  const searchServer = useCallback(async (query: string): Promise<{ rows: Post[]; ok: boolean }> => {
     const q = query.trim().slice(0, 100);
-    if (!q) return [];
+    if (!q) return { rows: [], ok: true };
     const res = await serverApi.getPosts({ q }).catch(() => null);
-    if (!res?.ok) return [];
+    if (!res?.ok) return { rows: [], ok: false };
     const rawPosts = (((res.data as unknown as { posts?: unknown })?.posts ?? []) as any[]);
     const hits = rawPosts
       .map((p) => normalizeServerPost(p))
@@ -438,7 +443,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     }
-    return visible;
+    return { rows: visible, ok: true };
   }, [normalizeServerPost, tombstones]);
  
   const hidePost = useCallback(
@@ -496,7 +501,7 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addPost = useCallback(
-    (input: Omit<Post, 'id' | 'createdAt' | 'likes' | 'comments'>) => {
+    (input: Omit<Post, 'id' | 'createdAt' | 'likes' | 'comments'>): Promise<'acked' | 'offline' | 'rejected' | 'ambiguous'> => {
       const localId = `post_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const newPost: Post = {
         type: 'product',
@@ -509,7 +514,9 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
       setPosts((prev) => [newPost, ...prev]);
       // Push to the shared backend — on success the local id is replaced by the
       // real server id so likes/comments/delete all hit the same row.
-      serverApi
+      // Returns the publish outcome so callers never claim "live" before the
+      // ack (the wizard used to flash Posted! while offline/rejected).
+      return serverApi
         .createPost({
           title:
             typeof (input as { title?: unknown }).title === 'string' &&
@@ -530,7 +537,6 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
           brand: input.brand,
           negotiable: input.negotiable,
           deliveryMode: input.deliveryMode,
-          shippingFee: input.shippingFee,
           listingFor: input.listingFor,
           listingLat: input.listingLat,
           listingLng: input.listingLng,
@@ -540,16 +546,20 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
           if (res.ok && res.data?.post?.id) {
             const serverId = String(res.data.post.id);
             setPosts((prev) => prev.map((p) => (p.id === localId ? { ...p, id: serverId } : p)));
+            return 'acked' as const;
           } else if (!res.ok && res.error !== 'offline') {
             // Server rejected (validation/entitlement) — remove the optimistic
             // ghost so the seller never sees a listing buyers can't see.
             setPosts((prev) => prev.filter((p) => p.id !== localId));
+            return 'rejected' as const;
           }
           // Offline: keep local-only (syncs on next launch via seed path).
+          return 'offline' as const;
         })
         .catch(() => {
           // Transport threw mid-flight (ambiguous) — keep; seed path preserves
           // localOnly rows and the next successful sync reconciles.
+          return 'ambiguous' as const;
         });
     },
     []
@@ -632,7 +642,6 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
         if (patch.negotiable !== undefined) sp.negotiable = patch.negotiable;
         if (patch.condition !== undefined) sp.condition = patch.condition;
         if (patch.deliveryMode !== undefined) sp.deliveryMode = patch.deliveryMode;
-        if (patch.shippingFee !== undefined) sp.shippingFee = patch.shippingFee;
         if (Object.keys(sp).length) {
           return serverApi.updatePost(id, sp).then((res) => {
             if (!res.ok && res.error !== 'offline') {
@@ -652,21 +661,49 @@ export function PostProvider({ children }: { children: React.ReactNode }) {
   );
 
   const toggleSold = useCallback(
-    (id: string) => {
+    (id: string): Promise<boolean> => {
       const snapshot = postsRef.current;
       const current = snapshot.find((p) => p.id === id);
       const nextSold = !(current?.isSold ?? false);
+      // Couple the two inventory truths: marking sold zeroes stockLeft,
+      // restocking a zero/empty stock restores 1 — otherwise the hub card
+      // reads Active while PDP still refuses sale (or vice versa).
+      const curStock = typeof current?.stockLeft === 'number' ? Math.floor(current.stockLeft) : null;
+      const nextStock = nextSold ? 0 : (curStock === null || curStock <= 0 ? 1 : curStock);
+      // Tracked-variant restock: the server nulls base stockLeft when variants
+      // are tracked and leaves per-value stock untouched — restocking without
+      // reviving the values left a "live" listing every buyer order 400d on.
+      // Same convention as base (restore 1 unit per depleted option).
+      let nextVariants: PostVariant[] | undefined;
+      if (!nextSold && Array.isArray(current?.variants) && current.variants.length > 0) {
+        const tracked = current.variants.some((g) => Array.isArray(g?.values) && g.values.some((x) => typeof x?.stock === 'number'));
+        if (tracked) {
+          nextVariants = current.variants.map((g) => ({
+            ...g,
+            values: (g.values ?? []).map((v) => (
+              typeof v?.stock === 'number' && Math.floor(v.stock) <= 0 ? { ...v, stock: 1 } : v
+            )),
+          }));
+        }
+      }
       setPosts((prev) =>
         prev.map((p) => {
           if (p.id !== id) return p;
-          return { ...p, isSold: nextSold };
+          return { ...p, isSold: nextSold, stockLeft: nextStock, ...(nextVariants ? { variants: nextVariants } : {}) };
         })
       );
+      // Returns the ack: a server refusal/offline rolls back AND reports
+      // false so the tap explains itself instead of flip-flopping silently.
       if (isServerPostId(id)) {
-        serverApi.updatePost(id, { isSold: nextSold }).then((res) => {
+        return serverApi.updatePost(id, { isSold: nextSold, stockLeft: nextStock, ...(nextVariants ? { variants: nextVariants } : {}) }).then((res) => {
           if (!res.ok && res.error !== 'offline') setPosts(snapshot);
-        }).catch(() => setPosts(snapshot));
+          return res.ok;
+        }).catch(() => {
+          setPosts(snapshot);
+          return false;
+        });
       }
+      return Promise.resolve(true);
     },
     []
   );

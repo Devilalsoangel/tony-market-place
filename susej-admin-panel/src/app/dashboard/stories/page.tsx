@@ -49,7 +49,8 @@ export default function StoriesPage() {
       refresh();
     } catch (e) {
       setItems(rows ?? []);
-      console.error(e);
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Story delete failed — reverted.");
     }
   }
 

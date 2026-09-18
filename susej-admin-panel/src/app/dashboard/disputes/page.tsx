@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table/data-table";
+import { ServerTableBar } from "@/components/data-table/server-table-bar";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { StatTile } from "@/components/shared/stat-tile";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import { useDbResource } from "@/hooks/use-db-resource";
+import { useAuthStore } from "@/store/auth-store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Scale, CheckCircle2, ShieldCheck } from "lucide-react";
 import type { MockDispute } from "@/types/admin-rows";
@@ -30,7 +32,8 @@ const OUTCOME_LABELS: Record<string, string> = {
 
 const makeColumns = (
   onReview: (d: MockDispute) => void,
-  onResolve: (d: MockDispute) => void
+  onResolve: (d: MockDispute) => void,
+  canResolve: boolean
 ) => [
   column.accessor("id", { header: "Dispute", cell: (info) => <span className="font-mono text-sm font-medium text-[#18181B]">{info.getValue()}</span> }),
   column.accessor("orderId", { header: "Order", cell: (info) => <span className="font-mono text-sm text-[#71717A]">{info.getValue()}</span> }),
@@ -68,9 +71,11 @@ const makeColumns = (
           <Button variant="secondary" size="sm" onClick={() => onReview(d)}>
             <Scale className="h-3.5 w-3.5" /> Review
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => onResolve(d)}>
-            <CheckCircle2 className="h-3.5 w-3.5 text-[#16A34A]" /> Resolve
-          </Button>
+          {canResolve ? (
+            <Button variant="ghost" size="sm" onClick={() => onResolve(d)}>
+              <CheckCircle2 className="h-3.5 w-3.5 text-[#16A34A]" /> Resolve
+            </Button>
+          ) : null}
         </div>
       );
     },
@@ -78,7 +83,23 @@ const makeColumns = (
 ];
 
 export default function DisputesPage() {
-  const { data: rows, total: disputesTotal, refresh } = useDbResource<MockDispute>("disputes", { take: 100 });
+  // Server-driven queue: q/skip ride useDbResource (?q=&skip=&take=) so rows
+  // past the first 100 are searchable and reachable — client-only search
+  // made row 101+ unfindable. Paging resets on new search.
+  const [q, setQ] = useState("");
+  const [skip, setSkip] = useState(0);
+  const { data: rows, total: disputesTotal, refresh } = useDbResource<MockDispute>("disputes", {
+    take: 100,
+    ...(q.trim() ? { q: q.trim() } : {}),
+    ...(skip > 0 ? { skip } : {}),
+  });
+  const role = useAuthStore((s) => s.user?.role);
+  // Resolution moves money — moderators triage (Review) only. Same matrix as
+  // the API layer (normalizeRole): owner/superadmin/admin fold up.
+  const canResolve = (() => {
+    const r = String(role ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "_");
+    return r === "super_admin" || r === "superadmin" || r === "owner" || r === "manager" || r === "admin";
+  })();
   const [items, setItems] = useState<MockDispute[] | null>(rows);
   const [resolving, setResolving] = useState<MockDispute | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -124,6 +145,7 @@ export default function DisputesPage() {
 
   function submitResolution() {
     if (!resolving) return;
+    const snapshot = items;
     const resolvedAt = new Date().toISOString();
     setItems((prev) =>
       (prev ?? []).map((x) =>
@@ -143,9 +165,12 @@ export default function DisputesPage() {
     })
       .then(async (res) => {
         // Surface settlement refusals (unknown order, split/full already
-        // paid): refresh() below snaps the row back, but not silently.
+        // paid): revert the optimistic resolve AND name it — a dual-control
+        // 409 or offline refresh() failure used to leave approved rows the
+        // server refused.
         if (!res.ok) {
           const body = await res.json().catch(() => null);
+          setItems(snapshot);
           setResolveError(
             String((body as { error?: unknown } | null)?.error || `Ruling refused (HTTP ${res.status}). No money moved.`)
           );
@@ -154,6 +179,7 @@ export default function DisputesPage() {
         setResolveError(null);
       })
       .catch(() => {
+        setItems(snapshot);
         setResolveError("Could not reach the server. No money moved.");
       })
       .finally(() => {
@@ -166,6 +192,8 @@ export default function DisputesPage() {
   const openAmount = openList.reduce((s, d) => s + d.amount, 0);
   const underReview = (items ?? []).filter((d) => d.status === "under_review").length;
   const resolved = (items ?? []).filter((d) => d.status === "resolved").length;
+  // Window qualifier shared by every count tile below (single source).
+  const win = typeof disputesTotal === "number" && disputesTotal > (items ?? []).length ? " · first 100" : "";
 
   return (
     <div className="space-y-6">
@@ -182,10 +210,10 @@ export default function DisputesPage() {
       )}
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Open disputes" value={openList.length} tone="red" />
-        <StatTile label={`Open amount${typeof disputesTotal === "number" && disputesTotal > (items ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(openAmount)} tone="red" />
-        <StatTile label="Under review" value={underReview} tone="amber" />
-        <StatTile label="Resolved" value={resolved} tone="green" />
+        <StatTile label={`Open disputes${win}`} value={openList.length} tone="red" />
+        <StatTile label={`Open amount${win}`} value={formatCurrency(openAmount)} tone="red" />
+        <StatTile label={`Under review${win}`} value={underReview} tone="amber" />
+        <StatTile label={`Resolved${win}`} value={resolved} tone="green" />
       </div>
 
       <Card>
@@ -193,8 +221,17 @@ export default function DisputesPage() {
           <CardTitle>Dispute Queue</CardTitle>
         </CardHeader>
         <CardContent>
+          <ServerTableBar
+            q={q}
+            onQ={(v) => { setQ(v); setSkip(0); }}
+            skip={skip}
+            onSkip={setSkip}
+            total={disputesTotal}
+            loaded={(items ?? []).length}
+            searchPlaceholder="Search order, buyer, seller, reason…"
+          />
           <DataTable
-            columns={makeColumns(review, openResolve)}
+            columns={makeColumns(review, openResolve, canResolve)}
             data={items ?? []}
             totalCount={disputesTotal ?? (items ?? []).length}
             searchable

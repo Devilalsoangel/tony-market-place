@@ -65,7 +65,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return { liked: liked!, likes: fresh?.likes ?? 0 };
   });
 
-  if (result.liked && post.authorUsername && post.authorUsername !== auth.user.username) {
+  // Case-insensitive self check (mixed-case owners liking their own post
+  // used to notify themselves).
+  const likeCaller = String(auth.user.username ?? "").trim().toLowerCase();
+  const likeOwner = String(post.authorUsername ?? "").trim().toLowerCase();
+  if (result.liked && post.authorUsername && likeOwner !== likeCaller) {
     // Dedupe: an UNREAD twin from the same actor on the same post already
     // tells the story — unlike→like loops used to ping the author per toggle.
     // (A read twin means genuine renewed attention: notify again.)

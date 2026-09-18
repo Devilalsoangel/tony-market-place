@@ -1,12 +1,13 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Dimensions, Image } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeartIcon, BackIcon } from '../../utils/icons';
 import { colors, formatPrice } from '../../utils/theme';
 import { usePosts } from '../../contexts/PostContext';
-import { useHashtags } from '../../contexts/HashtagContext';
-import { resolveAvatar, resolveListingImage } from '../../utils/productImages';
+import { useHashtags, extractHashtags } from '../../contexts/HashtagContext';
+import { resolveListingImage, hasRealImage } from '../../utils/productImages';
+import { AvatarView } from '../../components/AvatarView';
 
 const { width } = Dimensions.get('window');
 const COL = (width - 44) / 2;
@@ -32,14 +33,22 @@ function HashtagDetailContent() {
   const following = isFollowingHashtag(tag ?? '');
 
   // Filter posts that contain the hashtag — in the hashtags field OR parsed
-  // from the description (lowercase compare)
+  // from the description (Unicode-aware, lowercase compare). Server-q covers
+  // hashtags cross-device: pull `#tag` on mount so other devices' posts land
+  // in the cache instead of a false "0 Posts".
+  const { searchServer } = usePosts() as unknown as { searchServer: (q: string) => Promise<{ rows: unknown[]; ok: boolean }> };
+  useEffect(() => {
+    if (tag && tag.trim()) {
+      searchServer(`#${tag.trim()}`).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tag]);
   const taggedPosts = useMemo(() => {
     if (!tag) return [];
     const lowerTag = `#${tag.toLowerCase()}`;
     return posts.filter((p) => {
       if (p.hashtags.some((h) => h.toLowerCase() === lowerTag)) return true;
-      const descTags = (p.description.match(/#(\w+)/g) ?? []).map((t) => t.toLowerCase());
-      return descTags.includes(lowerTag);
+      return extractHashtags(p.description).includes(lowerTag);
     });
   }, [posts, tag]);
 
@@ -70,8 +79,8 @@ function HashtagDetailContent() {
               {taggedPosts.length} {taggedPosts.length === 1 ? 'Post' : 'Posts'}
             </Text>
 
-            {/* Follow */}
-            <View className="flex-row items-center gap-3 mb-5">
+            {/* Follow — device-local for now (follows don't roam yet). */}
+            <View className="flex-row items-center gap-3 mb-1">
               <TouchableOpacity
                 className={`px-6 py-2.5 rounded-figma-full ${following ? 'bg-surfaceContainerLow' : 'bg-primaryContainer'}`}
                 onPress={() => toggleHashtag(tag ?? '')}
@@ -81,6 +90,9 @@ function HashtagDetailContent() {
                 </Text>
               </TouchableOpacity>
             </View>
+            <Text className="text-figma-11 font-inter-400 text-secondary mb-5">
+              Follows stay on this device for now.
+            </Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -91,10 +103,17 @@ function HashtagDetailContent() {
           >
             <View className="w-full aspect-square bg-surfaceContainer">
               <Image source={resolveListingImage(item, item.id)} className="w-full h-full" resizeMode="cover" />
+              {!hasRealImage(item) && (
+                <View className="absolute inset-0 items-center justify-center">
+                  <Text className="font-inter-700 text-secondary" style={{ fontSize: 26, lineHeight: 32 }}>
+                    {(item.title?.trim()?.[0] ?? item.description.trim()[0] ?? '?').toUpperCase()}
+                  </Text>
+                </View>
+              )}
             </View>
             <View className="px-2.5 pt-2 pb-2.5">
               <View className="flex-row items-center gap-1.5 mb-1">
-                <Image source={resolveAvatar(item.sellerUsername)} className="w-4 h-4 rounded-full" />
+                <AvatarView name={item.sellerUsername} size={16} />
                 <Text className="text-figma-10 font-inter-400 text-textSecondary flex-1" numberOfLines={1}>{item.sellerName}</Text>
               </View>
               <Text className="text-figma-12 font-inter-500 text-textPrimary mb-0.5" numberOfLines={1}>{item.description}</Text>

@@ -127,33 +127,42 @@ export default function NotificationsPage() {
 
   // Sends are LOG-ONLY until a push/email provider is wired: this writes the
   // history row so the desk has a record, but no device/email is contacted.
-  // Status reads "logged" (never "sent") and the POST carries the session —
-  // a 401 rolls the optimistic row back instead of faking a send.
+  // Status reads "logged" (never "sent"), the audience carries a "log only"
+  // marker, and the POST carries the session — a 401 rolls the optimistic
+  // row back instead of faking a send.
   function sendNow(channel: NotificationChannel) {
     const selectedList =
       audience === "selected_users"
         ? selectedUsers.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 200)
         : [];
+    const audienceLabel =
+      (audienceOptions.find((o) => o.value === audience)?.label || audience) +
+      (selectedList.length ? ` (${selectedList.length}, log only)` : " (log only)");
     const entry: NotificationHistoryItem = {
       id: `n${Date.now()}`,
       channel,
       title: channel === "email" ? subject : channel === "push" ? title : bannerText,
-      audience: audienceOptions.find((o) => o.value === audience)?.label || audience,
+      audience: audienceLabel,
       status: "logged",
       sentAt: new Date().toISOString(),
     };
     setHistory((prev) => [entry, ...prev]);
+    // Known-fields ONLY: the history table has channel/title/audience/status/
+    // scheduledFor/sentAt — the old body spread transport:"log-only" +
+    // selectedUsers[] (unknown Prisma args) threw on every send, so Send-Now
+    // and Schedule silently rolled back 100% of the time. The selected scope
+    // rides in the audience label (log-only lane: no provider to address).
     fetch("/api/data/notification-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({
-        ...entry,
-        id: undefined,
+        channel,
+        title: entry.title,
+        audience: audienceLabel,
+        status: "logged",
+        scheduledFor: null,
         sentAt: entry.sentAt || null,
-        audience,
-        selectedUsers: selectedList,
-        transport: "log-only",
       }),
     }).then((res) => {
       if (!res.ok) setHistory((prev) => prev.filter((h) => h.id !== entry.id));
@@ -188,11 +197,18 @@ export default function NotificationsPage() {
     if (!scheduleDate) return;
     // Safe ISO: datetime-local has no zone — interpret as local, persist UTC.
     // The old `${scheduleDate}:00.000Z` concat shifted hours for +05:30 desks.
+    const selectedCount =
+      audience === "selected_users"
+        ? selectedUsers.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).length
+        : 0;
+    const audienceLabel =
+      (audienceOptions.find((o) => o.value === audience)?.label || audience) +
+      (selectedCount ? ` (${selectedCount}, log only)` : " (log only)");
     const entry: NotificationHistoryItem = {
       id: `n${Date.now()}`,
       channel,
       title: channel === "email" ? subject : channel === "push" ? title : bannerText,
-      audience: audienceOptions.find((o) => o.value === audience)?.label || audience,
+      audience: audienceLabel,
       status: "scheduled",
       scheduledFor: scheduleDate,
       sentAt: "",
@@ -202,11 +218,12 @@ export default function NotificationsPage() {
       const d = new Date(scheduleDate);
       return Number.isNaN(d.getTime()) ? scheduleDate : d.toISOString();
     })();
+    // Known-fields ONLY (same Prisma unknown-arg 503 as sendNow had).
     fetch("/api/data/notification-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ channel, title: entry.title, audience, selectedUsers: audience === "selected_users" ? selectedUsers.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean).slice(0, 200) : [], status: "scheduled", scheduledFor, sentAt: null, transport: "log-only" }),
+      body: JSON.stringify({ channel, title: entry.title, audience: audienceLabel, status: "scheduled", scheduledFor, sentAt: null }),
     }).then((res) => {
       if (!res.ok) setHistory((prev) => prev.filter((h) => h.id !== entry.id));
     }).catch(() => {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table/data-table";
+import { ServerTableBar } from "@/components/data-table/server-table-bar";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -81,7 +82,15 @@ const makeColumns = (
 ];
 
 export default function RefundsPage() {
-  const { data: refunds, total: refundsTotal, refresh } = useDbResource<RefundRequest>("refunds", { take: 100 });
+  // Server-driven queue (?q=&skip=&take=) — rows past 100 must be
+  // searchable and reachable, not window-only.
+  const [q, setQ] = useState("");
+  const [skip, setSkip] = useState(0);
+  const { data: refunds, total: refundsTotal, refresh } = useDbResource<RefundRequest>("refunds", {
+    take: 100,
+    ...(q.trim() ? { q: q.trim() } : {}),
+    ...(skip > 0 ? { skip } : {}),
+  });
   const [rows, setRows] = useState<RefundRequest[] | null>(refunds);
   const [confirm, setConfirm] = useState<{ r: RefundRequest; decision: "approve" | "reject" | "issue" } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -93,9 +102,12 @@ export default function RefundsPage() {
   const pending = (rows ?? []).filter((r) => r.status === "requested");
   const approved = (rows ?? []).filter((r) => r.status === "approved");
   const refundedAmount = (rows ?? []).filter((r) => r.status === "refunded").reduce((s, r) => s + r.amount, 0);
+  // Window qualifier shared by every count tile below (single source).
+  const win = typeof refundsTotal === "number" && refundsTotal > (rows ?? []).length ? " · first 100" : "";
 
   function patchRow(r: RefundRequest, data: Partial<RefundRequest>) {
     setActionError(null);
+    const snapshot = rows;
     setRows((prev) => (prev ?? []).map((x) => (x.id === r.id ? { ...x, ...data } : x)));
     fetch("/api/data/refunds", {
       method: "PATCH",
@@ -104,16 +116,18 @@ export default function RefundsPage() {
       body: JSON.stringify({ id: r.id, data }),
     })
       .then(async (res) => {
-        // Surface refusals (dual-control 409, invalid transition): refresh()
-        // below snaps the row back, but silently — the desk must know WHY.
+        // Revert + name the refusal: a dual-control 409 or offline refresh
+        // failure used to leave approved rows the server refused.
         if (!res.ok) {
           const body = await res.json().catch(() => null);
+          setRows(snapshot);
           setActionError(
             String((body as { error?: unknown } | null)?.error || `Refund update refused (HTTP ${res.status}). No money moved.`)
           );
         }
       })
       .catch(() => {
+        setRows(snapshot);
         setActionError("Could not reach the server. No money moved.");
       })
       .finally(() => {
@@ -150,9 +164,9 @@ export default function RefundsPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Total requests" value={(rows ?? []).length} />
-        <StatTile label="Requested" value={pending.length} tone="amber" />
-        <StatTile label="Approved, pending issue" value={approved.length} tone="purple" />
+        <StatTile label={`Total requests${win}`} value={(rows ?? []).length} />
+        <StatTile label={`Requested${win}`} value={pending.length} tone="amber" />
+        <StatTile label={`Approved, pending issue${win}`} value={approved.length} tone="purple" />
         <StatTile label={`Refunded amount${typeof refundsTotal === "number" && refundsTotal > (refunds ?? []).length ? " (first 100)" : ""}`} value={formatCurrency(refundedAmount)} tone="green" />
       </div>
 
@@ -166,6 +180,15 @@ export default function RefundsPage() {
           </div>
         )}
         <CardContent>
+          <ServerTableBar
+            q={q}
+            onQ={(v) => { setQ(v); setSkip(0); }}
+            skip={skip}
+            onSkip={setSkip}
+            total={refundsTotal}
+            loaded={(rows ?? []).length}
+            searchPlaceholder="Search order, buyer, seller, reason…"
+          />
           <DataTable
             columns={makeColumns(
               (r) => setConfirm({ r, decision: "approve" }),

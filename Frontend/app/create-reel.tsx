@@ -38,7 +38,7 @@ export interface MyReel {
   image: string;
   caption: string;
   time: number;
-  /** Server row id once published — used to dedupe the local mirror. */
+  /** Server row id once published â€” used to dedupe the local mirror. */
   serverId?: string;
   /** Owner username for headers (was hardcoded @you). */
   owner?: string;
@@ -132,22 +132,22 @@ export default function CreateReelScreen() {
     setPublishing(true);
     setError(null);
     try {
-      // Cover must be hosted BEFORE publishing — a local file:// cover is
+      // Cover must be hosted BEFORE publishing â€” a local file:// cover is
       // unviewable on any other device and the server rejects it.
       const hosted = await uploadAllToServer([selected as string]);
-      if (hosted.length === 0) {
+      if (hosted.urls.length === 0) {
         setError('Could not upload your cover. Check your connection and try again.');
         setPublishing(false);
         return;
       }
       const res = await serverApi.createReel({
-        mediaUrl: hosted[0],
+        mediaUrl: hosted.urls[0],
         caption: caption.trim() || 'New reel',
       });
       if (!res.ok) {
         setError(
           res.error === 'offline' || res.error === 'server-unreachable'
-            ? 'You are offline — the reel stays on this device and will publish on retry.'
+            ? 'You are offline â€” the reel stays on this device and will publish on retry.'
             : (res.error ?? 'Could not publish your reel. Please try again.')
         );
         setPublishing(false);
@@ -155,7 +155,7 @@ export default function CreateReelScreen() {
       }
       const reel: MyReel = {
         id: `myreel_${Date.now()}`,
-        image: hosted[0],
+        image: hosted.urls[0],
         caption: caption.trim() || 'New reel',
         time: Date.now(),
         serverId: (res.data as { reel?: { id?: string } })?.reel?.id,
@@ -200,18 +200,18 @@ export default function CreateReelScreen() {
             className="font-inter-700"
             style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, color: canPublish ? colors.primary : colors.textTertiary }}
           >
-            {publishing ? 'Publishing…' : 'Publish'}
+            {publishing ? 'Publishingâ€¦' : 'Publish'}
           </Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView className="flex-1" bounces={false} keyboardShouldPersistTaps="handled">
-        {/* Large preview — video from gallery */}
+        {/* Large preview â€” video from gallery */}
         <View style={{ width: SCREEN_WIDTH, height: 320 }} className="bg-surfaceContainer items-center justify-center">
           {selected ? (
             <View className="w-full h-full items-center justify-center px-6">
               <View className="w-16 h-16 rounded-full items-center justify-center mb-3" style={{ backgroundColor: colors.primaryContainer }}>
-                <Text style={{ fontSize: 28, color: colors.onPrimary }}>▶</Text>
+                <Text style={{ fontSize: 28, color: colors.onPrimary }}>â–¶</Text>
               </View>
               <Text className="text-figma-12 font-inter-600 text-textSecondary text-center" numberOfLines={2}>
                 Video selected from gallery
@@ -226,14 +226,14 @@ export default function CreateReelScreen() {
                 Pick a video from your phone gallery to create a reel
               </Text>
               <Text className="text-figma-11 font-inter-400 text-textTertiary text-center mt-2">
-                Gallery videos only — no demo content
+                Gallery videos only â€” no demo content
               </Text>
             </View>
           )}
         </View>
 
         <View className="px-5 pt-5">
-          {/* Real gallery picker — primary path */}
+          {/* Real gallery picker â€” primary path */}
           <TouchableOpacity
             className="w-full h-12 rounded-figma-16 items-center justify-center flex-row"
             style={{ backgroundColor: colors.primaryContainer }}
@@ -254,7 +254,7 @@ export default function CreateReelScreen() {
           {pickerFailed ? (
             <View className="bg-surfaceContainerLow rounded-figma-16 px-4 py-3 mt-4">
               <Text className="text-figma-12 font-inter-500 text-textSecondary text-center">
-                Gallery unavailable — please allow media permissions in system settings and try again. No demo videos are included.
+                Gallery unavailable â€” please allow media permissions in system settings and try again. No demo videos are included.
               </Text>
             </View>
           ) : null}

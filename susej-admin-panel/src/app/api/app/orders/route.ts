@@ -63,12 +63,14 @@ export async function GET(req: NextRequest) {
   const mine = req.nextUrl.searchParams.get("mine");
   const username = auth.user.username!;
   const rows = await prisma.order.findMany({
+    // Case-insensitive party match (write paths already are — an exact-match
+    // list hid rows the PATCH lane would happily mutate).
     where:
       mine === "seller"
-        ? { sellerUsername: username }
+        ? { sellerUsername: { equals: username, mode: "insensitive" } }
         : mine === "all"
-          ? { OR: [{ buyerUsername: username }, { sellerUsername: username }] }
-          : { buyerUsername: username },
+          ? { OR: [{ buyerUsername: { equals: username, mode: "insensitive" } }, { sellerUsername: { equals: username, mode: "insensitive" } }] }
+          : { buyerUsername: { equals: username, mode: "insensitive" } },
     orderBy: { createdAt: "desc" },
     // Industry cap: latest 100 (cursor pagination arrives with feed-scale;
     // 200-row pulls jank low-end devices and leak history).
@@ -151,6 +153,10 @@ export async function GET(req: NextRequest) {
       actualDelivery: (o as { actualDelivery?: unknown }).actualDelivery
         ? String((o as { actualDelivery?: unknown }).actualDelivery)
         : "",
+      // POD log (handover claims the buyer tracking screen renders).
+      deliveryLog: Array.isArray((o as { deliveryLog?: unknown }).deliveryLog)
+        ? (o as { deliveryLog: unknown }).deliveryLog
+        : [],
     })),
   });
 }
@@ -271,7 +277,13 @@ export async function POST(req: NextRequest) {
       // Listing types for the server-authoritative delivery fee (service → 0).
       const lineTypes: string[] = [];
       const normalized = items.map((raw) => {
-        const qty = Math.max(1, Math.round(Number(raw.qty ?? raw.quantity ?? 1)));
+        // Qty capped (per-line 999): unlimited listings accepted ANY qty with
+        // sufficient balance (999999-unit order rows); stock-tracked lines are
+        // additionally clamped to availability at reservation below.
+        // Non-numeric qty fails as invalid-qty, not as a confusing total error.
+        const qtyRaw = Number(raw.qty ?? raw.quantity ?? 1);
+        if (!Number.isFinite(qtyRaw)) throw new OrderError(400, "Invalid item quantity — refresh and try again");
+        const qty = Math.min(999, Math.max(1, Math.round(qtyRaw)));
         const unitPrice = Number(raw.price ?? 0);
         const listingId = String(raw.listingId ?? raw.postId ?? "").trim();
         return { raw, qty, unitPrice, listingId, ownerUsername: null as string | null, category: "" };
@@ -283,7 +295,11 @@ export async function POST(req: NextRequest) {
       // status are verified, then the deterministic split (floor share,
       // remainder on the first listing by id order — the same formula the app
       // previews) replaces the mirror price. Any mismatch fail-closes.
-      const bundlePrices = new Map<string, number>();
+      // Keyed by LINE object (not listingId): a bundle containing 2x the same
+      // listing used to overwrite its own split share — both lines then
+      // settled at one share and the total no longer equalled the bundle
+      // price. Line refs are stable across the passes below.
+      const bundlePrices = new Map<object, number>();
       {
         const groups = new Map<string, typeof normalized>();
         for (const line of normalized) {
@@ -325,7 +341,7 @@ export async function POST(req: NextRequest) {
           const ordered = [...lines].sort((a, b) => (a.listingId < b.listingId ? -1 : a.listingId > b.listingId ? 1 : 0));
           const share = Math.floor(bundlePrice / ordered.length);
           ordered.forEach((l, i) => {
-            bundlePrices.set(l.listingId, i === 0 ? bundlePrice - share * (ordered.length - 1) : share);
+            bundlePrices.set(l, i === 0 ? bundlePrice - share * (ordered.length - 1) : share);
           });
         }
       }
@@ -354,6 +370,16 @@ export async function POST(req: NextRequest) {
           }
           if (String(post.status ?? "") !== "published") {
             throw new OrderError(400, "Listing unavailable");
+          }
+          // Under-the-hammer guard: a listing with a live auction cannot be
+          // bought directly — otherwise the auction winner + direct buyer
+          // both own one unique item. Fail closed with guidance.
+          const liveAuction = await (tx as any).auction.findFirst({
+            where: { imageKey: line.listingId, status: "live", endsAt: { gt: new Date() } },
+          }).catch(() => null);
+          if (liveAuction) {
+            await (tx as any).post.update({ where: { id: line.listingId }, data: { isSold: false } }).catch(() => {});
+            throw new OrderError(400, "This item is under live auction — bid for it instead of buying directly");
           }
           // Merge staged variant decrements from earlier lines of THIS order
           // so the availability check below validates against current stock.
@@ -402,6 +428,16 @@ export async function POST(req: NextRequest) {
                   throw new OrderError(400, `Only ${val.stock} left for "${pick.label}"`);
                 }
                 val.stock -= line.qty;
+                variantMutations.set(line.listingId, post);
+              } else if (val) {
+                // Untracked option (no numeric stock): single unique item —
+                // one unit per value, then it reads out of stock. Without
+                // this, label-only variants oversell without bound.
+                if (line.qty > 1) {
+                  await (tx as any).post.update({ where: { id: line.listingId }, data: { isSold: false } }).catch(() => {});
+                  throw new OrderError(400, `Only 1 left for "${pick.label}"`);
+                }
+                val.stock = 0;
                 variantMutations.set(line.listingId, post);
               }
             }
@@ -560,7 +596,7 @@ export async function POST(req: NextRequest) {
           // replaces the listing mirror. Bundles never combine with accepted
           // offers — same class as the coupon+offer ban (one price authority
           // per order).
-          const bundleUnit = bundlePrices.get(line.listingId);
+          const bundleUnit = bundlePrices.get(line);
           if (bundleUnit !== undefined) {
             if (hasOffer) {
               throw new OrderError(400, "Offers can't combine with bundle deals");
@@ -657,7 +693,11 @@ export async function POST(req: NextRequest) {
           // Misconfigured percent (>100) can never settle — a 200% typo used
           // to discount a ₹1012 order to ₹1 with no visible subsidy leg.
           if (!(coupon.value > 0) || coupon.value > 100) throw new OrderError(400, "Coupon misconfigured — contact support");
-          discount = Math.round((chargedTotal * coupon.value) / 100);
+          // Desk parity: the finance desk clamps effective percent at 90, so
+          // placement settles the same 90 cap — a 100% row can never mint a
+          // near-free store here while the desk reads 90.
+          const pct = Math.min(coupon.value, 90);
+          discount = Math.round((chargedTotal * pct) / 100);
         }
         else if (coupon.type === "flat" || coupon.type === "fixed") discount = Math.round(coupon.value);
         else if (coupon.type === "free_delivery") discount = deliveryFee;
@@ -704,7 +744,10 @@ export async function POST(req: NextRequest) {
           data: {
             username,
             title: `Order ${trackingNumber}`,
-            detail: `${body.sellerName ?? "susej"} · ${normalized.length} item(s)`,
+            // Neutral detail (no client display string): the order row carries
+            // the server-resolved seller name; the debit leg must not mint a
+            // spoofable brand string into the ledger.
+            detail: `${normalized.length} item(s) · ${trackingNumber}`,
             amount: -chargedTotal,
           },
         });
@@ -727,6 +770,22 @@ export async function POST(req: NextRequest) {
       }
       const isMultiOwner = false;
       const primarySeller = ownerSet[0] ?? null;
+      // Display identity resolves server-side (brand-spoof guard): the
+      // client-sent sellerName used to persist verbatim ("Nike Official"),
+      // while money already keys off ownerUsername. Business name first,
+      // signup name fallback — same rule as the feed.
+      let displaySellerName = "Seller";
+      if (primarySeller) {
+        const sellerUser = await tx.user.findUnique({
+          where: { username: primarySeller },
+          select: { businessName: true, name: true },
+        }).catch(() => null);
+        displaySellerName = String(
+          (sellerUser as { businessName?: unknown; name?: unknown } | null)?.businessName ||
+          (sellerUser as { name?: unknown } | null)?.name ||
+          "Seller"
+        ).slice(0, 120) || "Seller";
+      }
 
       // Per-line net basis for downstream settlement (clawbacks, COD credit,
       // dispute rulings): the coupon's merchandise share is spread pro-rata so
@@ -749,7 +808,9 @@ export async function POST(req: NextRequest) {
         const rate = await resolveCommissionRate(tx, i.category || undefined);
         const fee = Math.round(netTotal * rate);
         settledLines.push({
-          name: String(i.raw.name ?? "Item"),
+          // Display strings clipped at persist (a 10KB sellerName used to
+          // land verbatim in itemsList + the admin queue).
+          name: String(i.raw.name ?? "Item").slice(0, 200),
           qty: i.qty,
           quantity: i.qty,
           price: i.unitPrice,
@@ -762,14 +823,14 @@ export async function POST(req: NextRequest) {
           ...((i as { offerRef?: unknown }).offerRef ? { offerRef: (i as { offerRef?: unknown }).offerRef } : {}),
           // Persisted so every device/relogin sees WHAT was bought (variant
           // receipt); the variant OOS re-check above reads the same value.
-          variantLabel: String((i.raw as any)?.variantLabel ?? ""),
+          variantLabel: String((i.raw as any)?.variantLabel ?? "").slice(0, 120),
         });
       }
       const order = await tx.order.create({
         data: {
           buyerName: auth.user.name,
           buyerUsername: username,
-          sellerName: body.sellerName ?? "Seller",
+          sellerName: displaySellerName,
           sellerUsername: primarySeller,
           amount: chargedTotal,
           status: "placed",

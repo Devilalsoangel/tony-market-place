@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createColumnHelper } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table/data-table";
+import { ServerTableBar } from "@/components/data-table/server-table-bar";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { type MockReportedUser } from "@/types/admin-rows";
 import { useDbResource } from "@/hooks/use-db-resource";
-import { apiPatch, apiDelete } from "@/lib/api-mutate";
+import { apiDelete } from "@/lib/api-mutate";
 import { formatDate } from "@/lib/utils";
 import { Flag, AlertTriangle, ShieldAlert } from "lucide-react";
 import type { User } from "@/types";
@@ -90,7 +91,14 @@ const actionMeta: Record<ReportAction, { title: string; message: (name: string) 
 
 export default function UsersPage() {
   const router = useRouter();
-  const { data: users, total: usersTotal } = useDbResource<User>("users", { take: 100 });
+  // Server-driven user table (?q=&skip=&take=) — row 101+ searchable.
+  const [uq, setUq] = useState("");
+  const [uskip, setUskip] = useState(0);
+  const { data: users, total: usersTotal, refresh: refreshUsers } = useDbResource<User>("users", {
+    take: 100,
+    ...(uq.trim() ? { q: uq.trim() } : {}),
+    ...(uskip > 0 ? { skip: uskip } : {}),
+  });
   const { data: reportedRows, refresh: refreshReported } = useDbResource<MockReportedUser>("reported-users");
   const [reportedList, setReportedList] = useState<MockReportedUser[]>(reportedRows ?? []);
   const [confirmAction, setConfirmAction] = useState<{ id: string; name: string; action: ReportAction } | null>(null);
@@ -105,28 +113,43 @@ export default function UsersPage() {
   async function handleAction(targetId: string, action: ReportAction) {
     const target = reportedList.find((u) => u.id === targetId);
     if (!target) return;
+    // The local queue flips ONLY on server success: a refused moderation
+    // (role-denied, already-reviewed) used to paint "reviewed" while the
+    // server did nothing.
+    let ok = false;
     try {
       if (action === "dismiss") {
         await apiDelete("reported-users", target.id);
+        ok = true;
       } else {
-        await apiPatch("reported-users", target.id, { status: "reviewed" });
-        if (action === "suspend" || action === "ban") {
-          // ReportedUser carries no userId FK (name/email only) — resolve the
-          // real User row by email from the loaded users window so Ban/Suspend
-          // actually lands on the account instead of silently no-opping.
-          const userId =
-            (target as unknown as { userId?: string }).userId ??
-            (users ?? []).find(
-              (u) => u.email?.toLowerCase() === target.email?.toLowerCase()
-            )?.id;
-          if (userId) {
-            await apiPatch("users", userId, { status: action === "ban" ? "banned" : "suspended" }).catch(() => {});
-          }
+        // Server-side moderation (POST /api/admin/moderation): full-table
+        // email resolution (no 100-row window limit), account patch, and a
+        // user-visible warning tell. The old client path silently no-opped
+        // out-of-window bans and warned nobody.
+        const res = await fetch("/api/admin/moderation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ reportId: target.id, action }),
+        }).catch(() => null);
+        const data = await res?.json().catch(() => null);
+        if (!res?.ok) throw new Error(String(data?.error ?? "moderation failed"));
+        ok = true;
+        if (!data?.accountTouched) {
+          alert(
+            action === "warn"
+              ? `No user account found for ${target.email} — report marked reviewed, no warning delivered.`
+              : `No user account found for ${target.email} — report marked reviewed, no account ${action === "ban" ? "banned" : "suspended"}.`
+          );
         }
       }
       refreshReported();
     } catch (e) {
-      console.error(e);
+      alert(e instanceof Error ? e.message : "Moderation failed — nothing was recorded.");
+    }
+    if (!ok) {
+      setConfirmAction(null);
+      return;
     }
     if (action === "dismiss") {
       setReportedList((prev) => prev.filter((u) => u.id !== targetId));
@@ -169,6 +192,15 @@ export default function UsersPage() {
                   <CardTitle>All Users ({users?.length ?? 0}{typeof usersTotal === "number" && usersTotal > (users?.length ?? 0) ? ` of ${usersTotal}` : ""})</CardTitle>
                 </CardHeader>
                 <CardContent>
+                  <ServerTableBar
+                    q={uq}
+                    onQ={(v) => { setUq(v); setUskip(0); }}
+                    skip={uskip}
+                    onSkip={setUskip}
+                    total={usersTotal}
+                    loaded={(users ?? []).length}
+                    searchPlaceholder="Search name, email, username, phone…"
+                  />
                   <DataTable
                     columns={columns}
                     data={users ?? []}
@@ -188,9 +220,17 @@ export default function UsersPage() {
                     onBulkDelete={async (rows) => {
                       const ids = (rows as any[]).map((r) => r.id);
                       if (!confirm(`Soft-delete ${ids.length} user(s)? They will be marked deleted and hidden from active views.`)) return;
+                      let failed = 0;
                       for (const id of ids) {
-                        await fetch(`/api/data/users`, { method: "DELETE", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ id }) }).catch(() => {});
+                        try {
+                          const res = await fetch(`/api/data/users`, { method: "DELETE", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ id }) });
+                          if (!res.ok) failed++;
+                        } catch {
+                          failed++;
+                        }
                       }
+                      refreshUsers();
+                      if (failed > 0) alert(`${failed} of ${ids.length} deletes failed — table refreshed to server truth.`);
                     }}
                     onRowClick={(row) => router.push(`/dashboard/users/${row.id}`)}
                   />

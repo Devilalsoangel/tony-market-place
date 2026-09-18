@@ -17,7 +17,7 @@ const UPLOAD_QUALITY = 0.75;
 
 /** True when the URL is already hosted (http/https) — safe to persist. */
 export function isHostedImageUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url.trim());
+  return /^https?:\/\//i.test(String(url ?? '').trim());
 }
 
 /** Read a local file/content URI and encode it as a base64 data URL. */
@@ -60,7 +60,9 @@ export async function shrinkForUpload(
 
 /** Resolve a stored image reference to an absolute URL for <Image source>. */
 export function resolveImageUrl(url: string, base: string): string {
-  return url.startsWith('http') ? url : `${base.replace(/\/$/, '')}${url}`;
+  const u = String(url ?? '').trim();
+  if (/^https?:\/\//i.test(u)) return u;
+  return `${base.replace(/\/$/, '')}${u.startsWith('/') ? u : `/${u}`}`;
 }
 
 /**
@@ -69,7 +71,7 @@ export function resolveImageUrl(url: string, base: string): string {
  * Throws on failure — callers decide the UX (block post, or offline fallback).
  */
 export async function uploadToServer(localUri: string): Promise<string> {
-  const dataUrl = await shrinkForUpload(localUri.trim());
+  const dataUrl = await shrinkForUpload(String(localUri ?? '').trim());
   const res = await serverApi.uploadBannerImage(dataUrl);
   if (!res.ok || !res.data?.url) throw new Error(res.error || 'Upload failed');
   const base = await getAdminUrl();
@@ -78,11 +80,12 @@ export async function uploadToServer(localUri: string): Promise<string> {
 
 /**
  * Upload every local URI in a media list; already-hosted URLs pass through
- * unchanged. Items that fail are skipped (best-effort) so one bad image
- * never blocks the whole post — but an empty result signals total failure.
+ * unchanged. Returns per-item results so callers can REPORT partial failure
+ * (a silently dropped 3rd photo is discovered by the buyer, not the seller).
  */
-export async function uploadAllToServer(uris: (string | number)[]): Promise<string[]> {
+export async function uploadAllToServer(uris: (string | number)[]): Promise<{ urls: string[]; failed: number }> {
   const out: string[] = [];
+  let failed = 0;
   for (const raw of uris) {
     if (typeof raw !== 'string' || !raw.trim()) continue;
     const u = raw.trim();
@@ -93,8 +96,13 @@ export async function uploadAllToServer(uris: (string | number)[]): Promise<stri
     try {
       out.push(await uploadToServer(u));
     } catch {
-      // skip failed item
+      failed += 1;
     }
   }
-  return out;
+  return { urls: out, failed };
+}
+
+/** Legacy tuple wrapper (prefer the { urls, failed } shape for new callers). */
+export async function uploadAllToServerList(uris: (string | number)[]): Promise<string[]> {
+  return (await uploadAllToServer(uris)).urls;
 }

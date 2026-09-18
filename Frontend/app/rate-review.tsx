@@ -5,11 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon, StarIcon, CheckIcon } from '../utils/icons';
 import { colors } from '../utils/theme';
 import { useOrders } from '../contexts/OrderContext';
+import { useAuth } from '../contexts/AuthContext';
 import { resolveListingImage } from '../utils/productImages';
 
 export default function RateReviewScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const { getOrder, markReviewed } = useOrders();
+  const { user } = useAuth();
   const order = params.id ? getOrder(String(params.id)) : undefined;
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
@@ -27,8 +29,13 @@ export default function RateReviewScreen() {
       ? { uri: firstItem.imageUrl }
       : resolveListingImage(null, firstItem?.listingId ?? order.id)
     : null;
-  // Reviews are delivery-gated: only delivered, unreviewed orders qualify.
-  const reviewable = !!order && order.status === 'delivered' && !order.reviewed;
+  // Reviews are delivery-gated AND buyer-gated: only delivered, unreviewed
+  // orders qualify, and only the buyer can review (a seller deep-linking
+  // /rate-review?id=<own-sale-id> gets a closed door here; the server 400s
+  // non-buyers as the second lock, so self-5-stars can't inflate ratings).
+  const me = (user?.username ?? '').trim().toLowerCase();
+  const isBuyer = !!order && me !== '' && (order.buyerUsername ?? '').toLowerCase() === me;
+  const reviewable = !!order && order.status === 'delivered' && !order.reviewed && isBuyer;
 
   if (!order) {
     return (
@@ -65,12 +72,14 @@ export default function RateReviewScreen() {
         </View>
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-figma-18 font-inter-700 text-textPrimary">
-            {order.reviewed ? 'Already reviewed' : 'Not deliverable yet'}
+            {order.reviewed ? 'Already reviewed' : !isBuyer ? 'Not your order' : 'Not deliverable yet'}
           </Text>
           <Text className="text-figma-14 font-inter-400 text-textSecondary mt-2 text-center">
             {order.reviewed
               ? 'You already shared feedback for this order.'
-              : 'You can rate this order once it is delivered.'}
+              : !isBuyer
+                ? 'Only the buyer who received this order can rate it.'
+                : 'You can rate this order once it is delivered.'}
           </Text>
           <TouchableOpacity className="mt-6 px-6 py-3 bg-primaryContainer rounded-figma-full" onPress={() => router.back()}>
             <Text className="text-figma-14 font-inter-600 text-white">Go back</Text>

@@ -66,23 +66,34 @@ const [promo, setPromo] = useState<AppliedPromo | null>(null);
     AsyncStorage.getItem(savedKey)
       .then((data) => {
         if (cancelled) return;
+        // Merge, don't replace: a cold fast tap on Save-for-later can land
+        // before this load completes — blind setSaved(parsed) would clobber
+        // the tapped item out of existence (neither cart nor storage).
+        let stored: SavedItem[] = [];
         if (data) {
           try {
             const parsed = JSON.parse(data) as SavedItem[];
-            if (Array.isArray(parsed)) setSaved(parsed.filter((s) => s && s.listingId));
-            else setSaved([]);
-          } catch { if (!cancelled) setSaved([]); }
-        } else {
-          setSaved([]);
+            if (Array.isArray(parsed)) stored = parsed.filter((s) => s && s.listingId);
+          } catch {}
         }
-        if (!cancelled) setSavedLoaded(true);
+        if (!cancelled) {
+          setSaved((prev) => {
+            if (prev.length === 0) return stored;
+            const keys = new Set(stored.map((s) => cartLineKey(s)));
+            return [...prev.filter((s) => !keys.has(cartLineKey(s))), ...stored];
+          });
+          setSavedLoaded(true);
+        }
       })
       .catch(() => { if (!cancelled) setSavedLoaded(true); });
     return () => { cancelled = true; };
   }, [savedKey]);
 
+  // Persist unconditionally: the writers always hold the full intended
+  // array. The old savedLoaded guard dropped pre-load taps (cold fast tap →
+  // kill → item in neither cart nor storage); the load effect merges instead
+  // of replacing, so unconditional writes can't clobber.
   const persistSaved = (next: SavedItem[]) => {
-    if (!savedLoaded) return;
     AsyncStorage.setItem(savedKey, JSON.stringify(next)).catch(() => {});
   };
 
@@ -353,7 +364,7 @@ const [promo, setPromo] = useState<AppliedPromo | null>(null);
                 className="flex-1 h-full px-4 text-[16px] font-inter-400"
                 placeholder="Promo code"
                 placeholderTextColor={colors.placeholder}
-                style={{ color: colors.placeholder }}
+                style={{ color: colors.textPrimary }}
                 value={promoCode}
                 onChangeText={setPromoCode}
               />

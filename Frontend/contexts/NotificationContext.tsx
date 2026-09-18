@@ -7,7 +7,7 @@ import { useSettings } from './SettingsContext';
 const NOTIFS_KEY_BASE = '@susej_notifications';
 const NOTIFS_KEY = NOTIFS_KEY_BASE;
 
-export type NotifType = 'follower' | 'like' | 'comment' | 'bookmark' | 'order' | 'promotion' | 'warning';
+export type NotifType = 'follower' | 'like' | 'comment' | 'bookmark' | 'order' | 'promotion' | 'warning' | 'wallet';
 
 export interface AppNotification {
   id: string;
@@ -82,10 +82,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         .filter((n: any) => n && n.id)
         .map((n: any) => ({
           id: String(n.id),
-          type: ((['follower', 'like', 'comment', 'bookmark', 'order', 'promotion', 'warning'] as string[]).includes(n.type) ? n.type : 'order') as NotifType,
+          type: ((['follower', 'like', 'comment', 'bookmark', 'order', 'promotion', 'warning', 'wallet'] as string[]).includes(n.type) ? n.type : 'order') as NotifType,
           userName: String(n.title ?? n.userName ?? 'susej'),
+          target: typeof n.target === 'string' && n.target ? n.target : undefined,
+          userHandle: typeof n.userHandle === 'string' && n.userHandle ? n.userHandle : undefined,
           action: String(n.body ?? n.action ?? ''),
-          targetId: n.postId ? String(n.postId) : undefined,
+          targetId: n.targetId ? String(n.targetId) : n.postId ? String(n.postId) : undefined,
           timestamp: typeof n.createdAt === 'string' ? Date.parse(n.createdAt) : Number(n.createdAt ?? Date.now()),
           read: Boolean(n.read),
         }));
@@ -108,10 +110,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         .filter((n: any) => n && n.id)
         .map((n: any) => ({
           id: String(n.id),
-          type: ((['follower', 'like', 'comment', 'bookmark', 'order', 'promotion', 'warning'] as string[]).includes(n.type) ? n.type : 'order') as NotifType,
+          type: ((['follower', 'like', 'comment', 'bookmark', 'order', 'promotion', 'warning', 'wallet'] as string[]).includes(n.type) ? n.type : 'order') as NotifType,
           userName: String(n.title ?? n.userName ?? 'susej'),
+          target: typeof n.target === 'string' && n.target ? n.target : undefined,
+          userHandle: typeof n.userHandle === 'string' && n.userHandle ? n.userHandle : undefined,
           action: String(n.body ?? n.action ?? ''),
-          targetId: n.postId ? String(n.postId) : undefined,
+          targetId: n.targetId ? String(n.targetId) : n.postId ? String(n.postId) : undefined,
           timestamp: typeof n.createdAt === 'string' ? Date.parse(n.createdAt) : Number(n.createdAt ?? Date.now()),
           read: Boolean(n.read),
         }));
@@ -155,10 +159,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         .filter((n: any) => n && n.id)
         .map((n: any) => ({
           id: String(n.id),
-          type: ((['follower', 'like', 'comment', 'bookmark', 'order', 'promotion', 'warning'] as string[]).includes(n.type) ? n.type : 'order') as NotifType,
+          type: ((['follower', 'like', 'comment', 'bookmark', 'order', 'promotion', 'warning', 'wallet'] as string[]).includes(n.type) ? n.type : 'order') as NotifType,
           userName: String(n.title ?? n.userName ?? 'susej'),
+          target: typeof n.target === 'string' && n.target ? n.target : undefined,
+          userHandle: typeof n.userHandle === 'string' && n.userHandle ? n.userHandle : undefined,
           action: String(n.body ?? n.action ?? ''),
-          targetId: n.postId ? String(n.postId) : undefined,
+          targetId: n.targetId ? String(n.targetId) : n.postId ? String(n.postId) : undefined,
           timestamp: typeof n.createdAt === 'string' ? Date.parse(n.createdAt) : Number(n.createdAt ?? Date.now()),
           read: Boolean(n.read),
         }));

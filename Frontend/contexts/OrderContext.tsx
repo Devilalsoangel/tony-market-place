@@ -117,6 +117,9 @@ export interface Order {
   /** True while an open/under_review dispute freezes this order's net (unlocks
    *  on ruling — withdrawable-truth, mirrors the server payout guard). */
   disputeFrozen?: boolean;
+  /** Proof-of-delivery entries (seller handover claims: tracking ID / receiver
+   *  name). Buyer tracking renders the latest; server wins on pull. */
+  deliveryLog?: Array<{ at?: string; by?: string; note?: string }>;
 }
 
 export interface PlaceOrderOptions {
@@ -162,9 +165,9 @@ interface OrderContextType {
   retryOrderSync: (id: string) => Promise<boolean>;
   /** Returns true when the server acknowledged the transition (false = local
    *  refusal or server rollback — callers must surface it, never silent). */
-  updateOrderStatus: (id: string, status: OrderStatus) => Promise<boolean>;
+  updateOrderStatus: (id: string, status: OrderStatus, podNote?: string) => Promise<boolean>;
   markReviewed: (id: string, rating: number, comment?: string, anonymous?: boolean) => Promise<boolean>;
-  requestRefund: (orderId: string, reason: string) => void;
+  requestRefund: (orderId: string, reason: string) => Promise<boolean>;
   /** Seller decisions await the server ack (false = rolled back, surface it);
    *  plain timeline notes resolve true immediately (no server round-trip). */
   respondRefund: (
@@ -174,12 +177,11 @@ interface OrderContextType {
     newStatus?: RefundStatus
   ) => Promise<boolean>;
   /**
-   * Cancels an order. Contract: returns true when the order was cancelled
-   * (status set to 'cancelled', tracking note appended, persisted).
-   * Returns false when refused — order not found, status other than
-   * 'placed'/'confirmed', or a refund already exists.
+   * Cancels an order. Contract: awaits the server ack — returns true only
+   * when the server confirmed the cancel (false = local refusal or server
+   * rollback — callers must surface it, never silent).
    */
-  cancelOrder: (orderId: string, reason?: string) => boolean;
+  cancelOrder: (orderId: string, reason?: string) => Promise<boolean>;
   /**
    * True once the first load cycle settled (cache read + first server pull
    * attempt, success or fail). Screens must show a loader — never a
@@ -353,6 +355,13 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
               : prior?.disputeFrozen !== undefined
                 ? { disputeFrozen: prior.disputeFrozen }
                 : {}),
+            // POD log rides through like the other server facts (buyer
+            // tracking renders the latest entry; server wins when present).
+            ...(((o as { deliveryLog?: unknown }).deliveryLog as Array<{ at?: string; by?: string; note?: string }> | undefined)?.length
+              ? { deliveryLog: (o as { deliveryLog?: Array<{ at?: string; by?: string; note?: string }> }).deliveryLog }
+              : prior?.deliveryLog?.length
+                ? { deliveryLog: prior.deliveryLog }
+                : {}),
             // Server refund row wins (cross-device truth); else keep local.
             ...(serverRefund
               ? {
@@ -453,6 +462,11 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
               : 'order',
           sellerName: items[0].seller,
           sellerUsername,
+          // Buyer identity stamped optimistically (server is truth on pull):
+          // without it the Orders Rate CTA and rate-review buyer gate can't
+          // recognize own rows before the first sync.
+          ...(user?.username ? { buyerUsername: user.username } : {}),
+          ...(user?.name ? { buyerName: user.name } : {}),
           items: items.map((i) => ({
             listingId: i.listingId,
             name: i.name,
@@ -565,7 +579,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       });
       return created;
     },
-    [persist]
+    [persist, user?.username, user?.name]
   );
 
   const retryOrderSync = useCallback(
@@ -628,12 +642,22 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateOrderStatus = useCallback(
-    async (id: string, status: OrderStatus): Promise<boolean> => {
+    async (id: string, status: OrderStatus, podNote?: string): Promise<boolean> => {
       const order = ordersRef.current.find((o) => o.id === id);
       if (!order || order.status === 'cancelled') return false;
       if (status === 'cancelled') {
-        if (order.status !== 'placed' && order.status !== 'confirmed') return false;
+        // Cancel-until-shipped: preparing is still reversible (packing
+        // started, nothing left the building); out_for_delivery is the point
+        // of no return. Server enforces the same allow-list.
+        if (order.status !== 'placed' && order.status !== 'confirmed' && order.status !== 'preparing') return false;
       } else {
+        // Fulfilment advances are seller-only AND per-order: the seller on
+        // THIS order advances it. A dual-role buyer painting their own
+        // purchase delivered flashed tracking + hold stamps before the server
+        // 400 rolled it back (global isSeller was not enough).
+        const meLower = String(user?.username ?? '').trim().toLowerCase();
+        const ownerLower = String(order.sellerUsername ?? '').trim().toLowerCase();
+        if (!user?.isSeller || !meLower || meLower !== ownerLower) return false;
         const curIdx = ORDER_STATUS_FLOW.indexOf(order.status);
         const nextIdx = ORDER_STATUS_FLOW.indexOf(status);
         // Adjacent-only fulfilment (seller P0): placed→confirmed→preparing→
@@ -660,7 +684,12 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
           const stamp = status === 'delivered' && !(o as { actualDelivery?: unknown }).actualDelivery
             ? { actualDelivery: new Date().toISOString() }
             : {};
-          return { ...o, status, tracking, ...stamp };
+          // Optimistic POD entry (server appends the same on ack; pull
+          // reconciles). Rolls back with the status on refusal.
+          const pod = status === 'delivered' && podNote
+            ? { deliveryLog: [...(o.deliveryLog ?? []), { at: new Date().toISOString(), note: podNote }] }
+            : {};
+          return { ...o, status, tracking, ...stamp, ...pod };
         });
         persist(next);
         return next;
@@ -678,7 +707,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         });
       };
       try {
-        const res = await serverApi.updateOrder(realId, { status });
+        const res = await serverApi.updateOrder(realId, podNote ? { status, podNote } : { status });
         if (!res.ok) rollbackStatus(); // Rollback optimistic update — server truth wins.
         return res.ok;
       } catch {
@@ -686,7 +715,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [persist]
+    [persist, user?.isSeller, user?.username]
   );
 
   const markReviewed = useCallback(
@@ -723,9 +752,9 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   );
 
   const requestRefund = useCallback(
-    (orderId: string, reason: string) => {
+    async (orderId: string, reason: string): Promise<boolean> => {
       const order = ordersRef.current.find((o) => o.id === orderId);
-      if (!order || order.refund) return;
+      if (!order || order.refund) return false;
       const now = Date.now();
       // Build the refund object OUTSIDE the state updater so the admin sync
       // below can reference it (the updater runs asynchronously — capturing
@@ -737,6 +766,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         requestedAt: now,
         timeline: [{ author: 'you' as RefundTimelineAuthor, text: `Refund requested: ${reason}.`, time: now }],
       };
+      const prevSnapshot = ordersRef.current.find((o) => o.id === orderId);
       setOrders((prev) => {
         const next = prev.map((o) => (o.id === orderId && !o.refund ? { ...o, refund: created } : o));
         persist(next);
@@ -746,8 +776,27 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       // serverApi.updateOrder({ refundReason }) inserts the canonical Refund
       // row. The legacy admin-mirror POST is gone — it wrote a SECOND
       // duplicate row per request (different id + orderRef, no seller link).
+      // AWAITED with rollback: an offline request used to render "requested"
+      // forever while the server held nothing and no retry path existed.
       const realRefundId = order.serverId ?? orderId;
-      void serverApi.updateOrder(realRefundId, { refundReason: reason }).catch(() => {});
+      try {
+        const res = await serverApi.updateOrder(realRefundId, { refundReason: reason });
+        if (!res.ok) {
+          setOrders((cur) => {
+            const rolled = cur.map((x) => (x.id === orderId && prevSnapshot ? prevSnapshot : x));
+            persist(rolled);
+            return rolled;
+          });
+        }
+        return res.ok;
+      } catch {
+        setOrders((cur) => {
+          const rolled = cur.map((x) => (x.id === orderId && prevSnapshot ? prevSnapshot : x));
+          persist(rolled);
+          return rolled;
+        });
+        return false;
+      }
     },
     [persist]
   );
@@ -814,13 +863,19 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   );
 
   const cancelOrder = useCallback(
-    (orderId: string, reason?: string) => {
+    async (orderId: string, reason?: string) => {
       const order = ordersRef.current.find((o) => o.id === orderId);
-      if (!order || (order.status !== 'placed' && order.status !== 'confirmed') || order.refund) {
+      if (!order || (order.status !== 'placed' && order.status !== 'confirmed' && order.status !== 'preparing') || order.refund) {
         return false;
       }
       const now = Date.now();
       const prevSnapshot = ordersRef.current.find((o) => o.id === orderId);
+      // The server cancel settles money IMMEDIATELY in-tx (wallet buyer
+      // credited, no Refund row ever created) — so the local mirror must not
+      // fabricate a `requested` refund: it never advances (no server row),
+      // and sellers render phantom Approve/Reject buttons that 400 forever.
+      // Wallet cancels mirror `refunded`; COD moves no money → no refund row.
+      const isWallet = String(order.paymentMethod ?? '').trim().toLowerCase() === 'wallet';
       setOrders((prev) => {
         const next = prev.map((o) =>
           o.id === orderId
@@ -830,18 +885,22 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
                 tracking: o.tracking
                   ? [
                       ...o.tracking,
-                      { label: 'Order cancelled — refund requested', time: new Date(now).toLocaleString(), done: true },
+                      { label: isWallet ? 'Order cancelled — refund issued' : 'Order cancelled', time: new Date(now).toLocaleString(), done: true },
                     ]
                   : o.tracking,
-                refund: {
-                  id: `ref_${now}`,
-                  reason: reason ?? 'Order cancelled',
-                  status: 'requested' as RefundStatus,
-                  requestedAt: now,
-                  timeline: [
-                    { author: 'you' as RefundTimelineAuthor, text: 'Order cancelled — refund requested', time: now },
-                  ],
-                },
+                ...(isWallet
+                  ? {
+                      refund: {
+                        id: `ref_${now}`,
+                        reason: reason ?? 'Order cancelled',
+                        status: 'refunded' as RefundStatus,
+                        requestedAt: now,
+                        timeline: [
+                          { author: 'you' as RefundTimelineAuthor, text: 'Order cancelled — refund issued to wallet', time: now },
+                        ],
+                      },
+                    }
+                  : { refund: undefined }),
               }
             : o
         );
@@ -861,13 +920,17 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
           return rolled;
         });
       };
-      void serverApi
-        .updateOrder(realId, { status: 'cancelled' })
-        .then((res) => {
-          if (!res.ok) rollback();
-        })
-        .catch(rollback);
-      return true;
+      try {
+        const res = await serverApi.updateOrder(realId, { status: 'cancelled' });
+        if (!res.ok) {
+          rollback();
+          return false;
+        }
+        return true;
+      } catch {
+        rollback();
+        return false;
+      }
     },
     [persist]
   );

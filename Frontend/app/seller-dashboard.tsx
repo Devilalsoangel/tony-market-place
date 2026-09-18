@@ -391,7 +391,7 @@ export default function SellerDashboardScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     className="flex-row items-center gap-1.5 px-2 py-1.5"
-                    onPress={() => toggleSold(item.id)}
+                    onPress={() => { void toggleSold(item.id).then((ok) => { if (!ok) Alert.alert('Not saved', 'Check your connection — the listing was restored.'); }); }}
                   >
                     {item.isSold ? (
                       <RestockIcon size={14} color={colors.tertiary} />

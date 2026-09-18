@@ -46,6 +46,26 @@ export default function CheckoutScreen() {
         sellerUsername: strParam(offerParams.offerSeller),
       }
     : null;
+  // Whether the deal link carried an explicit listing type: when it didn't,
+  // the 'product' above is a guess — revalidation adopts the live listing
+  // type for the placement fee so a service deal never 400s on fee mismatch.
+  const offerTypeGiven = (['product', 'service', 'food_item'] as const).includes(strParam(offerParams.offerType) as 'product');
+  // Live listing type for the preview fee: the placement already adopts it,
+  // but the preview lines used the guessed type (food deals previewed ₹12,
+  // charged ₹30). Resolved once per checkout open.
+  const [offerLiveFeeType, setOfferLiveFeeType] = useState<string | null>(null);
+  // Typeless deal links must not be placeable while the live type is still
+  // resolving: the preview shows the guessed fee meanwhile, and an instant
+  // tap would buy against a number the server will not charge.
+  const [resolvingFeeType, setResolvingFeeType] = useState(false);
+  // Typeless-deal fee reconfirm: the mount fetch can fail while the
+  // place-time revalidation succeeds — then the previewed fee (guessed
+  // product) disagrees with the charge. First mismatch surfaces for review;
+  // the second tap is informed consent.
+  // Keyed by deal (listing:thread:msg) + live type: a reused screen instance
+  // showing a different deal must re-confirm, never inherit.
+  const feeConfirmedRef = useRef<string | null>(null);
+  const feeConfirmKey = offerMode ? `${strParam(offerParams.offerListing)}:${strParam(offerParams.offerThread)}:${strParam(offerParams.offerMsg)}` : null;
   const cart = offerItem ? [offerItem] : storeCart;
   const subtotal = offerItem ? offerPrice : storeSubtotal;
   const { placeOrders } = useOrders();
@@ -74,6 +94,23 @@ export default function CheckoutScreen() {
           const w = await getWallet();
           if (active) setWalletBalance(w.balance);
         } catch {}
+        // Live fee type for typeless deal links (single-item offer cart):
+        // without this the preview prices the guessed 'product' fee.
+        if (active && offerMode && !offerTypeGiven && offerItem) {
+          setOfferLiveFeeType(null);
+          setResolvingFeeType(true);
+          serverApi.getPost(offerItem.listingId).then((res) => {
+            if (!active) return;
+            const t = (res.data as { post?: { type?: unknown } } | null)?.post?.type;
+            if (typeof t === 'string' && (t === 'service' || t === 'food_item' || t === 'product')) {
+              setOfferLiveFeeType(t);
+            }
+          }).catch(() => {}).finally(() => {
+            if (active) setResolvingFeeType(false);
+          });
+        } else if (active) {
+          setResolvingFeeType(false);
+        }
         if (active) {
           setAddress(a);
           setPayment(p);
@@ -113,7 +150,7 @@ export default function CheckoutScreen() {
       return () => {
         active = false;
       };
-    }, [username])
+    }, [username, offerMode, offerTypeGiven, offerItem?.listingId])
   );
 
   const hasFood = cart.some((item) => item.type === 'food_item');
@@ -124,8 +161,26 @@ export default function CheckoutScreen() {
   const couponInert = offerMode || hasBundle;
   // Bookings carry no delivery fee (services are fulfilled, not shipped) —
   // same rule as OrderContext so preview, receipt, and server charge agree.
+  // The placement leg sends the RAW (pre-coupon) fee: the server exact-matches
+  // it against its own fee table (anti-tamper) and applies the coupon itself —
+  // sending the post-coupon zeroed fee 400d every free-delivery order.
+  // Offer mode without offerType: the guessed 'product' type mis-prices food
+  // previews (₹12 shown, ₹30 charged) — the mount-resolved live type wins for
+  // the preview exactly as it does for the placement below.
+  const previewFeeType = offerMode && !offerTypeGiven && offerLiveFeeType
+    ? offerLiveFeeType
+    : hasOnlyServices ? 'service' : hasFood ? 'food_item' : 'product';
+  // Component-scope (used by the preview lines AND the place-time reconfirm
+  // above — a local const there was a TDZ crash).
+  const feeForPreview = (t: string | undefined): number => {
+    if (offerMode && !offerTypeGiven && offerLiveFeeType) t = offerLiveFeeType;
+    return t === 'service' ? 0 : t === 'food_item' ? DELIVERY_FEES.food_item : DELIVERY_FEES.product;
+  };
+  const rawDelivery = cart.length > 0
+    ? previewFeeType === 'service' ? 0 : previewFeeType === 'food_item' ? DELIVERY_FEES.food_item : DELIVERY_FEES.product
+    : 0;
   // Free-delivery promos zero the fee line exactly like the cart screen.
-  const delivery = cart.length > 0 ? (appliedPromo?.freeDelivery && !couponInert ? 0 : hasOnlyServices ? 0 : hasFood ? DELIVERY_FEES.food_item : DELIVERY_FEES.product) : 0;
+  const delivery = appliedPromo?.freeDelivery && !couponInert ? 0 : rawDelivery;
   // Totals preview exactly what the SERVER charges at order time (subtotal +
   // delivery − server-mirror coupon estimate). The server stays truth at
   // placement; this is the buyer's pre-Pay figure, computed by the SAME
@@ -212,6 +267,10 @@ export default function CheckoutScreen() {
 
   const handlePlaceOrder = async () => {
     if (placingRef.current || cart.length === 0) return;
+    // Fee-type gate (belt-and-braces behind the disabled button): a typeless
+    // deal placed while the live type resolves would charge against a preview
+    // the buyer never saw.
+    if (offerMode && !offerTypeGiven && resolvingFeeType) return;
     if (!address) {
       router.push('/address-book');
       return;
@@ -243,11 +302,13 @@ export default function CheckoutScreen() {
     // Offer mode: the struck deal IS the price authority (server re-verifies
     // acceptance at placement) — only availability is checked, never the
     // live listing price, or every deal would false-positive as "changed".
+    // Adopted live listing type for the placement fee (see feeToSend below).
+    let offerLiveType = '';
     try {
       const fresh = await Promise.all(
         cart.map((item) =>
           serverApi.getPost(item.listingId).then((res) => {
-            const post = (res.data as { post?: { price?: unknown; isSold?: unknown; status?: unknown; stockLeft?: unknown; variants?: { name: string; priceDelta?: unknown; values: { label: string; stock?: unknown; priceDelta?: unknown }[] }[] } } | null)?.post;
+            const post = (res.data as { post?: { price?: unknown; type?: unknown; isSold?: unknown; status?: unknown; stockLeft?: unknown; variants?: { name: string; priceDelta?: unknown; values: { label: string; stock?: unknown; priceDelta?: unknown }[] }[] } } | null)?.post;
             const gone = !res.ok || !post || post.isSold === true || (typeof post.status === 'string' && post.status !== 'published' && post.status !== 'active');
             const key = cartLineKey(item);
             const vlabel = String((item as { variantLabel?: string }).variantLabel ?? '');
@@ -281,6 +342,11 @@ export default function CheckoutScreen() {
                         variantShort = String(val.label);
                         break;
                       }
+                    } else if (qty > 1) {
+                      // Untracked option = single unique item (server
+                      // enforces 1 per value) — warn pre-charge.
+                      variantShort = String(val.label);
+                      break;
                     }
                   }
                 }
@@ -290,8 +356,14 @@ export default function CheckoutScreen() {
               // Deal price is the authority (never the live listing price);
               // option coverage is still checked so a tracked-variant deal
               // fails HERE with guidance instead of a server 400 row.
+              // Availability is NOT skipped: an accepted offer on stock that
+              // sold out since must warn pre-charge like normal checkout.
+              // liveType lets placement adopt the listing's real fee when the
+              // deal link dropped its offerType param (else service deals
+              // send the product fee and die on server exact-match).
               const sl = typeof post?.stockLeft === 'number' ? Math.floor(post.stockLeft) : null;
-              return { id: item.listingId, key, price: item.price, gone, stock: null, variantShort, variantMissing };
+              if (typeof post?.type === 'string' && post.type) offerLiveType = post.type;
+              return { id: item.listingId, key, price: item.price, gone, stock: numericPick ? null : sl, variantShort, variantMissing };
             }
             // Bundle lines: Bundle row is the price authority (server
             // re-prices at placement) — availability only, never compare.
@@ -391,6 +463,24 @@ export default function CheckoutScreen() {
         );
         return;
       }
+      // Typeless-deal fee confirm: mount fetch failed but revalidation knows
+      // the live type — never charge a fee the preview didn't show without
+      // one explicit review tap. The confirm covers THIS deal + live type
+      // only: a listing-type edit between taps re-arms the alert.
+      if (offerMode && !offerTypeGiven && offerLiveType && feeConfirmedRef.current !== `${feeConfirmKey}:${offerLiveType}`) {
+        const liveFee = feeForPreview(offerLiveType);
+        if (liveFee !== rawDelivery) {
+          setPlacing(false);
+          placingRef.current = false;
+          setOfferLiveFeeType(offerLiveType);
+          Alert.alert(
+            'Delivery fee confirmed',
+            `This deal's delivery fee is ${formatPrice(liveFee)} (previewed ${formatPrice(rawDelivery)}). Review the updated total, then place again.`
+          );
+          feeConfirmedRef.current = `${feeConfirmKey}:${offerLiveType}`;
+          return;
+        }
+      }
     } catch {
       // Revalidation is best-effort: offline checkout still places against
       // the cached cart (the server charges ITS price and rejects cheap-buys).
@@ -404,8 +494,15 @@ export default function CheckoutScreen() {
     // Offer mode: no coupons ever stack with a struck deal (server 400s it),
     // and the offer lock rides along for server-side acceptance verification.
     // Bundle carts: same ban (one price authority per order).
+  // Placement fee truth: the live listing type wins when the deal link
+  // dropped its offerType (preview may still show the guessed fee — the
+  // placement is what the server exact-matches, so it must be listing-truth).
+  let feeToSend = rawDelivery;
+  if (offerMode && !offerTypeGiven && offerLiveType) {
+    feeToSend = feeForPreview(offerLiveType);
+  }
     const created = await placeOrders(cart, addressText, payment.id, {
-      deliveryFee: delivery,
+      deliveryFee: feeToSend,
       promoCode: couponInert ? undefined : appliedPromo?.code,
       discountEstimate: couponInert ? 0 : promoDiscount,
       addressParts: address
@@ -432,11 +529,14 @@ export default function CheckoutScreen() {
       }
     // The receipt carries the discount estimate (server settles the real
     // figure); a redeemed loyalty coupon stays spendable until the server
-    // accepts a loyalty code. Clear only the applied marker so it doesn't
-    // leak into the next cart session. Offer mode skips both clears — the
-    // stored cart and promo belong to another purchase.
+    // accepts a loyalty code. The promo marker is deliberately KEPT here:
+    // placeOrders returns optimistic rows before the server acks, and a
+    // later syncFailed would strand the buyer with neither order nor promo.
+    // The mount gatekeeper revalidates (and clears) invalid codes, and the
+    // server single-use-enforces spends — a kept promo can never double-spend.
+    // Offer mode skips the cart clear — the stored cart belongs to another
+    // purchase.
     if (!offerMode) {
-      clearAppliedPromo().catch(() => {});
       clearCart();
     }
     router.replace(`/order/${created[0].id}`);
@@ -681,12 +781,16 @@ export default function CheckoutScreen() {
           </View>
           <TouchableOpacity
             className="flex-row items-center justify-center"
-            style={{ height: 55, flex: 1.4, borderRadius: 16, backgroundColor: placing ? colors.disabled : colors.primaryContainer, shadowColor: colors.primaryContainer, shadowOffset: { width: 0, height: 4 }, shadowOpacity: placing ? 0 : 0.2, shadowRadius: 6, elevation: placing ? 0 : 4 }}
-            disabled={placing}
+            style={{ height: 55, flex: 1.4, borderRadius: 16, backgroundColor: (placing || resolvingFeeType) ? colors.disabled : colors.primaryContainer, shadowColor: colors.primaryContainer, shadowOffset: { width: 0, height: 4 }, shadowOpacity: (placing || resolvingFeeType) ? 0 : 0.2, shadowRadius: 6, elevation: (placing || resolvingFeeType) ? 0 : 4 }}
+            disabled={placing || resolvingFeeType}
             onPress={handlePlaceOrder}
           >
             {placing ? (
               <ActivityIndicator size="small" color={colors.disabledText} />
+            ) : resolvingFeeType ? (
+              <Text className="text-white text-[16px] font-inter-600" style={{ lineHeight: 24 }} numberOfLines={1}>
+                Confirming fee…
+              </Text>
             ) : (
               <Text className="text-white text-[16px] font-inter-600" style={{ lineHeight: 24 }} numberOfLines={1}>
                 {address && payment ? `Place Order · ${formatPrice(total)}` : 'Continue to Payment'}

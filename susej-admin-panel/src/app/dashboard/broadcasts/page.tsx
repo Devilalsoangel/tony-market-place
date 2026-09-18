@@ -84,13 +84,23 @@ export default function BroadcastsPage() {
     setItems(rows ?? null);
   }, [rows]);
 
-  function patch(id: string, data: Partial<MockBroadcast>) {
+  async function patch(id: string, data: Partial<MockBroadcast>) {
     setItems((prev) => (prev ?? []).map((b) => (b.id === id ? { ...b, ...data } : b)));
-    fetch("/api/data/broadcasts", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, data }),
-    }).finally(refresh);
+    // ok-checked + revert + toast: the old `.finally(refresh)` flashed the
+    // refused state, then snapped back silently on paid-rail 403s.
+    try {
+      const res = await fetch("/api/data/broadcasts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, data }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Broadcast update failed (${res.status})`);
+      refresh();
+    } catch (e: unknown) {
+      setItems(rows ?? null);
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Broadcast update failed — reverted.");
+    }
   }
 
   function endNow(b: MockBroadcast) {

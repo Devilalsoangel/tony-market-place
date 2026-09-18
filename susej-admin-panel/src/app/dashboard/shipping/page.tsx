@@ -141,43 +141,62 @@ export default function ShippingPage() {
   const delivered = (shipments ?? []).filter((s) => s.status === "delivered").length;
   const inTransit = (shipments ?? []).filter((s) => ["shipped", "out_for_delivery", "packed"].includes(s.status)).length;
 
-  function patch(resource: string, id: string, data: Record<string, unknown>, refresh: () => void) {
-    fetch(`/api/data/${resource}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ id, data }),
-    }).finally(refresh);
+  // All mutations below are ok-checked with revert + toast: raw
+  // `.finally(refresh)` flashed refused rows, then snapped back silently.
+  async function mutate(label: string, rollback: () => void, request: () => Promise<Response>, refresh: () => void, onOk?: () => void) {
+    try {
+      const res = await request();
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `${label} failed (${res.status})`);
+      onOk?.();
+      refresh();
+    } catch (e: unknown) {
+      rollback();
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : `${label} failed — reverted.`);
+    }
+  }
+
+  function patch(resource: string, id: string, data: Record<string, unknown>, refresh: () => void, rollback: () => void, label: string) {
+    void mutate(label, rollback, () =>
+      fetch(`/api/data/${resource}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id, data }),
+      }), refresh);
   }
 
   function toggleCarrier(c: Carrier) {
     setCarriersList((prev) => (prev ?? []).map((x) => (x.id === c.id ? { ...x, active: !x.active } : x)));
-    patch("carriers", c.id, { active: !c.active }, refreshCarriers);
+    patch("carriers", c.id, { active: !c.active }, refreshCarriers, () => setCarriersList(carriers ?? null), "Carrier update");
   }
 
   function toggleZone(z: DeliveryZone) {
     setZonesList((prev) => (prev ?? []).map((x) => (x.id === z.id ? { ...x, active: !x.active } : x)));
-    patch("delivery-zones", z.id, { active: !z.active }, refreshZones);
+    patch("delivery-zones", z.id, { active: !z.active }, refreshZones, () => setZonesList(zones ?? null), "Zone update");
   }
 
   function handleDelete() {
     if (!deleteTarget) return;
-    const resource = deleteTarget.kind === "carrier" ? "carriers" : "delivery-zones";
-    if (deleteTarget.kind === "carrier") {
-      setCarriersList((prev) => (prev ?? []).filter((x) => x.id !== deleteTarget.id));
+    const target = deleteTarget;
+    const resource = target.kind === "carrier" ? "carriers" : "delivery-zones";
+    const refresh = target.kind === "carrier" ? refreshCarriers : refreshZones;
+    if (target.kind === "carrier") {
+      setCarriersList((prev) => (prev ?? []).filter((x) => x.id !== target.id));
     } else {
-      setZonesList((prev) => (prev ?? []).filter((x) => x.id !== deleteTarget.id));
+      setZonesList((prev) => (prev ?? []).filter((x) => x.id !== target.id));
     }
-    fetch(`/api/data/${resource}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ id: deleteTarget.id }),
-    }).finally(() => {
-      setDeleteTarget(null);
-      if (deleteTarget.kind === "carrier") refreshCarriers();
-      else refreshZones();
-    });
+    setDeleteTarget(null);
+    const rollback = target.kind === "carrier"
+      ? () => setCarriersList(carriers ?? null)
+      : () => setZonesList(zones ?? null);
+    void mutate("Delete", rollback, () =>
+      fetch(`/api/data/${resource}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: target.id }),
+      }), refresh);
   }
 
   function createCarrier() {
@@ -190,17 +209,20 @@ export default function ShippingPage() {
       shipments: 0,
       active: true,
     };
-    setCarriersList((prev) => [{ ...payload, id: `car_${Date.now()}` } as Carrier, ...(prev ?? [])]);
-    fetch("/api/data/carriers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(payload),
-    }).finally(() => {
+    const tempCarrierId = `car_${Date.now()}`;
+    setCarriersList((prev) => [{ ...payload, id: tempCarrierId } as Carrier, ...(prev ?? [])]);
+    // Form closes only on success — a refused create keeps the typed input.
+    const closeCarrierForm = () => {
       setNewCarrier(false);
       setCarrierForm({ name: "", rate: "", avgDeliveryDays: "" });
-      refreshCarriers();
-    });
+    };
+    void mutate("Create carrier", () => setCarriersList(carriers ?? null), () =>
+      fetch("/api/data/carriers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      }), refreshCarriers, closeCarrierForm);
   }
 
   function createZone() {
@@ -214,16 +236,17 @@ export default function ShippingPage() {
       active: true,
     };
     setZonesList((prev) => [{ ...payload, id: `zone_${Date.now()}` } as DeliveryZone, ...(prev ?? [])]);
-    fetch("/api/data/delivery-zones", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(payload),
-    }).finally(() => {
+    const closeZoneForm = () => {
       setNewZone(false);
       setZoneForm({ name: "", region: "", rate: "", eta: "" });
-      refreshZones();
-    });
+    };
+    void mutate("Create zone", () => setZonesList(zones ?? null), () =>
+      fetch("/api/data/delivery-zones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      }), refreshZones, closeZoneForm);
   }
 
   return (
@@ -257,7 +280,14 @@ export default function ShippingPage() {
                 <CardContent>
                   <DataTable
                     columns={makeShipmentColumns((s) => {
-                      patch("shipments", s.id, { status: "delivered" }, refreshShipments);
+                      // POD evidence is mandatory server-side (400): prompt
+                      // for the tracking ID / receiver name, abort on empty.
+                      const note = window.prompt("Delivery proof (courier tracking ID or receiver name):", "")?.trim() ?? "";
+                      if (note.length < 4) {
+                        alert("Delivery proof required — tracking ID or receiver name (min 4 chars).");
+                        return;
+                      }
+                      patch("shipments", s.id, { status: "delivered", podNote: note }, refreshShipments, refreshShipments, "Shipment update");
                     })}
                     data={shipments ?? []}
                     searchable

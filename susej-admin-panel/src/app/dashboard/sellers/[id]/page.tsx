@@ -166,6 +166,13 @@ export default function SellerDetailPage({ params }: { params: Promise<{ id: str
   const { data: sellers, refresh } = useDbResource<Seller>("sellers", { id });
   const { data: categoryRows } = useDbResource<{ id: string; name: string }>("categories");
   const adminUser = useAuthStore((s) => s.user);
+  // KYC internals (PAN/DOB/ID photos) are manager+ only. Finance keeps
+  // business identity + payout destinations; moderators/support never reach
+  // this desk (proxy). Same matrix as the API strip.
+  const isKycViewer = (() => {
+    const r = String((adminUser as { role?: unknown } | null)?.role ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "_");
+    return r === "super_admin" || r === "superadmin" || r === "owner" || r === "manager" || r === "admin";
+  })();
   const [viewingDoc, setViewingDoc] = useState<SellerDocument | null>(null);
   const [seller, setSeller] = useState<Seller | null>(null);
 
@@ -231,22 +238,30 @@ export default function SellerDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  function handleApprove() {
+  async function handleApprove() {
     // Approving means every submitted doc was reviewed: mark them verified
     // too, or progress stays 0% on an approved seller (was the case before).
-    const docs = seller?.documents ?? [];
-    if (docs.some((d) => !d.verified)) {
-      setSeller((s) =>
-        s ? { ...s, kycStatus: "approved", gstStatus: "verified", documents: s.documents.map((d) => ({ ...d, verified: true })) } : s
+    // SEQUENTIAL + awaited: the old fire-and-forget trio (seller PATCH +
+    // per-doc PATCHes + audit) partial-stated silently — approved seller with
+    // unverified docs or vice versa, no error anywhere. Any failure rolls
+    // the optimistic state back and says so.
+    const prev = seller;
+    if (!prev) return;
+    const docs = prev.documents ?? [];
+    setSeller({ ...prev, kycStatus: "approved", gstStatus: "verified", documents: docs.map((d) => ({ ...d, verified: true })) });
+    try {
+      await apiPatch("sellers", prev.id, { kycStatus: "approved", gstStatus: "verified" });
+      const results = await Promise.all(
+        docs.filter((d) => !d.verified).map((d) => apiPatch("seller-documents", d.id, { verified: true }).then(() => true).catch(() => false))
       );
-      void apiPatch("sellers", seller!.id, { kycStatus: "approved", gstStatus: "verified" });
-      void Promise.all(
-        docs.filter((d) => !d.verified).map((d) => apiPatch("seller-documents", d.id, { verified: true }).catch(() => null))
-      ).then(() => refresh());
-    } else {
-      updateSeller({ kycStatus: "approved", gstStatus: "verified" });
+      if (results.some((ok) => !ok)) throw new Error("Some documents failed to verify — rolled back, nothing approved.");
+      await logAudit("approved", "All documents verified and approved");
+      refresh();
+    } catch (e: unknown) {
+      setSeller(prev);
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Approve failed — rolled back.");
     }
-    void logAudit("approved", "All documents verified and approved");
   }
 
   // Per-document verify toggle (industry: reviewers check each file, not just
@@ -322,8 +337,9 @@ export default function SellerDetailPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      {/* Actions for pending sellers */}
-      {seller.kycStatus === "pending" && (
+      {/* Actions for pending sellers (manager+ only — finance PATCHes 403,
+          so the buttons would only ever fail for them). */}
+      {seller.kycStatus === "pending" && isKycViewer && (
         <Card>
           <CardContent>
             <AdminActionBar
@@ -337,9 +353,14 @@ export default function SellerDetailPage({ params }: { params: Promise<{ id: str
       )}
 
       <div className="grid grid-cols-5 gap-6">
-        {/* Left: identity + documents + checklist */}
+        {/* Left: identity + documents + checklist. KYC internals are
+            manager+ only — finance sees business identity, never PAN/DOB/ID
+            photos (API strips the fields too; this is the honest empty
+            state, not a hidden fetch). */}
         <div className="col-span-3 space-y-6">
-          <IdentityCard seller={seller} onView={(d) => setViewingDoc(d)} />
+          {isKycViewer ? (
+            <>
+              <IdentityCard seller={seller} onView={(d) => setViewingDoc(d)} />
           <Card>
             <CardHeader>
               <CardTitle>Submitted Documents ({verifiedDocs}/{seller.documents.length} verified)</CardTitle>
@@ -400,6 +421,19 @@ export default function SellerDetailPage({ params }: { params: Promise<{ id: str
               <VerificationChecklist documents={seller.documents} seller={seller} />
             </CardContent>
           </Card>
+            </>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Identity Verification</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500">
+                  KYC details are restricted to the verification team. Payout destinations resolve automatically on the finance surfaces.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right: business info + audit timeline */}

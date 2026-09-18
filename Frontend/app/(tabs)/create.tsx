@@ -12,6 +12,7 @@ import CategoryPicker from '../../components/CategoryPicker';
 import { MapLocationPicker, type PickedLocation } from '../../components/MapLocationPicker';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePosts } from '../../contexts/PostContext';
+import { extractHashtags } from '../../contexts/HashtagContext';
 import { getPermStatus, permCanAskAgain, requestPerm } from '../../utils/permissions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -161,6 +162,7 @@ export default function CreateScreen() {
   const [previewPage, setPreviewPage] = useState(0);
   const [posting, setPosting] = useState(false);
   const [posted, setPosted] = useState(false);
+  const [publishNote, setPublishNote] = useState<string | null>(null);
 
   const flow = getFlow(category);
 
@@ -216,7 +218,9 @@ export default function CreateScreen() {
   }, []);
 
   const numericPrice = Number(price);
-  const priceValid = Number.isFinite(numericPrice) && numericPrice > 0;
+  // Bounds mirror the server (1..10M, title ≤200): a ₹999999999 draft used to
+  // pass the wizard then die as a 400-ghost after the false Posted screen.
+  const priceValid = Number.isFinite(numericPrice) && numericPrice > 0 && numericPrice <= 10000000;
   // MRP valid only when strictly above the selling price (real discount)
   const numericMrp = Number(mrp);
   const validMrp = mrp.trim().length > 0 && Number.isFinite(numericMrp) && numericMrp > numericPrice;
@@ -284,7 +288,10 @@ export default function CreateScreen() {
       const res = await ImagePicker.launchImageLibraryAsync({
         allowsMultipleSelection: remaining > 1,
         selectionLimit: remaining,
-        mediaTypes: ['images', 'videos'],
+        // Photos only: the upload pipeline is image-only (shrink→JPEG→5MB
+        // image endpoint) and listings have no video type — picked videos
+        // used to die in upload or bomb the POST as multi-MB base64.
+        mediaTypes: ['images'],
         quality: 0.82,
         allowsEditing: false,
       });
@@ -347,7 +354,7 @@ export default function CreateScreen() {
     setPosting(true);
     await new Promise((r) => setTimeout(r, 700));
     const parsedTags = Array.from(
-      new Set((description.match(/#(\w+)/g) ?? []).map((t) => t.toLowerCase()))
+      new Set(extractHashtags(description))
     );
     const extraPayload = Object.fromEntries(
       flow.extraFields
@@ -358,10 +365,12 @@ export default function CreateScreen() {
     // NOTE: the platform delivery fee (flat, server-authoritative) is charged
     // at checkout — the wizard no longer asks sellers for a figure that never
     // charges (bait). Mode + area still travel.
-    // Simple-quantity stock: explicit number when typed (0..100000, 0 = out
-    // of stock); when the listing has no variants and no quantity typed,
-    // default to 1 (single unique item — OLX pattern) so scarcity/inventory
-    // is never dead on arrival. An explicit 0 is honored, never coerced to 1.
+    // Simple-quantity stock: explicit number when typed (0..100000); when the
+    // listing has no variants and no quantity typed, default to 1 (single
+    // unique item — OLX pattern) so scarcity/inventory is never dead on
+    // arrival. An explicit 0 marks the listing sold (out-of-stock state,
+    // restockable) instead of publishing a live-looking row that 400s every
+    // order — the old "honored 0" published dead Active rows.
     const qtyNum = quantity.trim() ? Math.max(0, Math.min(100000, Math.floor(Number(quantity)))) : NaN;
     const stockNum = cleanVariants.length > 0
       ? undefined
@@ -371,14 +380,29 @@ export default function CreateScreen() {
     // previously leaked into the feed as broken images on every other device).
     const { uploadAllToServer } = require('../../utils/mediaUpload');
     const hadLocal = localUris.some((u) => !u.startsWith('http'));
-    const hostedImages = await uploadAllToServer(localUris);
+    const { urls: uploadedImages, failed: uploadFailed } = await uploadAllToServer(localUris);
+    const hostedImages = uploadedImages;
     if (hadLocal && hostedImages.length === 0) {
       setPosting(false);
       Alert.alert('Upload failed', 'Could not upload your images. Check your connection and try again.');
       return;
     }
-    addPost({
-      title: title.trim().slice(0, 80),
+    // Partial failure posts NOTHING (all-or-nothing): publishing with 2 of 3
+    // photos used to drop the failed angle silently — sellers found out from
+    // buyers. Retry uploads everything cleanly instead.
+    if (uploadFailed > 0) {
+      setPosting(false);
+      Alert.alert(
+        'Some photos failed',
+        `${uploadFailed} photo${uploadFailed === 1 ? '' : 's'} could not be uploaded, so nothing was published. Check your connection and try again.`
+      );
+      return;
+    }
+    // Await the publish outcome BEFORE claiming anything: "Posted! live in the
+    // feed" fired synchronously while the server push was still in flight, so
+    // offline/rejected listings celebrated a ghost buyers never saw.
+    const outcome = await     addPost({
+      title: title.trim().slice(0, 200),
       sellerName: user?.businessName || user?.name || 'My Store',
       sellerUsername: user?.username || 'user',
       sellerLocation: city.trim() ? `${city.trim()}, India` : (user?.location || 'India'),
@@ -394,6 +418,9 @@ export default function CreateScreen() {
       images: hostedImages.length > 1 ? hostedImages : undefined,
       variants: cleanVariants.length > 0 ? cleanVariants : undefined,
       stockLeft: stockNum,
+      // Explicit 0-stock starts sold (out-of-stock shelf state, not a dead
+      // Active row). Restock revives it (base → 1, tracked values → 1).
+      ...(stockNum === 0 ? { isSold: true } : {}),
       // Fulfillment data the wizard collects — previously dropped before the
       // order (buyer never saw condition, delivery mode, or shipping fee).
       condition: condition || undefined,
@@ -406,6 +433,13 @@ export default function CreateScreen() {
         : {}),
     });
     setPosting(false);
+    if (outcome === 'rejected') {
+      Alert.alert('Could not publish', 'The server refused this listing (validation or entitlement). Nothing was published — check the details and try again.');
+      return;
+    }
+    // Offline/ambiguous: the local row stands alone (syncs on next launch);
+    // say exactly that instead of "live in the feed".
+    setPublishNote(outcome === 'acked' ? null : 'Saved on this device — it goes live in the feed when you reconnect.');
     setPosted(true);
     setTimeout(() => router.replace('/(tabs)/feed'), 1200);
   };
@@ -534,7 +568,7 @@ export default function CreateScreen() {
           Posted!
         </Text>
         <Text style={{ fontSize: 14, lineHeight: 20, color: colors.textSecondary, textAlign: 'center', marginTop: 8 }}>
-          Your listing is now live in the feed.
+          {publishNote ?? 'Your listing is now live in the feed.'}
         </Text>
       </View>
     );
@@ -689,7 +723,7 @@ export default function CreateScreen() {
 
               {selectedImages.length > 0 && (
                 <Text style={{ fontSize: 12, lineHeight: 16, color: colors.textSecondary, marginTop: 8 }}>
-                  First item is the main cover — tap ✕ on thumbnails to remove. Mixed photos + video stays a product post; video-only becomes a Reel.
+                  First item is the main cover — tap ✕ on thumbnails to remove. Photos only for now; video selling arrives with Reels commerce.
                 </Text>
               )}
             </View>
@@ -707,7 +741,7 @@ export default function CreateScreen() {
                 placeholderTextColor={colors.textTertiary}
                 value={title}
                 onChangeText={setTitle}
-                maxLength={80}
+                maxLength={200}
               />
               <Text style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14, fontWeight: '600', color: colors.textSecondary, marginTop: 16, marginBottom: 8 }}>
                 Category
@@ -807,6 +841,11 @@ export default function CreateScreen() {
               {priceValid && (
                 <Text style={{ fontSize: 13, lineHeight: 18, color: colors.success, marginTop: 8 }}>
                   {formatPrice(numericPrice)} · shown to buyers
+                </Text>
+              )}
+              {price.trim().length > 0 && !priceValid && (
+                <Text style={{ fontSize: 13, lineHeight: 18, color: colors.error, marginTop: 8 }}>
+                  Enter a price between ₹1 and ₹1,00,00,000.
                 </Text>
               )}
               {/* Optional was-price — Flipkart/OLX-style discount display */}

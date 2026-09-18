@@ -14,7 +14,7 @@ const SECRET =
       // During build there is no runtime to warn to; keep silent.
       return randomBytes(48).toString("hex");
     }
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === "production" && typeof window === "undefined") {
       throw new Error(
         "[auth] JWT_SECRET is not set in production — refusing to boot with an ephemeral secret. Set JWT_SECRET (stable 64-hex) and redeploy."
       );
@@ -45,6 +45,15 @@ interface SessionPayload {
   role: string;
   loginId: string;
   exp: number;
+  /** Issued-at (revocation horizon) + password verifier (revocation key). */
+  iat?: number;
+  ph?: string;
+}
+
+/** Password verifier: any password change invalidates all sessions minted
+ *  before it (migration-free revocation — no schema change needed). */
+export function sessionPasswordVerifier(passwordHash: string): string {
+  return sha256Hex(`susej-sess-v1:${passwordHash}`).slice(0, 16);
 }
 
 function hmac(payload: string): Buffer {
@@ -53,7 +62,7 @@ function hmac(payload: string): Buffer {
   return h.digest();
 }
 
-export function signSession(admin: { id: string; name: string; role: string; loginId: string }): string {
+export function signSession(admin: { id: string; name: string; role: string; loginId: string }, passwordHash?: string): string {
   const payload: SessionPayload = {
     sub: admin.id,
     name: admin.name,
@@ -63,6 +72,8 @@ export function signSession(admin: { id: string; name: string; role: string; log
     // windows all shrink to a day. Writes re-check the Admin row per request
     // (getActiveAdmin) so ban/demote bites immediately, not at next login.
     exp: Date.now() + 24 * 60 * 60 * 1000,
+    iat: Date.now(),
+    ...(passwordHash ? { ph: sessionPasswordVerifier(passwordHash) } : {}),
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = hmac(body).toString("base64url");
@@ -85,11 +96,10 @@ export function verifySessionToken(token: string | undefined): SessionPayload | 
   }
 }
 
-export const SESSION_COOKIE = "susej_session";
+import { SESSION_COOKIE, CHALLENGE_COOKIE } from "./session-cookie";
+export { SESSION_COOKIE, CHALLENGE_COOKIE };
 export const SESSION_MAX_AGE = 24 * 60 * 60;
 export const MAX_PASSWORD_LEN = 128;
-
-export const CHALLENGE_COOKIE = "susej_challenge";
 export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const MAX_LOGIN_ATTEMPTS = 5;
 export const LOCKOUT_MINUTES = 15;
@@ -137,8 +147,15 @@ export function getClientIp(request: NextRequest): string {
   // attacker-controlled while x-real-ip (set by the edge) is authoritative.
   // Old code took the first XFF entry: rotating the header per request gave a
   // fresh throttle bucket every time (all IP throttles + audit IPs defeated).
-  const real = request.headers.get("x-real-ip")?.trim();
-  if (real) return real;
+  // Residual hardening: x-real-ip is edge-set ONLY behind Vercel (x-vercel-id
+  // present). Off-edge origins (direct/preview hits) could spoof it per
+  // request to rotate throttle buckets + forge audit IPs — there we fall back
+  // to the LAST XFF entry (closest proxy, hardest to spoof without an
+  // allowlist) instead of the edge header.
+  if (request.headers.get("x-vercel-id")) {
+    const real = request.headers.get("x-real-ip")?.trim();
+    if (real) return real;
+  }
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     const parts = forwarded.split(",").map((s) => s.trim()).filter(Boolean);
@@ -166,6 +183,14 @@ export async function getActiveAdmin(
     if (!prisma) return null;
     const admin = await prisma.admin.findUnique({ where: { id: session.sub } });
     if (!admin || (admin as { status?: unknown }).status !== "active") return null;
+    // Revocation: sessions minted with a password verifier die on the next
+    // password reset/change (hash rotates). Pre-fix tokens carry no verifier
+    // and stay valid until their 24h expiry — accepted deliberately so the
+    // rollout never logs out the whole team at once.
+    if (session.ph) {
+      const cur = sessionPasswordVerifier(String((admin as { passwordHash?: unknown }).passwordHash ?? ""));
+      if (session.ph !== cur) return null;
+    }
     return {
       id: (admin as { id: string }).id,
       name: String((admin as { name?: unknown }).name ?? ""),

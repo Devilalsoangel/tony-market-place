@@ -61,6 +61,9 @@ export default function PaymentMethodsScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
+  // Balance freshness: a failed sync leaves a possibly stale-low cache — the
+  // gate must say "couldn't verify", never a false "Empty wallet".
+  const [balanceStale, setBalanceStale] = useState(false);
   // Bumped by Retry so the effect below genuinely re-runs (same-route
   // router.replace does not reliably remount this screen).
   const [retrySeq, setRetrySeq] = useState(0);
@@ -71,11 +74,12 @@ export default function PaymentMethodsScreen() {
       try {
         // Server-synced first: the gate below must judge real money, and the
         // row must display it — never a stale cache snapshot.
-        await syncWalletFromServer().catch(() => false);
+        const synced = await syncWalletFromServer().catch(() => false);
         const [selected, wallet] = await Promise.all([getSelectedPayment(), getWallet()]);
         if (!active) return;
+        if (!synced) setBalanceStale(true);
         // Wallet sits at the top with the live balance; the rest follow.
-        const walletMethod: PaymentMethod = { id: 'wallet', label: 'Wallet', detail: `Balance ${formatPrice(wallet.balance)}` };
+        const walletMethod: PaymentMethod = { id: 'wallet', label: 'Wallet', detail: `Balance ${formatPrice(wallet.balance)}${!synced ? ' (offline)' : ''}` };
         setWalletBalance(wallet.balance);
         setMethods([walletMethod, ...PAYMENT_METHODS]);
         setSelectedId(selected?.id ?? 'wallet');
@@ -90,13 +94,15 @@ export default function PaymentMethodsScreen() {
 
   const selectMethod = useCallback((method: PaymentMethod) => {
     // Numeric gate on the synced balance — never a formatted-string match.
-    if (method.id === 'wallet' && walletBalance <= 0) {
+    // Stale (unsynced) balances never false-block: the checkout re-gates on
+    // live money at place time anyway.
+    if (method.id === 'wallet' && walletBalance <= 0 && !balanceStale) {
       Alert.alert('Empty wallet', 'Add money in the Wallet tab before paying with wallet.');
       return;
     }
     void getPaymentKey().then((k) => AsyncStorage.setItem(k, JSON.stringify(method)).catch(() => {}));
     router.back();
-  }, [walletBalance]);
+  }, [walletBalance, balanceStale]);
 
   return (
     <View className="flex-1 bg-surface">

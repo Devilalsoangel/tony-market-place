@@ -39,7 +39,7 @@ export default function SearchScreen() {
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState(q || '');
   const [tab, setTab] = useState<SearchTab>('products');
-  const { posts, hiddenPostIds = [], mutedSellers = [], searchServer } = usePosts() as { posts: import('../contexts/PostContext').Post[]; hiddenPostIds?: string[]; mutedSellers?: string[]; searchServer: (q: string) => Promise<unknown> };
+  const { posts, hiddenPostIds = [], mutedSellers = [], searchServer } = usePosts() as { posts: import('../contexts/PostContext').Post[]; hiddenPostIds?: string[]; mutedSellers?: string[]; searchServer: (q: string) => Promise<{ rows: unknown[]; ok: boolean }> };
   const { communities } = useCommunities();
   const { user } = useAuth();
   const recentKey = user?.username ? `${RECENT_KEY_BASE}:${user.username}` : RECENT_KEY_BASE;
@@ -55,21 +55,29 @@ export default function SearchScreen() {
   }, [q]);
 
   const term = query.trim().toLowerCase();
+  // Unicode NFC: composed vs decomposed forms of the same Indic/accented text
+  // must match identically on both sides of every comparison below.
+  const norm = (s: string) => (s ?? '').normalize('NFC').toLowerCase();
+  const nterm = norm(term);
 
   // Cross-device search: the local filter above answers instantly from cache;
-  // a debounced server query (title/description, 100-cap) merges hits from
-  // other devices into the cache, which then flow into the same results.
-  // Offline/failure keeps local results — never a blanked screen.
+  // a debounced server query (title/desc/category/seller/hashtags, 100-cap)
+  // merges hits from other devices into the cache, which then flow into the
+  // same results. A failed server leg sets serverDown (honest "local results
+  // only" notice) instead of presenting partial results as complete.
   const [serverSearching, setServerSearching] = useState(false);
+  const [serverDown, setServerDown] = useState(false);
   useEffect(() => {
     if (term.length < 2) {
       setServerSearching(false);
+      setServerDown(false);
       return;
     }
     setServerSearching(true);
     const t = setTimeout(() => {
       searchServer(term)
-        .catch(() => {})
+        .then((r) => setServerDown(!r.ok))
+        .catch(() => setServerDown(true))
         .finally(() => setServerSearching(false));
     }, 500);
     return () => clearTimeout(t);
@@ -147,60 +155,75 @@ export default function SearchScreen() {
   const saveCurrentSearch = () => {
     const q = query.trim();
     if (!q || isCurrentSaved) return;
-    const entry: SavedSearch = { id: `ss_${Date.now()}`, query: q, savedAt: Date.now(), priceAlert: false };
+    // Random suffix: a double-tap used to mint twin `ss_<ms>` ids, breaking
+    // keyExtractor + delete-by-id (saved-searches already suffixes).
+    const entry: SavedSearch = { id: `ss_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, query: q, savedAt: Date.now(), priceAlert: true };
     const next = [entry, ...savedSearches];
     setSavedSearches(next);
     AsyncStorage.setItem(searchesKey, JSON.stringify(next)).catch(() => {});
   };
 
-  const results = useMemo(() => {
-    if (!term) return [];
+  const matchResults = useMemo(() => {
+    if (!nterm) return [];
     return posts.filter(
       (p) =>
         !hiddenPostIds.includes(p.id) &&
         !mutedSellers.includes(p.sellerUsername) &&
-        hasRealImage(p) &&
-        ((p.title ?? '').toLowerCase().includes(term) ||
-          p.description.toLowerCase().includes(term) ||
-          p.category.toLowerCase().includes(term) ||
-          p.hashtags.some((h) => h.toLowerCase().includes(term)) ||
-          p.sellerName.toLowerCase().includes(term) ||
-          p.sellerUsername.toLowerCase().includes(term))
+        (norm(p.title ?? '').includes(nterm) ||
+          norm(p.description).includes(nterm) ||
+          norm(p.category).includes(nterm) ||
+          p.hashtags.some((h) => norm(h).includes(nterm)) ||
+          norm(p.sellerName).includes(nterm) ||
+          norm(p.sellerUsername).includes(nterm))
     );
-  }, [posts, term, hiddenPostIds, mutedSellers]);
+  }, [posts, nterm, hiddenPostIds, mutedSellers]);
+
+  // Product cards hide imageless listings (policy); the SELLERS tab must not
+  // inherit that — a seller whose rows all lack photos is still a seller.
+  const results = useMemo(() => matchResults.filter(hasRealImage), [matchResults]);
 
   const sellers = useMemo(() => {
     const seen = new Set<string>();
     const out: SellerHit[] = [];
-    for (const p of results) {
+    for (const p of matchResults) {
       const key = p.sellerUsername.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       out.push({ sellerName: p.sellerName, sellerUsername: p.sellerUsername, sellerLocation: p.sellerLocation, verified: p.verified });
     }
     return out;
-  }, [results]);
+  }, [matchResults]);
 
   const communityHits = useMemo(() => {
-    if (!term) return [];
+    if (!nterm) return [];
     return communities.filter(
       (c) =>
-        c.name.toLowerCase().includes(term) ||
-        c.category.toLowerCase().includes(term) ||
-        (c.description ?? '').toLowerCase().includes(term)
+        norm(c.name).includes(nterm) ||
+        norm(c.category).includes(nterm) ||
+        norm(c.description ?? '').includes(nterm)
     );
-  }, [communities, term]);
+  }, [communities, nterm]);
 
+  // Hashtag counts respect moderation (hidden/muted never inflate a tag) and
+  // memoize over the tag set (was O(T·P) per keystroke over all posts).
   const allTags = useMemo(() => {
     const seen = new Set<string>();
-    for (const p of posts) for (const h of p.hashtags) seen.add(h);
+    for (const p of posts) {
+      if (hiddenPostIds.includes(p.id) || mutedSellers.includes(p.sellerUsername)) continue;
+      for (const h of p.hashtags) seen.add(h);
+    }
     return Array.from(seen);
-  }, [posts]);
+  }, [posts, hiddenPostIds, mutedSellers]);
 
   const hashtagHits = useMemo(() => {
-    const tags = allTags.filter((t) => !term || t.toLowerCase().includes(term));
-    return tags.map((t) => ({ tag: t, count: posts.filter((p) => p.hashtags.includes(t)).length }));
-  }, [allTags, posts, term]);
+    const tags = allTags.filter((t) => !nterm || norm(t).includes(nterm));
+    return tags.map((t) => ({
+      tag: t,
+      count: posts.filter(
+        (p) => !hiddenPostIds.includes(p.id) && !mutedSellers.includes(p.sellerUsername) && p.hashtags.includes(t)
+      ).length,
+    }));
+  }, [allTags, posts, nterm, hiddenPostIds, mutedSellers]);
 
   const renderProductCard = ({ item }: { item: (typeof posts)[number] }) => (
     <TouchableOpacity
@@ -212,7 +235,7 @@ export default function SearchScreen() {
         <Image source={resolveListingImage(item, item.id)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
       </View>
       <View className="p-3">
-        <Text className="text-figma-13 font-inter-500 text-textPrimary mb-1" numberOfLines={2}>{item.description.split('#')[0].trim()}</Text>
+        <Text className="text-figma-13 font-inter-500 text-textPrimary mb-1" numberOfLines={2}>{(item.title?.trim() || item.description).split('#')[0].trim()}</Text>
         <Text className="text-figma-14 font-inter-700 text-primaryContainer">{formatPrice(item.price)}</Text>
       </View>
     </TouchableOpacity>
@@ -325,6 +348,11 @@ export default function SearchScreen() {
       {serverSearching && !!term && (
         <View className="px-4 pt-1.5">
           <Text className="text-figma-11 font-inter-400 text-secondary">Searching the marketplace…</Text>
+        </View>
+      )}
+      {!serverSearching && serverDown && !!term && (
+        <View className="px-4 pt-1.5">
+          <Text className="text-figma-11 font-inter-400 text-secondary">Offline — showing listings saved on this device.</Text>
         </View>
       )}
 

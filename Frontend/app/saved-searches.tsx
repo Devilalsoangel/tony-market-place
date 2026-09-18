@@ -71,9 +71,10 @@ export default function SavedSearchesScreen() {
         id: `ss_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         query: q,
         savedAt: Date.now(),
-        // No background price alerts exist (no push pipeline): always false.
-        // The field stays for stored-row shape + a future alert feature.
-        priceAlert: false,
+        // Saving a search opts INTO price-drop alerts (Amazon/Flipkart norm):
+        // opening a discounted match fires one local alert + banner. Deleting
+        // the search opts back out; the per-row bell toggles it.
+        priceAlert: true,
       };
       persist([entry, ...saved]);
     }
@@ -83,6 +84,9 @@ export default function SavedSearchesScreen() {
   };
 
   const removeSearch = (id: string) => persist(saved.filter((s) => s.id !== id));
+
+  const toggleAlert = (id: string) =>
+    persist(saved.map((s) => (s.id === id ? { ...s, priceAlert: !s.priceAlert } : s)));
 
   if (!loaded) {
     return (
@@ -115,6 +119,18 @@ export default function SavedSearchesScreen() {
         <TouchableOpacity className="p-2" hitSlop={8} onPress={() => removeSearch(item.id)}>
           <CloseIcon size={14} color={colors.textTertiary} />
         </TouchableOpacity>
+      </TouchableOpacity>
+      <TouchableOpacity
+        className="mt-2 self-start px-3 py-1.5 rounded-figma-full"
+        style={{ backgroundColor: item.priceAlert ? colors.primaryContainer : colors.surfaceContainer }}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: !!item.priceAlert }}
+        accessibilityLabel={`Price-drop alerts for ${item.query}`}
+        onPress={() => toggleAlert(item.id)}
+      >
+        <Text className="font-inter-600" style={{ fontSize: 11, lineHeight: 14, color: item.priceAlert ? colors.onPrimary : colors.textSecondary }}>
+          {item.priceAlert ? 'Price alerts on' : 'Price alerts off'}
+        </Text>
       </TouchableOpacity>
     </View>
   );

@@ -61,7 +61,8 @@ export default function ReelsPage() {
       refresh();
     } catch (e) {
       setItems(rows ?? []);
-      console.error(e);
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Reel update failed — reverted.");
     }
   }
 

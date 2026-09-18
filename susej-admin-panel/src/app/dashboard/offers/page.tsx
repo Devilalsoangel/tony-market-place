@@ -87,7 +87,7 @@ interface NewCoupon {
 }
 
 export default function OffersPage() {
-  const { data: coupons, refresh } = useDbResource<Coupon>("coupons");
+  const { data: coupons, total: couponsTotal, refresh } = useDbResource<Coupon>("coupons", { take: 100 });
   const [list, setList] = useState<Coupon[] | null>(coupons);
   const [newOpen, setNewOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Coupon | null>(null);
@@ -105,17 +105,28 @@ export default function OffersPage() {
     return isExpired ? "expired" : c.status;
   };
   const active = (list ?? []).filter((c) => effectiveStatus(c) === "active");
+  // Window qualifier shared by every count tile below (single source).
+  const win = typeof couponsTotal === "number" && couponsTotal > (list ?? []).length ? " · first 100" : "";
   const redemptions = (list ?? []).reduce((s, c) => s + c.usedCount, 0);
   const expired = (list ?? []).filter((c) => effectiveStatus(c) === "expired").length;
 
-  function handleToggle(coupon: Coupon) {
+  async function handleToggle(coupon: Coupon) {
     const next = coupon.status === "active" ? "disabled" : "active";
     setList((prev) => (prev ?? []).map((c) => (c.id === coupon.id ? { ...c, status: next as Coupon["status"] } : c)));
-    fetch("/api/data/coupons", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: coupon.id, data: { status: next } }),
-    }).finally(refresh);
+    // ok-checked + revert + toast (was `.finally(refresh)` — silent snapback).
+    try {
+      const res = await fetch("/api/data/coupons", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: coupon.id, data: { status: next } }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Coupon update failed (${res.status})`);
+      refresh();
+    } catch (e: unknown) {
+      setList(list ?? null);
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Coupon update failed — reverted.");
+    }
   }
 
   function handleDelete() {
@@ -198,14 +209,14 @@ export default function OffersPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Total coupons" value={(list ?? []).length} />
-        <StatTile label="Active" value={active.length} tone="green" />
-        <StatTile label="Redemptions" value={redemptions} tone="purple" />
-        <StatTile label="Expired" value={expired} tone="amber" />
+        <StatTile label={`Total coupons${win}`} value={(list ?? []).length} />
+        <StatTile label={`Active${win}`} value={active.length} tone="green" />
+        <StatTile label={`Redemptions${win}`} value={redemptions} tone="purple" />
+        <StatTile label={`Expired${win}`} value={expired} tone="amber" />
       </div>
       {(list ?? []).filter((c) => effectiveStatus(c) === "disabled").length > 0 && (
         <div className="grid grid-cols-4 gap-4 -mt-2">
-          <StatTile label="Disabled" value={(list ?? []).filter((c) => effectiveStatus(c) === "disabled").length} tone="default" />
+          <StatTile label={`Disabled${win}`} value={(list ?? []).filter((c) => effectiveStatus(c) === "disabled").length} tone="default" />
         </div>
       )}
 

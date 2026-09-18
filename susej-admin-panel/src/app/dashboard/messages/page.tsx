@@ -96,10 +96,10 @@ export default function MessagesPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatTile label="Reported threads" value={(items ?? []).length} tone="red" />
-        <StatTile label="High severity" value={high.length} tone="red" />
-        <StatTile label="Scam / fraud" value={(items ?? []).filter((r) => r.reason.toLowerCase().includes("scam") || r.reason.toLowerCase().includes("fraud")).length} tone="amber" />
-        <StatTile label="Resolved" value={(rows ?? []).length - (items ?? []).length} tone="green" />
+        <StatTile label={`Reported threads${typeof messagesTotal === "number" && messagesTotal > (items ?? []).length ? " · first 100" : ""}`} value={(items ?? []).length} tone="red" />
+        <StatTile label={`High severity${typeof messagesTotal === "number" && messagesTotal > (items ?? []).length ? " · first 100" : ""}`} value={high.length} tone="red" />
+        <StatTile label={`Scam / fraud${typeof messagesTotal === "number" && messagesTotal > (items ?? []).length ? " · first 100" : ""}`} value={(items ?? []).filter((r) => r.reason.toLowerCase().includes("scam") || r.reason.toLowerCase().includes("fraud")).length} tone="amber" />
+        <StatTile label={`Resolved${typeof messagesTotal === "number" && messagesTotal > (rows ?? []).length ? " · first 100" : ""}`} value={(rows ?? []).length - (items ?? []).length} tone="green" />
       </div>
 
       <Card>

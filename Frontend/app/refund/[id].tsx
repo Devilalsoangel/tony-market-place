@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,7 +6,6 @@ import { ChevronLeftIcon, SendIcon, CheckIcon, CloseIcon } from '../../utils/ico
 import { colors, formatPrice } from '../../utils/theme';
 import { useOrders, REFUND_STATUS_LABELS } from '../../contexts/OrderContext';
 import type { RefundTimelineAuthor } from '../../contexts/OrderContext';
-import { creditWallet as creditWalletFromStore } from '../../utils/walletStore';
 
 const AUTHOR_LABELS: Record<RefundTimelineAuthor, string> = {
   you: 'You',
@@ -47,7 +46,6 @@ export default function RefundDetailScreen() {
   const { getOrder, respondRefund } = useOrders();
   const [loaded, setLoaded] = useState(false);
   const [response, setResponse] = useState('');
-  const creditedRef = useRef<Set<string>>(new Set());
 
   const order = loaded ? getOrder(String(refundId)) : undefined;
   const refund = order?.refund;
@@ -57,16 +55,9 @@ export default function RefundDetailScreen() {
     return () => clearTimeout(t);
   }, [refundId]);
 
-  const creditWallet = (orderId: string, orderNumber: string, amount: number) => {
-    if (amount <= 0 || creditedRef.current.has(orderId)) return;
-    creditedRef.current.add(orderId);
-    void creditWalletFromStore(amount, {
-      title: `Refund · ${orderNumber}`,
-      detail: 'Refund issued to your susej wallet',
-      dedupeByTitle: `Refund · ${orderNumber}`,
-    }).catch(() => {});
-  };
-
+  // Refund money moves ONLY server-side (seller/desk decision machines) —
+  // a client-side credit helper lived here that could never work (server
+  // rejects non-topup credits) and lied about timing. Deleted.
   const sendResponse = () => {
     const text = response.trim();
     if (!order || !text) return;
@@ -135,7 +126,7 @@ export default function RefundDetailScreen() {
             </View>
             <View className="flex-row items-center justify-between">
               <Text className="font-inter-400 text-textSecondary" style={{ fontSize: 14, lineHeight: 20 }}>
-                {order.items[0].name}
+                {order.items[0]?.name ?? 'Order items'}
                 {order.items.length > 1 ? ` +${order.items.length - 1} more` : ''}
               </Text>
               <Text className="font-inter-700 text-primary" style={{ fontSize: 16, lineHeight: 20 }}>
@@ -187,7 +178,7 @@ export default function RefundDetailScreen() {
                   Refund issued
                 </Text>
                 <Text className="font-inter-400 text-textPrimary" style={{ fontSize: 14, lineHeight: 20 }}>
-                  {formatPrice(order.chargedTotal ?? order.total)} credited to your wallet — arrives in 3–5 working days.
+                  {formatPrice(order.chargedTotal ?? order.total)} credited to your susej wallet — available immediately.
                 </Text>
               </View>
             </View>

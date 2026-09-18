@@ -6,6 +6,21 @@ export async function GET(req: NextRequest) {
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
   const rows = await prisma.auction.findMany({ orderBy: { endsAt: "asc" }, take: 100 });
+  // List-row photos: auctions carry imageKey = listing id, so join the
+  // listing covers in ONE query — otherwise every list row is a blind tile
+  // until the buyer opens it (and fresh installs never resolve).
+  let covers = new Map<string, string>();
+  try {
+    const keys = [...new Set(rows.map((a: { imageKey?: unknown }) => String(a.imageKey ?? "")).filter(Boolean))];
+    if (keys.length) {
+      // Post has no scalar image column — cover is images[0].
+      const listings = await prisma.post.findMany({ where: { id: { in: keys } }, select: { id: true, images: true } });
+      for (const l of listings as Array<{ id: string; images?: unknown }>) {
+        const imgs = Array.isArray(l.images) ? (l.images as unknown[]).filter((u): u is string => typeof u === "string" && !!u) : [];
+        if (imgs[0]) covers.set(String(l.id), imgs[0]);
+      }
+    }
+  } catch {}
   return NextResponse.json({
     auctions: rows.map((a) => ({
       id: a.id,
@@ -17,6 +32,8 @@ export async function GET(req: NextRequest) {
       endTime: a.endsAt.getTime(),
       bidsCount: a.bids,
       status: a.status as "live" | "upcoming" | "ended",
+      imageKey: (a as { imageKey?: unknown }).imageKey ?? a.id,
+      imageUrl: covers.get(String((a as { imageKey?: unknown }).imageKey ?? "")) ?? null,
     })),
   });
 }
@@ -59,6 +76,22 @@ export async function POST(req: NextRequest) {
     }
     const hours = Math.min(168, Math.max(1, Math.floor(Number(body.durationHours ?? 24))));
     const now = new Date();
+    // Cover binding (photo-hijack + dead-item guard): imageKey must be the
+    // seller's OWN live listing — a raw API call used to auction anyone's
+    // photo (tile renders the victim's item) or an already-sold row.
+    const coverId = typeof body.imageKey === "string" ? body.imageKey.trim().slice(0, 120) : "";
+    if (coverId) {
+      const cover = await prisma.post.findUnique({ where: { id: coverId } }).catch(() => null);
+      const coverOwner = String((cover as { authorUsername?: unknown } | null)?.authorUsername ?? "").trim().toLowerCase();
+      const me = String(auth.user.username ?? "").trim().toLowerCase();
+      const coverOk = !!cover
+        && !!me && coverOwner === me
+        && (cover as { status?: unknown }).status === "published"
+        && (cover as { isSold?: unknown }).isSold !== true;
+      if (!coverOk) {
+        return NextResponse.json({ error: "Auction cover must be your own live listing" }, { status: 400 });
+      }
+    }
     const created = await prisma.auction.create({
       data: {
         title,
@@ -69,7 +102,7 @@ export async function POST(req: NextRequest) {
         sellerName: auth.user.businessName || auth.user.name,
         sellerUsername: auth.user.username!,
         startPrice,
-        imageKey: typeof body.imageKey === "string" ? body.imageKey.slice(0, 120) : null,
+        imageKey: coverId || null,
         startsAt: now,
       },
     });
@@ -93,6 +126,25 @@ export async function POST(req: NextRequest) {
   const auction = await prisma.auction.findUnique({ where: { id: String(body.auctionId ?? "") } });
   if (!auction) return NextResponse.json({ error: "Auction not found" }, { status: 404 });
   if (auction.status !== "live") return NextResponse.json({ error: "Auction is not live" }, { status: 400 });
+  // Backing-listing liveness (orphan-lot guard, bid side): the listing may
+  // have sold, hidden, or removed since the auction went live (including
+  // lots minted before the create-time cover check). Funded bids on a dead
+  // item are refused instead of accepted.
+  {
+    const key = String((auction as { imageKey?: unknown }).imageKey ?? "").trim();
+    if (key) {
+      const backing = await prisma.post.findUnique({ where: { id: key } }).catch(() => null);
+      const alive =
+        !!backing &&
+        (backing as { status?: unknown }).status === "published" &&
+        (backing as { isSold?: unknown }).isSold !== true;
+      if (!alive) {
+        // Retire the lot so the next bidder doesn't hit the same wall.
+        await prisma.auction.update({ where: { id: auction.id }, data: { status: "ended" } }).catch(() => {});
+        return NextResponse.json({ error: "This auction's item is no longer available" }, { status: 410 });
+      }
+    }
+  }
   // Self-bidding guard: a seller inflating their own auction price (shill
   // bidding) is fraud on the platform — block it before the bid transaction.
   if (auction.sellerUsername && auction.sellerUsername === auth.user.username) {

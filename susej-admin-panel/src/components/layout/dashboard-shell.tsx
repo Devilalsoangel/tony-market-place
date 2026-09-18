@@ -7,12 +7,14 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { PageBreadcrumbs } from "@/components/layout/page-breadcrumbs";
+import { SessionWatchdog } from "@/components/layout/session-watchdog";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <DesktopGuard>
+      <SessionWatchdog />
       <div className="flex h-screen overflow-hidden bg-[#FAFAFA]">
         <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden">

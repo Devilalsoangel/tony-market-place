@@ -30,7 +30,7 @@ const METHOD_TONE: Record<string, "success" | "info" | "warning" | "danger" | "d
 
 export default function SystemPage() {
   const user = useAuthStore((s) => s.user);
-  const [dbStatus, setDbStatus] = useState<"checking" | "ok" | "degraded">("checking");
+  const [dbStatus, setDbStatus] = useState<"checking" | "ok" | "restricted" | "degraded">("checking");
   const [rowCount, setRowCount] = useState<number | null>(null);
   const [env, setEnv] = useState({
     platform: "",
@@ -41,12 +41,19 @@ export default function SystemPage() {
   });
 
   useEffect(() => {
+    // 403 (role-denied) is NOT a sick database: managers are API-denied on
+    // app-settings, so the tile used to cry "Degraded" on a healthy DB.
     fetch("/api/data/app-settings", { cache: "no-store" })
       .then((res) => {
+        if (res.status === 403) {
+          setDbStatus("restricted");
+          return null;
+        }
         if (!res.ok) throw new Error("db error");
         return res.json();
       })
       .then((body) => {
+        if (!body) return;
         setDbStatus("ok");
         setRowCount(body.rows?.length ?? 0);
       })
@@ -72,7 +79,7 @@ export default function SystemPage() {
 
       <div className="grid grid-cols-4 gap-4">
         <StatTile label="App version" value="v1.0.0" tone="purple" />
-        <StatTile label="Database" value={dbStatus === "ok" ? "Connected" : dbStatus === "checking" ? "Checking..." : "Degraded"} tone={dbStatus === "ok" ? "green" : dbStatus === "degraded" ? "red" : "amber"} />
+        <StatTile label="Database" value={dbStatus === "ok" ? "Connected" : dbStatus === "checking" ? "Checking..." : dbStatus === "restricted" ? "Role-restricted" : "Degraded"} tone={dbStatus === "ok" ? "green" : dbStatus === "checking" || dbStatus === "restricted" ? "amber" : "red"} />
         <StatTile label="Settings records" value={rowCount ?? "—"} />
         <StatTile label="API endpoints" value={API_ENDPOINTS.length} />
       </div>

@@ -186,11 +186,46 @@ export default function StorefrontEditorScreen() {
         }
       } catch {}
       if (alive) setLoaded(true);
+      // Replay queued banner deletes (offline deletes used to die with the
+      // session while buyers kept seeing the "deleted" banner).
+      if (alive) void replayBannerDeletes();
     })();
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey]);
+
+  // Pending server deletes, by banner id — drained on entry and after every
+  // delete attempt. Never-synced banners (POST never acked) skip the queue:
+  // the server never saw them.
+  const deleteQueueKey = ownerKey ? `@susej_store_banner_deletes:${ownerKey}` : null;
+  const replayBannerDeletes = async (extra?: string[]) => {
+    if (!deleteQueueKey) return;
+    let queued: string[] = [];
+    try {
+      const raw = await AsyncStorage.getItem(deleteQueueKey);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) queued = arr.filter((x): x is string => typeof x === 'string');
+    } catch {}
+    const ids = [...new Set([...queued, ...(extra ?? [])])];
+    if (ids.length === 0) return;
+    const remaining: string[] = [];
+    for (const bid of ids) {
+      try {
+        const res = await serverApi.deleteStorefrontBanner(bid);
+        if (!res.ok) remaining.push(bid);
+      } catch {
+        remaining.push(bid);
+      }
+    }
+    try {
+      await AsyncStorage.setItem(deleteQueueKey, JSON.stringify(remaining));
+    } catch {}
+    if (remaining.length > 0) {
+      Alert.alert('Storefront sync pending', 'Some banner removals are saved on this device and will clear from your storefront when you reconnect.');
+    }
+  };
 
   useEffect(() => {
     if (!loaded || !ownerKey) return;
@@ -203,7 +238,9 @@ export default function StorefrontEditorScreen() {
   };
 
   const addBanner = () => {
-    const b: Banner = { id: `b${Date.now()}`, title: 'New banner', sub: '', cta: 'Shop', image: 0, size: 'hero' };
+    // Random suffix: two taps in the same ms used to mint twin `b<Date.now()>`
+    // ids, and edit/delete hit both rows.
+    const b: Banner = { id: `b${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, title: 'New banner', sub: '', cta: 'Shop', image: 0, size: 'hero' };
     setBanners((prev) => [...prev, b]);
     setPendingId(b.id);
     setDraft({ kind: 'banner', id: b.id, title: b.title, sub: b.sub || '', cta: b.cta || 'Shop', price: '', oldPrice: '', tag: '', image: b.image ?? 0, imageUrl: b.imageUrl || '', size: b.size || 'hero' });
@@ -264,29 +301,17 @@ export default function StorefrontEditorScreen() {
       const res = await IP.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.8,
-        base64: true,
         exif: false,
         allowsEditing: true,
         aspect: preset.ratio,
       });
       if (res.canceled || !res.assets?.length) return;
       const asset = res.assets[0];
-      let dataUrl = '';
-      if (asset.base64) {
-        dataUrl = `data:image/jpeg;base64,${asset.base64}`;
-      } else if (typeof FileReader !== 'undefined') {
-        // Fallback only where FileReader exists (web): React Native has no
-        // FileReader — without this guard the reference itself throws.
-        const blob = await (await fetch(asset.uri)).blob();
-        dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
-      } else {
-        throw new Error('Image has no readable data — try another photo.');
-      }
+      // Same shrink-first discipline as listings (1280px/0.75): full-res
+      // originals routinely hit the server 5MB cap that shrunk uploads pass,
+      // and full-res base64 sits in JS memory as a size bomb on low-end phones.
+      const { shrinkForUpload } = require('../utils/mediaUpload');
+      const dataUrl: string = await shrinkForUpload(asset.uri);
       setUploading(true);
       const up = await serverApi.uploadBannerImage(dataUrl);
       if (up.ok && up.data?.url) {
@@ -323,10 +348,14 @@ export default function StorefrontEditorScreen() {
   };
 
   const deleteBanner = (id: string) => {
+    const target = banners.find((b) => b.id === id);
     setBanners((prev) => prev.filter((b) => b.id !== id));
-    // Best-effort server delete — requestWithAppKey never throws, and the
-    // local state is already correct either way.
-    serverApi.deleteStorefrontBanner(id).then(() => {});
+    // Server delete with a durable outbox: fire-and-forget used to leave the
+    // "deleted" banner live for buyers whenever the request failed. Only
+    // ever-synced banners need the call; the queue replays on next entry.
+    if (target?.synced) {
+      void replayBannerDeletes([id]);
+    }
     if (draft && draft.kind === 'banner' && draft.id === id) setDraft(null);
     if (pendingId === id) setPendingId(null);
   };

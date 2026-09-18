@@ -58,24 +58,40 @@ export default function CategoriesPage() {
       body: JSON.stringify(body),
     });
 
+  // Every mutation below is ok-checked with revert + toast: the old
+  // fire-and-forget PATCH/POST/DELETE flashed refused rows, then left them
+  // standing silently (paid-rail 403s, has-children 400s).
+  async function mutate(label: string, rollback: () => void, request: () => Promise<Response>) {
+    try {
+      const res = await request();
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `${label} failed (${res.status})`);
+    } catch (e: unknown) {
+      rollback();
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : `${label} failed — reverted.`);
+    }
+  }
+
   function getChildCount(cat: Category): number {
     return categories.filter((c) => c.parentId === cat.id).length;
   }
 
   function handleToggle(cat: Category) {
     const status = cat.status === "active" ? "hidden" : "active";
-    setCategories((prev) =>
-      prev.map((c) => (c.id === cat.id ? { ...c, status } : c))
+    const prev = categories;
+    setCategories((p) =>
+      p.map((c) => (c.id === cat.id ? { ...c, status } : c))
     );
-    apiPatch("PATCH", { id: cat.id, data: { status } });
+    void mutate("Category update", () => setCategories(prev), () => apiPatch("PATCH", { id: cat.id, data: { status } }));
   }
 
   function handleToggleFeatured(cat: Category) {
     const featured = !cat.featured;
-    setCategories((prev) =>
-      prev.map((c) => (c.id === cat.id ? { ...c, featured } : c))
+    const prev = categories;
+    setCategories((p) =>
+      p.map((c) => (c.id === cat.id ? { ...c, featured } : c))
     );
-    apiPatch("PATCH", { id: cat.id, data: { featured } });
+    void mutate("Category update", () => setCategories(prev), () => apiPatch("PATCH", { id: cat.id, data: { featured } }));
   }
 
   // Reorders within the sibling group, then renumbers the WHOLE tree depth-first
@@ -110,21 +126,36 @@ export default function CategoriesPage() {
     };
     walk(null);
     const changed: { id: string; sortOrder: number }[] = [];
+    const prev = categories;
     const next = temp.map((c) => {
       const pos = positions.get(c.id)!;
       if (pos !== c.sortOrder) changed.push({ id: c.id, sortOrder: pos });
       return { ...c, sortOrder: pos };
     });
     setCategories(next);
-    for (const u of changed) apiPatch("PATCH", { id: u.id, data: { sortOrder: u.sortOrder } });
+    // Any refused reorder reverts the whole tree (partial persistence would
+    // fork the desk order from the app's `sortOrder asc` truth).
+    void (async () => {
+      try {
+        for (const u of changed) {
+          const res = await apiPatch("PATCH", { id: u.id, data: { sortOrder: u.sortOrder } });
+          if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Reorder failed (${res.status})`);
+        }
+      } catch (e: unknown) {
+        setCategories(prev);
+        const { toast } = await import("@/components/ui/toast");
+        toast.error(e instanceof Error ? e.message : "Reorder failed — reverted.");
+      }
+    })();
   }
 
   function handleSave(data: Partial<Category>) {
+    const prev = categories;
     if (editCategory) {
-      setCategories((prev) =>
-        prev.map((c) => (c.id === editCategory.id ? { ...c, ...data, updatedAt: new Date().toISOString() } : c))
+      setCategories((p) =>
+        p.map((c) => (c.id === editCategory.id ? { ...c, ...data, updatedAt: new Date().toISOString() } : c))
       );
-      apiPatch("PATCH", { id: editCategory.id, data });
+      void mutate("Category save", () => setCategories(prev), () => apiPatch("PATCH", { id: editCategory.id, data }));
     } else {
       const maxSort = categories.reduce((m, c) => Math.max(m, c.sortOrder), -1);
       const newCat: Category = {
@@ -144,8 +175,8 @@ export default function CategoriesPage() {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      setCategories((prev) => [...prev, newCat]);
-      apiPatch("POST", newCat);
+      setCategories((p) => [...p, newCat]);
+      void mutate("Category create", () => setCategories(prev), () => apiPatch("POST", newCat));
     }
   }
 
@@ -159,16 +190,10 @@ export default function CategoriesPage() {
     }
     collectIds(deleteTarget.id);
     setCategories((prev) => prev.filter((c) => !idsToRemove.has(c.id)));
-    apiPatch("DELETE", { id: deleteTarget.id }).then(async (res) => {
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        // Server blocks delete when children exist (400) — revert optimistic removal
-        if (res.status === 400) {
-          setCategories(snapshot);
-          alert(body?.error ?? "Cannot delete category with children.");
-        }
-      }
-    });
+    // Server blocks delete when children exist (400): revert + say so (the
+    // old handler reverted only the 400 case, silently kept 403/500 ghosts,
+    // and used alert()).
+    void mutate("Category delete", () => setCategories(snapshot), () => apiPatch("DELETE", { id: deleteTarget.id }));
     setDeleteTarget(null);
   }
 
@@ -182,8 +207,9 @@ export default function CategoriesPage() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setCategories((prev) => [...prev, newCat]);
-    apiPatch("POST", newCat);
+    const prev = categories;
+    setCategories((p) => [...p, newCat]);
+    void mutate("Category duplicate", () => setCategories(prev), () => apiPatch("POST", newCat));
   }
 
   const tree = buildCategoryTree(categories);

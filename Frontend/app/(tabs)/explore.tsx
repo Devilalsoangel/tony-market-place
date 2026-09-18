@@ -98,7 +98,7 @@ const PRICE_PRESETS: PricePreset[] = [
   { key: '10000_plus', label: '₹10,000+', min: 10000 },
 ];
 
-const CONDITIONS = ['Any', 'New', 'Like New', 'Used'];
+const CONDITIONS = ['Any', 'New', 'Like New', 'Used', 'Refurbished'];
 
 // Posts have no condition field — derive it from description keywords (case-insensitive).
 // Unknown when undescribed: defaulting to 'New' mislabeled used goods in the
@@ -107,8 +107,9 @@ const CONDITIONS = ['Any', 'New', 'Like New', 'Used'];
 const deriveCondition = (description: string): string => {
   const d = (description ?? '').toLowerCase();
   if (/\blike new\b/.test(d) || /\bmint\b/.test(d)) return 'Like New';
+  if (/\brefurbished\b/.test(d) || /\brefurb\b/.test(d)) return 'Refurbished';
   if (/\bnew\b/.test(d)) return 'New';
-  if (/\bused\b/.test(d) || /\bpre-owned\b/.test(d) || /\bpre owned\b/.test(d) || /\bsecond hand\b/.test(d) || /\brefurbished\b/.test(d)) return 'Used';
+  if (/\bused\b/.test(d) || /\bpre-owned\b/.test(d) || /\bpre owned\b/.test(d) || /\bsecond hand\b/.test(d)) return 'Used';
   return 'Unknown';
 };
 
@@ -404,9 +405,10 @@ export default function ExploreScreen() {
               ) : null}
             </View>
 
-            {/* Trending Now Heading */}
+            {/* Popular right now — the grid below is filtered+sorted stock
+                (Popular/Newest/Price), not a velocity signal. */}
             <Text className="font-inter-600 text-textPrimary mb-3" style={{ fontSize: 20, lineHeight: 28 }}>
-              Trending Now
+              Popular right now
             </Text>
           </View>
         }
@@ -418,6 +420,13 @@ export default function ExploreScreen() {
           >
             <View className="w-full aspect-square bg-surfaceContainer">
               <Image source={resolveListingImage(item, item.id)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
+              {!hasRealImage(item) && (
+                <View className="absolute inset-0 items-center justify-center">
+                  <Text className="font-inter-700 text-secondary" style={{ fontSize: 30, lineHeight: 36 }}>
+                    {(item.title?.trim()?.[0] ?? item.description.trim()[0] ?? '?').toUpperCase()}
+                  </Text>
+                </View>
+              )}
               {boostedIds.has(item.id) && (
                 <View
                   className="absolute top-3 left-3 h-5 px-2 rounded-figma-full items-center justify-center"
@@ -431,7 +440,7 @@ export default function ExploreScreen() {
             </View>
             <View className="p-3">
               <Text className="font-inter-600 text-textPrimary mb-1" style={{ fontSize: 14, lineHeight: 16, letterSpacing: 0.14 }} numberOfLines={2}>
-                {item.description.split('#')[0].trim()}
+                {(item.title?.trim() || item.description).split('#')[0].trim()}
               </Text>
               <Text className="font-inter-600 text-primaryContainer" style={{ fontSize: 20, lineHeight: 28 }}>
                 {formatPrice(item.price)}

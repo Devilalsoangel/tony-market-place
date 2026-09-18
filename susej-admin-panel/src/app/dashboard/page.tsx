@@ -41,6 +41,10 @@ export default function DashboardPage() {
   }
   const [summary, setSummary] = useState<SummaryShape | null>(null);
   const [summaryErr, setSummaryErr] = useState<string | null>(null);
+  // 403 (role-denied) is NOT a sick database: moderators land here by proxy
+  // design but summary denies them — the old banner cried "Database
+  // unavailable" with zeroed KPIs on a healthy DB. Track separately.
+  const [summaryForbidden, setSummaryForbidden] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -49,6 +53,11 @@ export default function DashboardPage() {
       .then(async (res) => {
         const body = await res.json().catch(() => null);
         if (cancelled) return;
+        if (res.status === 403) {
+          setSummaryForbidden(true);
+          setSummaryErr(null);
+          return;
+        }
         if (!res.ok) throw new Error(body?.error ?? "Failed to load");
         setSummary(body as SummaryShape);
         setSummaryErr(null);
@@ -62,7 +71,7 @@ export default function DashboardPage() {
       controller.abort();
     };
   }, []);
-  const dbDown = !!summaryErr;
+  const dbDown = !!summaryErr && !summaryForbidden;
 
   const monthLabel = (key: string) => {
     const [y, m] = key.split("-").map(Number);
@@ -125,6 +134,11 @@ export default function DashboardPage() {
       {dbDown && (
         <div className="rounded-[8px] border border-[#FCD34D]/40 bg-[#FEF9C3] px-4 py-2.5 text-[13px] text-[#92400E]">
           Database unavailable — live data paused. KPIs show zeros until connection restores.
+        </div>
+      )}
+      {summaryForbidden && (
+        <div className="rounded-[8px] border border-[#E4E4E7] bg-[#F4F4F5] px-4 py-2.5 text-[13px] text-[#52525B]">
+          Overview metrics need a manager role — your moderation queues (communities, reviews, reports, messages, support) are in the sidebar.
         </div>
       )}
 

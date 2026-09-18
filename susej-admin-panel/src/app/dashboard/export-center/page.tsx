@@ -66,13 +66,17 @@ export default function ExportCenterPage() {
   }, [rows]);
   const exportColumns = useMemo(() => allColumns.slice(0, 12), [allColumns]);
 
-  async function load() {
+  async function load(full = false) {
     setLoading(true);
     setError(null);
     try {
-      // Bounded window (never a full-table browser pull); the copy below
-      // says exactly how many rows the file holds vs the table total.
-      const res = await fetch(`/api/data/${resource}?take=100`, { cache: "no-store", credentials: "include" });
+      // Full-book mode (?export=1&take=5000) for finance reconciliation:
+      // the 100-row window is knowingly partial past 100 rows. The exported
+      // file carries its own row-count marker (see doExport).
+      const url = full
+        ? `/api/data/${resource}?export=1&take=5000`
+        : `/api/data/${resource}?take=100`;
+      const res = await fetch(url, { cache: "no-store", credentials: "include" });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error ?? "Failed to load");
       setRows(body.rows as Record<string, unknown>[]);
@@ -84,6 +88,23 @@ export default function ExportCenterPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // In-file marker row: a partial export must say so INSIDE the file, not
+  // just on the preview page (files travel without their page).
+  function withMarker(data: Record<string, unknown>[]): Record<string, unknown>[] {
+    const marker = {
+      __export: `susej ${resource} export ${new Date().toISOString()} — ${data.length} rows${typeof total === "number" && total > data.length ? ` (PARTIAL of ${total})` : " (complete)"}`,
+    };
+    return [marker, ...data];
+  }
+
+  function doExport(format: "CSV" | "Excel") {
+    if (!rows) return;
+    const stamped = withMarker(rows);
+    if (format === "CSV") exportToCSV(stamped, `susej-${resource}`, [{ key: "__export", label: "export_info" }, ...allColumns]);
+    else exportToExcel(stamped, `susej-${resource}`, [{ key: "__export", label: "export_info" }, ...allColumns]);
+    record(format);
   }
 
   function record(format: "CSV" | "Excel") {
@@ -120,14 +141,17 @@ export default function ExportCenterPage() {
                 ))}
               </select>
             </div>
-            <Button variant="secondary" onClick={load} disabled={loading}>
+            <Button variant="secondary" onClick={() => load(false)} disabled={loading}>
               {loading ? "Loading..." : "Load data"}
             </Button>
-            <Button onClick={() => { if (rows) { exportToCSV(rows as Record<string, unknown>[], `susej-${resource}`, allColumns); record("CSV"); } }} disabled={!rows || rows.length === 0}>
+            <Button variant="secondary" onClick={() => load(true)} disabled={loading} title="Full book up to 5000 rows for reconciliation">
+              {loading ? "Loading..." : "Load full book"}
+            </Button>
+            <Button onClick={() => { if (rows) { doExport("CSV"); } }} disabled={!rows || rows.length === 0}>
               <Download className="h-4 w-4" />
               Export CSV
             </Button>
-            <Button variant="secondary" onClick={() => { if (rows) { exportToExcel(rows as Record<string, unknown>[], `susej-${resource}`, allColumns); record("Excel"); } }} disabled={!rows || rows.length === 0}>
+            <Button variant="secondary" onClick={() => { if (rows) { doExport("Excel"); } }} disabled={!rows || rows.length === 0}>
               <FileSpreadsheet className="h-4 w-4" />
               Export Excel
             </Button>

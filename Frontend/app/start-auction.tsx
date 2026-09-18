@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Image, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,7 +27,7 @@ const DURATIONS = [
 export default function StartAuctionScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { posts } = usePosts();
+  const { posts, updatePost } = usePosts();
 
   // Logged-out fallback is '' (matches nobody): 'user' previously attached
   // auctions to seller "user" (C2). Case-insensitive like seller-orders (C3).
@@ -47,7 +47,9 @@ export default function StartAuctionScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   // Fix stale init: myPosts loads async from PostContext tokenSeq effect. Seed from first listing when available.
-  useMemo(() => {
+  // Plain effect (not useMemo): render-phase setState double-fires under
+  // StrictMode and turns any added side effect into a landmine.
+  useEffect(() => {
     if (myPosts.length > 0 && imageKey === 'auc_new') {
       setImageKey(myPosts[0].id);
     }
@@ -102,6 +104,9 @@ export default function StartAuctionScreen() {
       // Publish to the shared backend so the Auction House is cross-device
       // (server row is the source of truth; the local mirror is offline fallback).
       // Adopt the server id — a divergent local id forks the row forever.
+      // The outcome copy MUST reflect the publish result: "live" is only true
+      // when the server acked, otherwise the row exists on this device only.
+      let publishState: 'live' | 'offline' | 'rejected' = 'live';
       try {
         const { serverApi } = await import('../utils/serverApi');
         const res = await serverApi.createAuction({
@@ -125,13 +130,47 @@ export default function StartAuctionScreen() {
               }
             } catch {}
           }
+        } else {
+          const err = String((res as { error?: unknown })?.error ?? '');
+          publishState = err === 'offline' || err === 'server-unreachable' ? 'offline' : 'rejected';
         }
       } catch {
-        // offline: local mirror stands alone until the next sync
+        publishState = 'offline';
       }
-      Alert.alert('Auction is live', `"${auction.title}" is now open for bidding on the Auction House.`, [
-        { text: 'View auctions', onPress: () => router.replace('/auctions') },
-      ]);
+      // Device-only flag: offline/rejected rows must never render as live
+      // (they accepted local bids that could never settle). The flag rides
+      // the stored row; the detail + list screens gate bidding on it.
+      if (publishState !== 'live') {
+        try {
+          const cur = await AsyncStorage.getItem(AUCTIONS_KEY).catch(() => null);
+          if (cur) {
+            const parsed = JSON.parse(cur);
+            if (Array.isArray(parsed)) {
+              await AsyncStorage.setItem(
+                AUCTIONS_KEY,
+                JSON.stringify(parsed.map((a: { id?: unknown }) => (a.id === auction.id ? { ...a, localOnly: true } : a)))
+              ).catch(() => {});
+            }
+          }
+        } catch {}
+      }
+      if (publishState === 'live') {
+        // Under-the-hammer: hide the backing listing from direct sale while
+        // the auction runs (server also rejects direct orders on live lots).
+        // The seller can unhide it after the hammer falls.
+        void updatePost(imageKey, { status: 'hidden' }).catch(() => {});
+        Alert.alert('Auction is live', `"${auction.title}" is now open for bidding on the Auction House. The listing is hidden from direct sale while under the hammer.`, [
+          { text: 'View auctions', onPress: () => router.replace('/auctions') },
+        ]);
+      } else if (publishState === 'offline') {
+        Alert.alert('Saved on this device', `"${auction.title}" will publish to the Auction House when you're back online.`, [
+          { text: 'View auctions', onPress: () => router.replace('/auctions') },
+        ]);
+      } else {
+        Alert.alert('Could not publish', 'The server refused this auction. It stays on this device only — check the details and try again.', [
+          { text: 'OK' },
+        ]);
+      }
     } catch {
       Alert.alert('Something went wrong', 'Please try again.');
     } finally {

@@ -244,26 +244,38 @@ export async function deactivateOnRefund(checkoutRef: string) {
   await hideSlot(prisma, purchase.kind, purchase.position);
   // Money back: the purchase debit left the seller's wallet, so refunding
   // must re-credit it — previously the slot unpinned while the money stayed
-  // taken. Idempotent by title (double-clicks / replays can't double-pay).
+  // taken. Race-safe by construction: the credit row is created FIRST inside
+  // one tx, so concurrent double-refunds serialize on UNIQUE(username,title)
+  // — the loser takes P2002 and its increment rolls back with it (the old
+  // count-then-increment shape double-credited: both passed count==0, both
+  // incremented, one create won and the loser's P2002 was swallowed).
   try {
     const revTitle = `Promotion refund · ${purchase.checkoutRef}`;
-    const already = await prisma.walletTransaction.count({ where: { title: revTitle } });
     const amount = Number(purchase.amountPaid ?? 0);
-    if (!already && amount > 0 && purchase.sellerId) {
+    if (amount > 0 && purchase.sellerId) {
       const seller = await prisma.user.findUnique({ where: { username: purchase.sellerId } }).catch(() => null);
       if (seller) {
-        await prisma.user.update({
-          where: { id: seller.id },
-          data: { walletBalance: { increment: amount } },
-        });
-        await prisma.walletTransaction.create({
-          data: {
-            username: purchase.sellerId,
-            title: revTitle,
-            detail: `Refund for ${purchase.packageName} (${purchase.kind})`,
-            amount,
-          },
-        });
+        try {
+          await prisma.$transaction(async (tx: any) => {
+            await tx.walletTransaction.create({
+              data: {
+                username: purchase.sellerId as string,
+                title: revTitle,
+                detail: `Refund for ${purchase.packageName} (${purchase.kind})`,
+                amount,
+              },
+            });
+            await tx.user.update({
+              where: { id: seller.id },
+              data: { walletBalance: { increment: amount } },
+            });
+          });
+        } catch (txErr) {
+          // P2002 = a concurrent refund (or replay) already credited this
+          // title — idempotent replay, not a failure. Anything else keeps the
+          // old contract: slot stays unpinned, credit is skipped, call still ok.
+          if ((txErr as { code?: string })?.code !== "P2002") throw txErr;
+        }
       }
     }
   } catch {
@@ -341,6 +353,112 @@ export async function sweepExpiredPromotions() {
   }
 
   return { ok: true as const, expired: expired.length };
+}
+
+export async function sweepOrphanUploads(): Promise<{ ok: true; removed: number; scanned: number }> {
+  const prisma = await getPrisma();
+  if (!prisma) return { ok: true, removed: 0, scanned: 0 };
+  // Disk-only (serverless ephemeral; Cloudinary objects need their own
+  // lifecycle rule in the cloud console — out of reach here, noted).
+  // Uploads with no DB row referencing them (abandoned wizards, 400d creates)
+  // older than 7 days are deleted. Bounded scan; failures never throw.
+  try {
+    const { readdir, stat, unlink } = await import("fs/promises");
+    const path = await import("path");
+    const dir = path.join(process.cwd(), "public", "uploads");
+    let files: string[] = [];
+    try {
+      files = (await readdir(dir)).slice(0, 2000);
+    } catch {
+      return { ok: true, removed: 0, scanned: 0 };
+    }
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    const old: string[] = [];
+    for (const f of files) {
+      try {
+        const st = await stat(path.join(dir, f));
+        if (st.isFile() && st.mtimeMs < cutoff) old.push(f);
+      } catch {}
+    }
+    if (!old.length) return { ok: true, removed: 0, scanned: files.length };
+    const refs = new Set<string>();
+    const remember = (v: unknown) => {
+      if (typeof v === "string" && v.includes("/uploads/")) {
+        const m = v.match(/\/uploads\/([A-Za-z0-9._-]+)/);
+        if (m) refs.add(m[1]);
+      } else if (Array.isArray(v)) {
+        for (const x of v) remember(x);
+      } else if (v && typeof v === "object") {
+        // Plain-object recursion: any future Json-object image field (variant
+        // overlays etc.) is protected too — strings+arrays alone silently
+        // missed embedded URLs.
+        for (const x of Object.values(v as Record<string, unknown>)) remember(x);
+      }
+    };
+    // Reference scan: EVERY table that stores /uploads/ URLs. Missing one
+    // irreversibly deletes live files — SellerDocument.url (KYC evidence,
+    // compliance-critical, NOT re-uploadable by the user) and User.avatar
+    // (profile photos) were both absent and got eaten at 7d.
+    // Product.images mirrors Post.images (survives independent Post deletes);
+    // promo-copy tables (purchase/topSeller/hotDeal/featured/spotlight) carry
+    // /uploads/-derived URLs that outlive their originals on paid rails.
+    // Story overlays/productRef embed a product copy (image) that outlives
+    // post edits — the object recursion covers them.
+    // Bounded scans (take CAP = the file cap): at 100k-row scale unbounded
+    // selects would OOM/timeout the serverless cron (fail-safe direction —
+    // no cleanup — but still a silent disable). Stronger: when ANY table hits
+    // the cap the scan is provably partial, so deletion is REFUSED outright
+    // (fail-safe toward accumulation, LOUD) — a partial ref-set reads live
+    // files as orphans and eats them.
+    const CAP = 2000;
+    const cappedTables: string[] = [];
+    // Error path refuses like cap-hit: a failed table contributes zero refs,
+    // and deleting against a partial ref-set eats live files (a transient DB
+    // error must accumulate, never delete).
+    const capped = async <T>(name: string, q: Promise<T[]>): Promise<T[]> => {
+      try {
+        const rows = await q;
+        if (rows.length >= CAP) cappedTables.push(name);
+        return rows;
+      } catch {
+        cappedTables.push(`${name}!err`);
+        return [] as T[];
+      }
+    };
+    const [posts, products, stories, reels, banners, sellers, sellerDocs, avatars, purchases, tops, deals, featured, spots] = await Promise.all([
+      capped("post", prisma.post.findMany({ select: { images: true }, take: CAP })),
+      capped("product", prisma.product.findMany({ select: { images: true }, take: CAP })),
+      capped("story", prisma.story.findMany({ select: { image: true, overlays: true, productRef: true }, take: CAP })),
+      capped("reel", prisma.reel.findMany({ select: { mediaUrl: true }, take: CAP })),
+      capped("storefrontBanner", prisma.storefrontBanner.findMany({ select: { imageUrl: true }, take: CAP })),
+      capped("seller", prisma.seller.findMany({ select: { logo: true, selfieUrl: true }, take: CAP })),
+      capped("sellerDocument", (prisma as any).sellerDocument.findMany({ select: { url: true }, take: CAP })),
+      capped("user", prisma.user.findMany({ select: { avatar: true }, take: CAP })),
+      capped("promotionPurchase", (prisma as any).promotionPurchase.findMany({ select: { sellerLogo: true, postImage: true, productImage: true }, take: CAP })),
+      capped("topSeller", (prisma as any).topSeller.findMany({ select: { sellerLogo: true }, take: CAP })),
+      capped("hotDeal", (prisma as any).hotDeal.findMany({ select: { productImage: true }, take: CAP })),
+      capped("featuredPost", (prisma as any).featuredPost.findMany({ select: { imageUrl: true }, take: CAP })),
+      capped("spotlight", (prisma as any).spotlight.findMany({ select: { imageUrl: true, sellerLogo: true }, take: CAP })),
+    ]);
+    if (cappedTables.length) {
+      console.error(`[sweep] REFUSED: partial scan (${cappedTables.join(",")} hit the ${CAP} cap) — deletion unsafe, accumulating instead.`);
+      return { ok: true, removed: 0, scanned: files.length };
+    }
+    for (const row of [...posts, ...products, ...stories, ...reels, ...banners, ...sellers, ...sellerDocs, ...avatars, ...purchases, ...tops, ...deals, ...featured, ...spots]) {
+      for (const v of Object.values(row as Record<string, unknown>)) remember(v);
+    }
+    let removed = 0;
+    for (const f of old) {
+      if (refs.has(f)) continue;
+      try {
+        await unlink(path.join(dir, f));
+        removed += 1;
+      } catch {}
+    }
+    return { ok: true, removed, scanned: files.length };
+  } catch {
+    return { ok: true, removed: 0, scanned: 0 };
+  }
 }
 
 let lastSweepAt = 0;

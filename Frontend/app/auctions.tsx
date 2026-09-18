@@ -33,8 +33,12 @@ export interface Auction {
   bidsCount: number;
   status: 'live' | 'upcoming' | 'ended';
   imageKey: string;
+  /** Server-joined listing cover (list rows show the item without opening). */
+  imageUrl?: string | null;
   startsLabel?: string;
   reminder?: boolean;
+  /** Device-only row (offline save / server refusal): never live elsewhere. */
+  localOnly?: boolean;
   bids: AuctionBid[];
 }
 
@@ -50,8 +54,11 @@ function normalizeAuction(a: any): Auction {
     bidsCount: Number(a.bidsCount) || 0,
     status: a.status === 'ended' ? 'ended' : a.status === 'upcoming' ? 'upcoming' : 'live',
     imageKey: a.imageKey ?? String(a.id),
+    imageUrl: typeof a.imageUrl === 'string' && a.imageUrl ? a.imageUrl : undefined,
     startsLabel: a.startsLabel,
     reminder: !!a.reminder,
+    sellerUsername: typeof a.sellerUsername === 'string' ? a.sellerUsername : undefined,
+    localOnly: a.localOnly === true ? true : undefined,
     bids: Array.isArray(a.bids) ? a.bids : [],
   };
 }
@@ -87,8 +94,10 @@ export default function AuctionsScreen() {
   const [loaded, setLoaded] = useState(false);
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const { posts } = usePosts();
-  // List photo = the linked listing's real photo (same source as detail).
+  // List photo, in priority order: server-joined cover (works on fresh
+  // installs with an empty cache), cached listing photo, neutral tile.
   const photoFor = useCallback((a: Auction) => {
+    if (a.imageUrl) return { uri: a.imageUrl };
     const post = posts.find((p) => p.id === a.imageKey);
     return post && hasRealImage(post) ? resolveListingImage(post, post.id) : auctionImage(a.imageKey);
   }, [posts]);
@@ -206,6 +215,10 @@ export default function AuctionsScreen() {
   const renderCard = (a: Auction) => {
     const remaining = a.endTime ? a.endTime - Date.now() : 0;
     const ended = a.status === 'ended' || (a.status === 'live' && remaining <= 0);
+    // Fallback-tile honesty: when neither the server cover nor the cached
+    // listing photo resolved, say the photo is missing — never present the
+    // lavender stub as the lot.
+    const photoMissing = !a.imageUrl && !posts.some((p) => p.id === a.imageKey && hasRealImage(p));
     return (
       <TouchableOpacity
         key={a.id}
@@ -216,6 +229,11 @@ export default function AuctionsScreen() {
       >
         <View className="w-full bg-surfaceContainer" style={{ aspectRatio: 4 / 3 }}>
           <Image source={photoFor(a)} className="absolute inset-0 w-full h-full" resizeMode="cover" />
+          {photoMissing && (
+            <View className="absolute inset-x-0 bottom-0 py-1 items-center" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>
+              <Text style={{ fontSize: 10, lineHeight: 12, color: '#fff' }}>Photo unavailable — open to view item</Text>
+            </View>
+          )}
           <View
             className="absolute top-3 left-3 px-2.5 py-1 rounded-figma-full"
             style={{ backgroundColor: a.status === 'live' ? colors.error : a.status === 'ended' ? colors.surfaceContainer : colors.tertiary }}
@@ -224,7 +242,7 @@ export default function AuctionsScreen() {
               className="font-inter-700"
               style={{ fontSize: 10, lineHeight: 12, letterSpacing: 1, color: a.status === 'live' ? colors.onError : a.status === 'ended' ? colors.textSecondary : colors.onTertiary }}
             >
-              {a.status === 'ended' ? 'ENDED' : a.status === 'live' ? (ended ? 'ENDED' : 'LIVE') : 'UPCOMING'}
+              {a.status === 'ended' ? 'ENDED' : a.status === 'live' ? (a.localOnly ? 'ON THIS DEVICE' : ended ? 'ENDED' : 'LIVE') : 'UPCOMING'}
             </Text>
           </View>
         </View>

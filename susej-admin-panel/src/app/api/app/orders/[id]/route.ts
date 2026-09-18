@@ -25,12 +25,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!key) return NextResponse.json({ error: "Order not found" }, { status: 404 });
   const username = auth.user.username!;
   const order = await prisma.order.findFirst({
+    // Case-insensitive party match (PATCH lane already is — an exact-match
+    // read 404d rows the write lane would happily mutate).
     where: {
       OR: [{ id: key }, { trackingNumber: key }, { orderNumber: key }],
-      AND: [{ OR: [{ buyerUsername: username }, { sellerUsername: username }] }],
+      AND: [{ OR: [{ buyerUsername: { equals: username, mode: "insensitive" } }, { sellerUsername: { equals: username, mode: "insensitive" } }] }],
     },
   });
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  // Receipt completeness (second-device truth): the list lane attaches the
+  // latest refund row + freeze flag — the detail lane must too, or fresh
+  // installs show no refund card and offer Cancel on refused rows.
+  const detailRefund = await prisma.refund.findFirst({
+    where: { orderRef: order.trackingNumber },
+    orderBy: { requestedAt: "desc" },
+  }).catch(() => null);
+  const detailFrozen = detailRefund
+    ? false
+    : await prisma.dispute.findFirst({
+        where: { orderId: order.trackingNumber, status: { in: ["open", "under_review"] } },
+        select: { orderId: true },
+      }).then((r) => !!r).catch(() => false);
   return NextResponse.json({
     order: {
       id: order.id,
@@ -45,7 +60,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       chargedTotal: order.amount,
       status: order.status,
       paymentStatus: (order as { paymentStatus?: unknown }).paymentStatus ? String((order as { paymentStatus?: unknown }).paymentStatus) : "",
+      disputeFrozen: detailFrozen,
       actualDelivery: (order as { actualDelivery?: unknown }).actualDelivery ? String((order as { actualDelivery?: unknown }).actualDelivery) : "",
+      deliveryLog: Array.isArray((order as { deliveryLog?: unknown }).deliveryLog)
+        ? (order as { deliveryLog: unknown }).deliveryLog
+        : [],
       placedAt: order.createdAt.getTime(),
       reviewed: order.reviewed,
       rating: order.rating ?? undefined,
@@ -53,6 +72,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       address: order.shippingAddress,
       paymentMethod: order.paymentMethod,
       trackingNumber: order.trackingNumber,
+      refund: detailRefund
+        ? {
+            id: detailRefund.id,
+            reason: detailRefund.reason ?? "",
+            status: detailRefund.status,
+            requestedAt: detailRefund.requestedAt instanceof Date ? detailRefund.requestedAt.getTime() : Date.now(),
+          }
+        : undefined,
     },
   });
 }
@@ -90,7 +117,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const prisma = await getPrisma();
   if (!prisma) return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
 
-  let body: { status?: string; rating?: number; reviewComment?: string; reviewAnonymous?: boolean; refundReason?: string; refundDecision?: string };
+  let body: { status?: string; rating?: number; reviewComment?: string; reviewAnonymous?: boolean; refundReason?: string; refundDecision?: string; podNote?: string };
   try {
     body = await req.json();
   } catch {
@@ -100,8 +127,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const order = await prisma.order.findUnique({ where: { id } });
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
   const username = auth.user.username!;
-  const isBuyer = order.buyerUsername === username;
-  const isSeller = order.sellerUsername === username;
+  // Case-insensitive identity (server stores exact casing, clients vary —
+  // the app gates with lowercase compares; exact-match here 403d mixed-case
+  // owners while their own UI allowed the action).
+  const orderBuyer = String(order.buyerUsername ?? "").trim().toLowerCase();
+  const orderSeller = String(order.sellerUsername ?? "").trim().toLowerCase();
+  const meLower = String(username ?? "").trim().toLowerCase();
+  const isBuyer = !!meLower && orderBuyer === meLower;
+  const isSeller = !!meLower && orderSeller === meLower;
   if (!isBuyer && !isSeller) return NextResponse.json({ error: "Not your order" }, { status: 403 });
 
   const next = body.status ? String(body.status) : null;
@@ -110,6 +143,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (next && next === order.status) {
     return NextResponse.json({ ok: true, status: order.status, reviewed: order.reviewed, deduped: true });
   }
+  // Proof-of-delivery: a seller-tapped "delivered" with zero evidence used to
+  // settle COD and start the 7-day hold in ~10s flat. The handover note
+  // (courier tracking ID or receiver name) is REQUIRED and persisted to
+  // deliveryLog, where the buyer tracking screen renders it. Still
+  // self-reported (no buyer-OTP yet), but now an auditable claim with a
+  // name/number attached instead of a bare button.
+  const podNote = typeof body.podNote === "string" ? body.podNote.trim().slice(0, 200) : "";
+  if (next === "delivered" && isSeller && !isBuyer && podNote.length < 4) {
+    return NextResponse.json({ error: "Add the courier tracking ID or receiver name before marking delivered" }, { status: 400 });
+  }
   if (next) {
     const curIdx = ORDER_FLOW.indexOf(order.status as never);
     const nextIdx = ORDER_FLOW.indexOf(next as never);
@@ -117,7 +160,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       next === "cancelled"
         // Buyer cancel AND seller decline (can't fulfil): both settle the
         // same legs (buyer refund + seller clawback) in the tx below.
-        ? (isBuyer || isSeller) && ["placed", "confirmed"].includes(order.status)
+        // Preparing included (cancel-until-shipped, Amazon/Flipkart norm):
+        // packing started is still reversible; out_for_delivery is the point
+        // of no return. The reversal legs below are status-agnostic.
+        ? (isBuyer || isSeller) && ["placed", "confirmed", "preparing"].includes(order.status)
         : isSeller && nextIdx !== -1 && curIdx !== -1 && nextIdx === curIdx + 1;
     if (!allowed) return NextResponse.json({ error: `Cannot move order to ${next}` }, { status: 400 });
   }
@@ -164,6 +210,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   let reviewErr: string | null = null;
   const updated = await prisma.$transaction(async (tx) => {
+    // Order-row lock FIRST: cancel/deliver/approve/refund-decision/review
+    // all settle money in this tx, and cross-path title counts read
+    // committed state only under serialization. Without it, same-tick
+    // cancel + seller-approve both saw count-0 and double-credited.
+    // Fail-closed (no catch): lock failure aborts, never runs unlocked.
+    await (tx as any).$queryRawUnsafe(`SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`, id);
+    // Status re-read: the transition gate above ran on a pre-tx snapshot —
+    // a concurrent transition could have moved the order meanwhile.
+    const liveOrder = await tx.order.findUnique({ where: { id } }).catch(() => null);
+    const liveStatus = String((liveOrder as { status?: unknown } | null)?.status ?? "");
+    if (!liveOrder || (order.status && liveStatus && liveStatus !== order.status)) {
+      throw new OrderError(409, "Order changed under you — refresh and retry");
+    }
     const data: Record<string, unknown> = {};
 
     if (next === "cancelled") {
@@ -248,20 +307,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (sellerClawed && order.sellerUsername && sellerNet > 0) {
           lrows.push({ partyName: order.sellerUsername, partyRole: "seller", direction: "out", type: "reversal", amount: sellerNet, method: order.paymentMethod, status: "success", orderId: id, createdAt: lnow });
         }
-        // Platform legs (P1 cancel-no-fee-reversal): placement booked a
-        // fee-in + shipping-in; cancelling without reversing them strands
-        // platform revenue on a dead order. Mirror both, once each
-        // (ledger-count guard — repeat cancels never double-reverse).
+        // Platform legs (P1 cancel-no-fee-reversal): placement books
+        // shipping-in (wallet success; COD pending) while fee-in lands at
+        // DELIVERY — cancelling a delivered order without reversing strands
+        // platform revenue. Mirror both, once each (ledger-count guard —
+        // repeat cancels never double-reverse).
+        // Evidence-gated: fee/shipping IN land at placement (wallet success)
+        // or delivery — reversing with no success IN mints phantom OUT legs.
         if (sellerClawed) {
           const feeOut = settledFee !== null && settledFee > 0 ? Math.round(settledFee) : Math.max(0, Math.round(goodsBasis * commissionRate));
-          if (feeOut > 0) {
+          const feeBooked = await tx.ledgerEntry.count({ where: { orderId: id, type: "fee", direction: "in", status: "success" } });
+          if (feeOut > 0 && feeBooked > 0) {
             const feeReversed = await tx.ledgerEntry.count({ where: { orderId: id, type: "fee", direction: "out" } });
             if (!feeReversed) lrows.push({ partyName: "susej", partyRole: "platform", direction: "out", type: "fee", amount: feeOut, method: order.paymentMethod, status: "success", orderId: id, createdAt: lnow });
           }
         }
         if (buyerReversed) {
           const shipOut = Math.max(0, Math.round(Number(order.amount ?? 0)) - Math.round(goodsBasis));
-          if (shipOut > 0) {
+          const shipBooked = await tx.ledgerEntry.count({ where: { orderId: id, type: "shipping", direction: "in", status: "success" } });
+          if (shipOut > 0 && shipBooked > 0) {
             const shipReversed = await tx.ledgerEntry.count({ where: { orderId: id, type: "shipping", direction: "out" } });
             if (!shipReversed) lrows.push({ partyName: "susej", partyRole: "platform", direction: "out", type: "shipping", amount: shipOut, method: order.paymentMethod, status: "success", orderId: id, createdAt: lnow });
           }
@@ -293,6 +357,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       // Settlement timestamp (drives the 7-day payout hold + seller "available
       // on" dates). Legacy rows keep "" and count as matured (pre-hold era).
       data.actualDelivery = new Date().toISOString();
+      // POD evidence lands on the order row (deliveryLog is otherwise
+      // write-dead): buyer tracking renders who/what the seller claimed.
+      if (podNote) {
+        const prior = Array.isArray(order.deliveryLog) ? (order.deliveryLog as unknown[]) : [];
+        data.deliveryLog = [...prior, { at: new Date().toISOString(), by: username, note: podNote }];
+      }
 
       // Escrow release: the seller is credited ONCE, at delivery, for wallet
       // AND COD orders alike (evidence-guarded by the earnings title, so
@@ -415,6 +485,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // so the seller/admin queues see it. Previously the app only wrote local
     // state + an admin mirror — the server row stayed unaware (sync lie).
     if (isBuyer && typeof body.refundReason === "string" && body.refundReason.trim()) {
+      // Serialized open-or-return (twin-row race): the order-row lock makes
+      // the existence re-read below observe committed rows. No fail-open
+      // catch — a lock failure aborts (503, no row), never twins.
+      await tx.$queryRawUnsafe(`SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`, order.id);
       const existing = await tx.refund.findFirst({
         where: { orderRef: tracking, status: { in: ["requested", "approved"] } },
       });
@@ -521,10 +595,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         // shipping-in; approving without reversing them strands platform
         // revenue on a dead order (cancel path already mirrors both — this
         // copies that block with the same count guards so books balance on
-        // every path, not just cancel).
+        // every path, not just cancel). Evidence-gated like the desk lane:
+        // pre-delivery rows never booked a fee — reversing one mints a
+        // phantom OUT leg with no IN.
         {
           const feeOut = settledFee !== null && settledFee > 0 ? Math.round(settledFee) : Math.max(0, Math.round(goodsBasis * commissionRate));
-          if (feeOut > 0) {
+          const feeBooked = await tx.ledgerEntry.count({ where: { orderId: id, type: "fee", direction: "in", status: "success" } });
+          if (feeOut > 0 && feeBooked > 0) {
             const feeReversed = await tx.ledgerEntry.count({ where: { orderId: id, type: "fee", direction: "out" } });
             if (!feeReversed) {
               await tx.ledgerEntry.createMany({
@@ -532,8 +609,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               });
             }
           }
+          // Shipping-OUT needs a success IN behind it (wallet placement books
+          // success; COD books pending — the COD void block below offsets
+          // pending, so an OUT success here would double-count it).
           const shipOut = Math.max(0, Math.round(Number(order.amount ?? 0)) - Math.round(goodsBasis));
-          if (shipOut > 0) {
+          const shipBooked = await tx.ledgerEntry.count({ where: { orderId: id, type: "shipping", direction: "in", status: "success" } });
+          if (shipOut > 0 && shipBooked > 0) {
             const shipReversed = await tx.ledgerEntry.count({ where: { orderId: id, type: "shipping", direction: "out" } });
             if (!shipReversed) {
               await tx.ledgerEntry.createMany({

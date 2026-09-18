@@ -128,7 +128,6 @@ export default function ProductDetailsScreen() {
             condition: p.condition ? String(p.condition) : undefined,
             brand: p.brand ? String(p.brand) : undefined,
             deliveryMode: typeof p.deliveryMode === 'string' ? p.deliveryMode : undefined,
-            shippingFee: typeof p.shippingFee === 'number' ? p.shippingFee : undefined,
           });
         } else {
           setServerMiss(true);
@@ -227,8 +226,13 @@ export default function ProductDetailsScreen() {
         // alert simulation is best-effort
       }
     })();
+    // localPost/serverPost in deps (not the merged `post` below — it is
+    // declared after this effect and referencing it here is a TDZ crash):
+    // late-arriving cached/server rows must re-evaluate (the old
+    // [postId, username] pair never refired, so cached listings never
+    // alerted). The alertChecked ref keeps it once-per-product-per-user.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [postId, user?.username]);
+  }, [postId, user?.username, localPost, serverPost]);
 
   const post = posts.find((p) => p.id === postId) ?? serverPost;
   // Server title wins (create/edit persist it); legacy first-line fallback
@@ -309,7 +313,9 @@ export default function ProductDetailsScreen() {
   };
 
   const handleShare = () => {
-    Share.share({ message: `${title} — ${formatPrice(effectivePrice)} on susej` }).catch(() => {});
+    // Openable deep link (expo-router resolves susej://product/<id>): a bare
+    // name+price string left recipients with nothing to tap.
+    Share.share({ message: `${title} — ${formatPrice(effectivePrice)} on susej\nsusej://product/${postId}` }).catch(() => {});
   };
 
   // Multi-photo gallery: real post media only. Imageless listings render an
@@ -322,12 +328,14 @@ export default function ProductDetailsScreen() {
         : [];
   const showCarousel = gallery.length > 1;
 
-  // Variant selection → adjusted price
+  // Variant selection → adjusted price. Case-insensitive like checkout (a
+  // seller case-rename used to show the base price / skip OOS here while
+  // checkout charged the delta).
   const selectedDelta =
     post?.variants?.reduce((sum, v) => {
       const chosen = variantSelections[v.name];
       if (!chosen) return sum;
-      const match = v.values.find((val) => val.label === chosen);
+      const match = v.values.find((val) => String(val.label ?? '').trim().toLowerCase() === String(chosen).trim().toLowerCase());
       return sum + (match?.priceDelta ?? 0);
     }, 0) ?? 0;
   const effectivePrice = price + selectedDelta;
@@ -363,7 +371,7 @@ export default function ProductDetailsScreen() {
         const oosVariant = (post.variants ?? []).find((v) => {
           const chosen = variantSelections[v.name];
           if (!chosen) return false;
-          const match = v.values.find((val) => val.label === chosen);
+          const match = v.values.find((val) => String(val.label ?? '').trim().toLowerCase() === String(chosen).trim().toLowerCase());
           return !!match && typeof match.stock === 'number' && match.stock <= 0;
         });
         if (oosVariant) {

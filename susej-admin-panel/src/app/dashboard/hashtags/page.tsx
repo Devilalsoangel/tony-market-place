@@ -73,7 +73,8 @@ export default function HashtagsPage() {
       refresh();
     } catch (e) {
       setItems(rows ?? []);
-      console.error(e);
+      const { toast } = await import("@/components/ui/toast");
+      toast.error(e instanceof Error ? e.message : "Hashtag update failed — reverted.");
     }
   }
 
@@ -83,7 +84,7 @@ export default function HashtagsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-[-0.01em] text-[#18181B]">Hashtags</h1>
-        <p className="mt-0.5 text-[13px] text-[#71717A]">Trending hashtags and blocked tags across posts.</p>
+        <p className="mt-0.5 text-[13px] text-[#71717A]">Trending hashtags and blocked tags across posts. Blocked tags are suppressed from the app feed and search.</p>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
