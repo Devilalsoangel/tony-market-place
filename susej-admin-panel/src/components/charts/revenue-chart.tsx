@@ -10,7 +10,7 @@ interface RevenueChartProps {
 function inrCompact(v: number): string {
   if (v >= 10_000_000) return `₹${(v / 10_000_000).toFixed(1).replace(/\.0$/, "")}Cr`;
   if (v >= 100_000) return `₹${(v / 100_000).toFixed(1).replace(/\.0$/, "")}L`;
-  if (v >= 1_000) return `₹${Math.round(v / 1_000)}k`;
+  if (v >= 1_000) return `₹${(v / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
   return `₹${v}`;
 }
 

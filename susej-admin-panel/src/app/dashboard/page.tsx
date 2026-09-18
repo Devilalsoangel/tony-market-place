@@ -76,7 +76,9 @@ export default function DashboardPage() {
   const monthLabel = (key: string) => {
     const [y, m] = key.split("-").map(Number);
     if (!y || !m) return key;
-    return new Date(y, m - 1).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    // Unambiguous "Sep 2026" — the old {month short, year 2-digit} rendered
+    // "Sep 26", which reads as the 26th of September.
+    return new Date(y, m - 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
   };
 
   // KPIs computed from REAL rows — no fabricated business metrics.
@@ -183,10 +185,10 @@ export default function DashboardPage() {
           <CardContent>
             <div className="divide-y divide-[#E4E4E7]">
               {recentOrders.map((order) => (
-                <Link key={order.id} href={`/dashboard/orders/${order.id}`} className="flex items-center justify-between rounded-[6px] px-2 py-2 transition-colors hover:bg-[#F5F3FF]/40">
+                <Link key={order.id} href={`/dashboard/orders/${order.id}`} title={`Order ${order.id}`} className="flex items-center justify-between rounded-[6px] px-2 py-2 transition-colors hover:bg-[#F5F3FF]/40">
                   <div>
-                    <p className="text-[13px] font-medium text-[#18181B]">{order.id}</p>
-                    <p className="text-xs text-[#71717A]">{order.buyerName} — {formatCurrency(order.amount)}</p>
+                    <p className="text-[13px] font-medium text-[#18181B]">{order.buyerName} <span className="font-normal text-[#A1A1AA]">#{order.id.slice(-6).toUpperCase()}</span></p>
+                    <p className="text-xs text-[#71717A]">{formatCurrency(order.amount)} · {formatDate(order.createdAt, "relative")}</p>
                   </div>
                   <StatusBadge status={order.status} />
                 </Link>
