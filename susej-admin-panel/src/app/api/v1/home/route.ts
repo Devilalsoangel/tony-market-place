@@ -133,22 +133,35 @@ export async function GET(request: NextRequest) {
   const serveHotDeals = liveHotDeals.filter((d) => !postBlocked((d as { productId?: unknown }).productId));
 
   // Seller identity for the app: TopSeller.sellerId is the Seller cuid, but
-  // the app navigates/follows by USERNAME (/seller/:u). Resolve cuid→email→
-  // username once (≤3 rows). Missing mapping serves null — the app falls back
-  // to its organic suggestions instead of a dead chip.
+  // the app navigates/follows by USERNAME (/seller/:u). Seed data keeps no
+  // shared email between Seller and User rows, so resolve by business name →
+  // owner name → order attribution, first hit wins. Missing mapping serves
+  // null — the app falls back to organic suggestions, never a dead chip.
   const sellerIdToUsername = new Map<string, string>();
   try {
     const ids = Array.from(new Set(topSellers.map((t) => t.sellerId).filter(Boolean)));
     if (ids.length > 0) {
-      const sellers = await prisma.seller.findMany({ where: { id: { in: ids } }, select: { id: true, email: true } });
-      const emails = Array.from(new Set(sellers.map((s) => s.email).filter(Boolean)));
-      const users = emails.length > 0
-        ? await prisma.user.findMany({ where: { email: { in: emails } }, select: { email: true, username: true } })
-        : [];
-      const byEmail = new Map(users.filter((u) => u.username).map((u) => [u.email, u.username as string]));
+      const sellers = await prisma.seller.findMany({ where: { id: { in: ids } }, select: { id: true, businessName: true, ownerName: true } });
+      const users = await prisma.user.findMany({ select: { username: true, name: true, businessName: true } });
+      const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
+      const byBusiness = new Map<string, string>();
+      const byName = new Map<string, string>();
+      for (const u of users) {
+        if (!u.username) continue;
+        if (u.businessName && !byBusiness.has(norm(u.businessName))) byBusiness.set(norm(u.businessName), u.username);
+        if (u.name && !byName.has(norm(u.name))) byName.set(norm(u.name), u.username);
+      }
+      let orderPairs: { sellerUsername: string | null; sellerName: string | null }[] = [];
+      try {
+        orderPairs = await prisma.order.findMany({ select: { sellerUsername: true, sellerName: true }, take: 500 });
+      } catch { orderPairs = []; }
+      const byOrderName = new Map<string, string>();
+      for (const o of orderPairs) {
+        if (o.sellerUsername && o.sellerName && !byOrderName.has(norm(o.sellerName))) byOrderName.set(norm(o.sellerName), o.sellerUsername);
+      }
       for (const s of sellers) {
-        const u = byEmail.get(s.email);
-        if (u) sellerIdToUsername.set(s.id, u);
+        const hit = byBusiness.get(norm(s.businessName)) ?? byName.get(norm(s.ownerName)) ?? byOrderName.get(norm(s.businessName)) ?? null;
+        if (hit) sellerIdToUsername.set(s.id, hit);
       }
     }
   } catch {
