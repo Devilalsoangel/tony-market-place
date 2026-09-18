@@ -42,8 +42,16 @@ function itemSubtitle(kind: SectionKind, item: AnyItem): string {
   switch (kind) {
     case "top-sellers":
       return `\u2605 ${(item as TopSeller).rating.toFixed(1)} \u00b7 ${(item as TopSeller).totalSales.toLocaleString()} sales`;
-    case "hot-deals":
-      return `\u20b9${(item as HotDeal).discountedPrice.toFixed(2)} \u00b7 ${(item as HotDeal).discountPercentage}% off`;
+    case "hot-deals": {
+      // Expiry honesty: a past endDate with status still active means the
+      // serve guard hides the rail while the desk claims Active — surface it.
+      const deal = item as HotDeal;
+      const base = `\u20b9${deal.discountedPrice.toFixed(2)} \u00b7 ${deal.discountPercentage}% off`;
+      const t = Date.parse(deal.endDate ?? "");
+      if (!deal.endDate || Number.isNaN(t)) return base;
+      const left = Math.ceil((t - Date.now()) / 86400000);
+      return left < 0 ? `${base} \u00b7 expired` : `${base} \u00b7 ends in ${left}d`;
+    }
     case "storefront-banners": {
       const banner = item as StorefrontBanner;
       return `by @${banner.sellerUsername}${banner.subtitle ? ` \u00b7 ${banner.subtitle}` : ""}`;

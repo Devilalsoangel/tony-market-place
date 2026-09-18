@@ -329,24 +329,32 @@ export async function sweepExpiredPromotions() {
     await prisma.promotionPurchase.update({ where: { id: p.id }, data: { status: "expired", isPinned: false } });
   }
 
-  // Orphan expiry: featured/spotlight rows carry their own endDate strings
-  // and may have NO backing purchase (legacy/manual rows). A past endDate
-  // must unpin them even when no purchase row exists to trigger hideSlot.
+  // Orphan expiry: featured/spotlight/hotDeal rows carry their own endDate
+  // strings and may have NO backing purchase (legacy/manual rows). A past
+  // endDate must expire them even when no purchase row exists to trigger
+  // hideSlot — otherwise the desk shows Active while the serve guard hides
+  // the rail (paid placement silently dead). TopSeller has no endDate by
+  // design (standing curation); its expiry rides purchase hideSlot only.
   const nowMs = now.getTime();
   try {
-    const [feat, spots] = await Promise.all([
+    const [feat, spots, deals] = await Promise.all([
       prisma.featuredPost.findMany({ where: { status: ACTIVE_STATUS }, select: { id: true, endDate: true } }),
       prisma.spotlight.findMany({ where: { status: ACTIVE_STATUS }, select: { id: true, endDate: true } }),
+      prisma.hotDeal.findMany({ where: { status: ACTIVE_STATUS }, select: { id: true, endDate: true } }),
     ]);
     const pastIds = (rows: { id: string; endDate: string }[]) =>
       rows.filter((r) => r.endDate && !Number.isNaN(Date.parse(r.endDate)) && Date.parse(r.endDate) <= nowMs).map((r) => r.id);
     const featPast = pastIds(feat as { id: string; endDate: string }[]);
     const spotPast = pastIds(spots as { id: string; endDate: string }[]);
+    const dealPast = pastIds(deals as { id: string; endDate: string }[]);
     if (featPast.length) {
       await prisma.featuredPost.updateMany({ where: { id: { in: featPast } }, data: { status: "expired", isPinned: false } });
     }
     if (spotPast.length) {
       await prisma.spotlight.updateMany({ where: { id: { in: spotPast } }, data: { status: "expired", isPinned: false } });
+    }
+    if (dealPast.length) {
+      await prisma.hotDeal.updateMany({ where: { id: { in: dealPast } }, data: { status: "expired" } });
     }
   } catch {
     // best effort — serve-time filter below still hides them from buyers
