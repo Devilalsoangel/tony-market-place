@@ -68,8 +68,8 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
   // (users/products/orders/reported-users/sessions unbounded) to render ONE
   // profile — a scale DoS at 100k rows.
   const { data: users, refresh } = useDbResource<User>("users", { id });
-  const { data: products } = useDbResource<Product>("products", { take: 100 });
-  const { data: orders } = useDbResource<Order>("orders", { take: 100 });
+const { data: products, loading: productsLoading } = useDbResource<Product>("products", { take: 100 });
+const { data: orders, loading: ordersLoading } = useDbResource<Order>("orders", { take: 100 });
   const { data: reportedRows } = useDbResource<ReportedUserRow>("reported-users", { take: 100 });
   const { data: sessionRows } = useDbResource<AppSessionRow>("sessions", { take: 100 });
   const [confirmAction, setConfirmAction] = useState<"suspend" | "ban" | "delete" | null>(null);
@@ -282,7 +282,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                   <CardTitle>Listings ({listings.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <DataTable columns={listingColumns} data={listings} searchable searchKey="title" />
+                  <DataTable loading={productsLoading} columns={listingColumns} data={listings} searchable searchKey="title" />
                 </CardContent>
               </Card>
             )}
@@ -293,7 +293,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                   <CardTitle>Orders ({userOrders.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <DataTable columns={orderColumns} data={userOrders} searchable searchKey="id" />
+                  <DataTable loading={ordersLoading} columns={orderColumns} data={userOrders} searchable searchKey="id" />
                 </CardContent>
               </Card>
             )}

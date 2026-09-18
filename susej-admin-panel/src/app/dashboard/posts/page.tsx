@@ -71,7 +71,7 @@ const makeColumns = (onToggle: (p: MockFeedPost, action: "hide" | "restore" | "r
 ];
 
 export default function PostsPage() {
-  const { data: rows, refresh } = useDbResource<MockFeedPost>("posts");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockFeedPost>("posts");
   const [items, setItems] = useState<MockFeedPost[] | null>(rows);
 
   useEffect(() => {
@@ -112,7 +112,7 @@ export default function PostsPage() {
           <CardTitle>Content Moderation Queue</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(act)}
             data={items ?? []}
             searchable

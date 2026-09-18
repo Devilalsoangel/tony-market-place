@@ -94,7 +94,7 @@ export default function WithdrawalsPage() {
   // money decisions must never ghost-approved on a 409/offline.
   const [q, setQ] = useState("");
   const [skip, setSkip] = useState(0);
-  const { data: withdrawals, total: withdrawalsTotal, refresh } = useDbResource<WithdrawalRequest>("withdrawals", {
+  const { data: withdrawals, loading: withdrawalsLoading, total: withdrawalsTotal, refresh } = useDbResource<WithdrawalRequest>("withdrawals", {
     take: 100,
     ...(q.trim() ? { q: q.trim() } : {}),
     ...(skip > 0 ? { skip } : {}),
@@ -199,7 +199,7 @@ export default function WithdrawalsPage() {
             loaded={(items ?? []).length}
             searchPlaceholder="Search seller, method, status…"
           />
-          <DataTable
+          <DataTable loading={withdrawalsLoading}
             columns={makeColumns(
               (w) => setConfirm({ w, decision: "approve" }),
               (w) => setConfirm({ w, decision: "reject" }),

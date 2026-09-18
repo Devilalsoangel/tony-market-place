@@ -34,7 +34,7 @@ const columns = [
 ];
 
 export default function GatewayLogsPage() {
-  const { data: logs } = useDbResource<GatewayLog>("gateway-logs");
+  const { data: logs, loading: logsLoading } = useDbResource<GatewayLog>("gateway-logs");
   const [gatewayFilter, setGatewayFilter] = useState("all");
 
   const filtered = useMemo(
@@ -79,7 +79,7 @@ export default function GatewayLogsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={logsLoading}
             columns={columns}
             data={filtered}
             searchable

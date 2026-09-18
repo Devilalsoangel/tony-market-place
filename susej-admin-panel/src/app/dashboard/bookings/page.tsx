@@ -54,7 +54,7 @@ const makeColumns = (onDecide: (b: MockBooking, status: "confirmed" | "cancelled
 ];
 
 export default function BookingsPage() {
-  const { data: rows, total: bookingsTotal, refresh } = useDbResource<MockBooking>("bookings", { take: 100 });
+  const { data: rows, loading: rowsLoading, total: bookingsTotal, refresh } = useDbResource<MockBooking>("bookings", { take: 100 });
   const [items, setItems] = useState<MockBooking[] | null>(rows);
 
   useEffect(() => {
@@ -96,7 +96,7 @@ export default function BookingsPage() {
           <CardTitle>Service Bookings</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(decide)}
             data={items ?? []}
             searchable

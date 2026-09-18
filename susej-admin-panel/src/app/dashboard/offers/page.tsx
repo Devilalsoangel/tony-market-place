@@ -87,7 +87,7 @@ interface NewCoupon {
 }
 
 export default function OffersPage() {
-  const { data: coupons, total: couponsTotal, refresh } = useDbResource<Coupon>("coupons", { take: 100 });
+  const { data: coupons, loading: couponsLoading, total: couponsTotal, refresh } = useDbResource<Coupon>("coupons", { take: 100 });
   const [list, setList] = useState<Coupon[] | null>(coupons);
   const [newOpen, setNewOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Coupon | null>(null);
@@ -225,7 +225,7 @@ export default function OffersPage() {
           <CardTitle>Coupons</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={couponsLoading}
             columns={makeColumns(handleToggle, setDeleteTarget)}
             data={list ?? []}
             searchable

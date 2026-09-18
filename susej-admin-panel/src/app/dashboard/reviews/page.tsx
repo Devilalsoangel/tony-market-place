@@ -64,7 +64,7 @@ const makeColumns = (onApprove: (r: Review) => void, onDelete: (r: Review) => vo
 ];
 
 export default function ReviewsPage() {
-  const { data: reviews, refresh } = useDbResource<Review>("reviews");
+  const { data: reviews, loading: reviewsLoading, refresh } = useDbResource<Review>("reviews");
   const [list, setList] = useState<Review[] | null>(reviews);
   const [deleteTarget, setDeleteTarget] = useState<Review | null>(null);
 
@@ -121,7 +121,7 @@ export default function ReviewsPage() {
           <CardTitle>Reviews</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={reviewsLoading}
             columns={makeColumns(handleApprove, setDeleteTarget)}
             data={list ?? []}
             searchable

@@ -94,7 +94,7 @@ export default function UsersPage() {
   // Server-driven user table (?q=&skip=&take=) — row 101+ searchable.
   const [uq, setUq] = useState("");
   const [uskip, setUskip] = useState(0);
-  const { data: users, total: usersTotal, refresh: refreshUsers } = useDbResource<User>("users", {
+  const { data: users, loading: usersLoading, total: usersTotal, refresh: refreshUsers } = useDbResource<User>("users", {
     take: 100,
     ...(uq.trim() ? { q: uq.trim() } : {}),
     ...(uskip > 0 ? { skip: uskip } : {}),
@@ -203,7 +203,7 @@ export default function UsersPage() {
                   />
                   <DataTable
                     columns={columns}
-                    data={users ?? []}
+                    loading={usersLoading} data={users ?? []}
                     totalCount={usersTotal ?? (users ?? []).length}
                     searchable
                     searchKey="name"

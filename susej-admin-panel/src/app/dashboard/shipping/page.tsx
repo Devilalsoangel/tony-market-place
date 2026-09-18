@@ -119,9 +119,9 @@ const makeZoneColumns = (onToggle: (z: DeliveryZone) => void, onDelete: (z: Deli
 ];
 
 export default function ShippingPage() {
-  const { data: shipments, refresh: refreshShipments } = useDbResource<Shipment>("shipments");
-  const { data: carriers, refresh: refreshCarriers } = useDbResource<Carrier>("carriers");
-  const { data: zones, refresh: refreshZones } = useDbResource<DeliveryZone>("delivery-zones");
+  const { data: shipments, loading: shipmentsLoading, refresh: refreshShipments } = useDbResource<Shipment>("shipments");
+  const { data: carriers, loading: carriersLoading, refresh: refreshCarriers } = useDbResource<Carrier>("carriers");
+  const { data: zones, loading: zonesLoading, refresh: refreshZones } = useDbResource<DeliveryZone>("delivery-zones");
   const [carriersList, setCarriersList] = useState<Carrier[] | null>(carriers);
   const [zonesList, setZonesList] = useState<DeliveryZone[] | null>(zones);
   const [newCarrier, setNewCarrier] = useState(false);
@@ -278,8 +278,7 @@ export default function ShippingPage() {
                   <CardTitle>Shipments</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <DataTable
-                    columns={makeShipmentColumns((s) => {
+                  <DataTable loading={shipmentsLoading} columns={makeShipmentColumns((s) => {
                       // POD evidence is mandatory server-side (400): prompt
                       // for the tracking ID / receiver name, abort on empty.
                       const note = window.prompt("Delivery proof (courier tracking ID or receiver name):", "")?.trim() ?? "";
@@ -319,8 +318,7 @@ export default function ShippingPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <DataTable
-                    columns={makeCarrierColumns(toggleCarrier, (c) => setDeleteTarget({ kind: "carrier", id: c.id, name: c.name }))}
+                  <DataTable loading={carriersLoading} columns={makeCarrierColumns(toggleCarrier, (c) => setDeleteTarget({ kind: "carrier", id: c.id, name: c.name }))}
                     data={carriersList ?? []}
                     searchable
                     searchKey="name"
@@ -342,8 +340,7 @@ export default function ShippingPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <DataTable
-                    columns={makeZoneColumns(toggleZone, (z) => setDeleteTarget({ kind: "zone", id: z.id, name: z.name }))}
+                  <DataTable loading={zonesLoading} columns={makeZoneColumns(toggleZone, (z) => setDeleteTarget({ kind: "zone", id: z.id, name: z.name }))}
                     data={zonesList ?? []}
                     searchable
                     searchKey="name"

@@ -53,7 +53,7 @@ const makeColumns = (onAdjust: (u: MockLoyaltyUser) => void) => [
 ];
 
 export default function LoyaltyPage() {
-  const { data: rows, total: loyaltyTotal, refresh } = useDbResource<MockLoyaltyUser>("loyalty", { take: 100 });
+  const { data: rows, loading: rowsLoading, total: loyaltyTotal, refresh } = useDbResource<MockLoyaltyUser>("loyalty", { take: 100 });
   const [items, setItems] = useState<MockLoyaltyUser[] | null>(rows);
   const [target, setTarget] = useState<MockLoyaltyUser | null>(null);
   const [delta, setDelta] = useState("");
@@ -140,7 +140,7 @@ export default function LoyaltyPage() {
           <CardTitle>Loyalty Members</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(openAdjust)}
             data={items ?? []}
             totalCount={loyaltyTotal ?? (items ?? []).length}

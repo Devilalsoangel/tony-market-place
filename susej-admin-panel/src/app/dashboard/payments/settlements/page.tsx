@@ -46,8 +46,8 @@ const columns = [
 export default function SettlementsPage() {
   // Bounded windows with honest captions: the tie-out below is only as deep
   // as the loaded window (server-side cursor export is the full-book path).
-  const { data: ledger, total: ledgerTotal } = useDbResource<LedgerEntry>("ledger", { take: 100 });
-  const { data: dbOrders, total: ordersTotal } = useDbResource<{ id: string; trackingNumber: string; amount: number; status: string }>("orders", { take: 100 });
+  const { data: ledger, loading: ledgerLoading, total: ledgerTotal } = useDbResource<LedgerEntry>("ledger", { take: 100 });
+  const { data: dbOrders, loading: dbOrdersLoading, total: ordersTotal } = useDbResource<{ id: string; trackingNumber: string; amount: number; status: string }>("orders", { take: 100 });
   const partial =
     (typeof ledgerTotal === "number" && ledgerTotal > (ledger ?? []).length) ||
     (typeof ordersTotal === "number" && ordersTotal > (dbOrders ?? []).length);
@@ -167,8 +167,7 @@ export default function SettlementsPage() {
           <CardTitle>Settlement History</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
-            columns={columns}
+          <DataTable loading={ledgerLoading || dbOrdersLoading} columns={columns}
             data={settlements}
             searchable
             searchKey="sellerName"

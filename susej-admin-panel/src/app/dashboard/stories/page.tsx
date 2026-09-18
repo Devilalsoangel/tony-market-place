@@ -35,7 +35,7 @@ const makeColumns = (onRemove: (s: MockStory) => void) => [
 ];
 
 export default function StoriesPage() {
-  const { data: rows, refresh } = useDbResource<MockStory>("stories");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockStory>("stories");
   const [items, setItems] = useState<MockStory[] | null>(rows);
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function StoriesPage() {
           <CardTitle>Stories Feed</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(remove)}
             data={items ?? []}
             searchable

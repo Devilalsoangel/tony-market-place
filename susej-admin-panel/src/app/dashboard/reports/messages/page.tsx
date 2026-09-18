@@ -56,7 +56,7 @@ const makeColumns = (
 ];
 
 export default function ReportedMessagesPage() {
-  const { data: rows, refresh } = useDbResource<ReportedMessageRow>("reported-messages");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<ReportedMessageRow>("reported-messages");
   const [items, setItems] = useState<ReportedMessageRow[] | null>(rows);
 
   useEffect(() => {
@@ -95,7 +95,7 @@ export default function ReportedMessagesPage() {
           <CardTitle>Reported Chat Threads</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(remove, remove, remove)}
             data={items ?? []}
             searchable

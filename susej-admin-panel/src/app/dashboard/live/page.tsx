@@ -46,7 +46,7 @@ const makeColumns = (onEnd: (s: MockLiveStream) => void) => [
 ];
 
 export default function LivePage() {
-  const { data: rows, refresh } = useDbResource<MockLiveStream>("live");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockLiveStream>("live");
   const [items, setItems] = useState<MockLiveStream[] | null>(rows);
 
   useEffect(() => {
@@ -87,7 +87,7 @@ export default function LivePage() {
           <CardTitle>Streams</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(endStream)}
             data={items ?? []}
             searchable

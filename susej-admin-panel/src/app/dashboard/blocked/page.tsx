@@ -37,7 +37,7 @@ const makeColumns = (onUnblock: (u: MockBlockedUser) => void) => [
 ];
 
 export default function BlockedPage() {
-  const { data: rows, refresh } = useDbResource<MockBlockedUser>("blocked");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockBlockedUser>("blocked");
   const [items, setItems] = useState<MockBlockedUser[] | null>(rows);
 
   useEffect(() => {
@@ -86,7 +86,7 @@ export default function BlockedPage() {
           <CardTitle>Blocked Users</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(unblock)}
             data={items ?? []}
             searchable

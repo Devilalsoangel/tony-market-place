@@ -103,7 +103,7 @@ const tabs = [
 
 export default function CommunitiesPage() {
   const router = useRouter();
-  const { data: dbCommunities } = useDbResource<Community>("communities");
+  const { data: dbCommunities, loading: dbCommunitiesLoading } = useDbResource<Community>("communities");
   const communities = dbCommunities ?? [];
   const totalReports = communities.reduce((sum, c) => sum + c.reports, 0);
   const flaggedCount = communities.filter((c) => c.status !== "active" || c.reports > 0).length;
@@ -151,7 +151,7 @@ export default function CommunitiesPage() {
                 return <ModerationQueue communities={communities} />;
               }
 
-              return <DataTable columns={baseColumns} data={data} searchable searchKey="name" onRowClick={(row) => router.push(`/dashboard/communities/${row.id}`)} />;
+              return <DataTable loading={dbCommunitiesLoading} columns={baseColumns} data={data} searchable searchKey="name" onRowClick={(row) => router.push(`/dashboard/communities/${row.id}`)} />;
             }}
           </Tabs>
         </CardContent>

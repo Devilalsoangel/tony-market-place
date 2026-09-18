@@ -46,7 +46,7 @@ const makeColumns = (onBan: (c: Community) => void, onDismiss: (c: Community) =>
 ];
 
 export default function ReportedCommunitiesPage() {
-  const { data: communities, refresh } = useDbResource<Community>("communities");
+  const { data: communities, loading: communitiesLoading, refresh } = useDbResource<Community>("communities");
   const [items, setItems] = useState<Community[] | null>(communities);
 
   useEffect(() => {
@@ -94,7 +94,7 @@ export default function ReportedCommunitiesPage() {
           <CardTitle>Reported Communities</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={communitiesLoading}
             columns={makeColumns(banCommunity, dismiss)}
             data={reported}
             searchable

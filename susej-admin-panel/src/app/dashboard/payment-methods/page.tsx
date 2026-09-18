@@ -69,7 +69,7 @@ const makeColumns = (onToggle: (p: MockPaymentMethod) => void) => [
 ];
 
 export default function PaymentMethodsPage() {
-  const { data: rows, refresh } = useDbResource<MockPaymentMethod>("payment-methods");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockPaymentMethod>("payment-methods");
   const [items, setItems] = useState<MockPaymentMethod[] | null>(rows);
 
   useEffect(() => {
@@ -111,7 +111,7 @@ export default function PaymentMethodsPage() {
           <CardTitle>Saved Payment Methods</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(toggle)}
             data={items ?? []}
             searchable

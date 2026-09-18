@@ -88,7 +88,7 @@ export default function DisputesPage() {
   // made row 101+ unfindable. Paging resets on new search.
   const [q, setQ] = useState("");
   const [skip, setSkip] = useState(0);
-  const { data: rows, total: disputesTotal, refresh } = useDbResource<MockDispute>("disputes", {
+  const { data: rows, loading: rowsLoading, total: disputesTotal, refresh } = useDbResource<MockDispute>("disputes", {
     take: 100,
     ...(q.trim() ? { q: q.trim() } : {}),
     ...(skip > 0 ? { skip } : {}),
@@ -230,7 +230,7 @@ export default function DisputesPage() {
             loaded={(items ?? []).length}
             searchPlaceholder="Search order, buyer, seller, reason…"
           />
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(review, openResolve, canResolve)}
             data={items ?? []}
             totalCount={disputesTotal ?? (items ?? []).length}

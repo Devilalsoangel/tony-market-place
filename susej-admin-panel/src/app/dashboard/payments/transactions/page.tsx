@@ -47,7 +47,7 @@ export default function TransactionsPage() {
   // Settled wallet movements only (the API projects WalletTransaction rows):
   // queued money (requested payouts/refunds, pending COD) lives in its own
   // queue, not here — the subtitle says so instead of implying full cash.
-  const { data: txns, total: txnsTotal } = useDbResource<Transaction>("transactions", { take: 100 });
+  const { data: txns, loading: txnsLoading, total: txnsTotal } = useDbResource<Transaction>("transactions", { take: 100 });
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -112,7 +112,7 @@ export default function TransactionsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={txnsLoading}
             columns={columns}
             data={filtered}
             totalCount={typeFilter === "all" && statusFilter === "all" ? (txnsTotal ?? filtered.length) : null}

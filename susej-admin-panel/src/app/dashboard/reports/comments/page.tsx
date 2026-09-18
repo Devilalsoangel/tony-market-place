@@ -39,7 +39,7 @@ const makeColumns = (onDelete: (r: ReportedCommentRow) => void, onDismiss: (r: R
 ];
 
 export default function ReportedCommentsPage() {
-  const { data: rows, refresh } = useDbResource<ReportedCommentRow>("reported-comments");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<ReportedCommentRow>("reported-comments");
   const [items, setItems] = useState<ReportedCommentRow[] | null>(rows);
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export default function ReportedCommentsPage() {
           <CardTitle>Reported Comments</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(deleteComment, dismissReport)}
             data={items ?? []}
             searchable

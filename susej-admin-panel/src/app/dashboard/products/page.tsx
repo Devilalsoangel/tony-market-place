@@ -162,7 +162,7 @@ function actionToStatus(action: ProductAction): Product["status"] | null {
 
 export default function ProductsPage() {
   const router = useRouter();
-  const { data: dbProducts, total: productsTotal, refresh } = useDbResource<Product>("products", { take: 100 });
+  const { data: dbProducts, loading: dbProductsLoading, total: productsTotal, refresh } = useDbResource<Product>("products", { take: 100 });
   const { data: dbCategories } = useDbResource<Category>("categories");
   const [products, setProducts] = useState<Product[] | null>(dbProducts);
   const [categories, setCategories] = useState<Category[] | null>(dbCategories);
@@ -317,7 +317,7 @@ export default function ProductsPage() {
           <CardTitle>{activeLabel} ({filtered.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={dbProductsLoading}
             columns={columns}
             data={filtered}
             totalCount={activeCat === "__all" ? (productsTotal ?? filtered.length) : null}

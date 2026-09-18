@@ -89,7 +89,7 @@ const makeColumns = (
 ];
 
 export default function AuctionsPage() {
-  const { data: rows, refresh } = useDbResource<MockAuction>("auctions");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockAuction>("auctions");
   const [items, setItems] = useState<MockAuction[] | null>(rows);
   const [deleteTarget, setDeleteTarget] = useState<MockAuction | null>(null);
 
@@ -156,7 +156,7 @@ export default function AuctionsPage() {
           <CardTitle>Auction Queue</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(closeEarly, extend24h, setDeleteTarget)}
             data={items ?? []}
             searchable

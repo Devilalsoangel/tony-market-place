@@ -53,7 +53,7 @@ const makeColumns = (onApprove: (b: MockBundle) => void, onReject: (b: MockBundl
 ];
 
 export default function BundlesPage() {
-  const { data: rows, refresh } = useDbResource<MockBundle>("bundles");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockBundle>("bundles");
   const [items, setItems] = useState<MockBundle[] | null>(rows);
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export default function BundlesPage() {
           <CardTitle>Deal Bundles</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns((b) => decide(b, "active"), (b) => decide(b, "ended"))}
             data={items ?? []}
             searchable

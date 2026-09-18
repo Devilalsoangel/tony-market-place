@@ -47,7 +47,7 @@ const makeColumns = (
 ];
 
 export default function ReportedProductsPage() {
-  const { data: rows, refresh } = useDbResource<ReportedProductRow>("reported-products");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<ReportedProductRow>("reported-products");
   const { data: products } = useDbResource<Product>("products");
   const [items, setItems] = useState<ReportedProductRow[] | null>(rows);
 
@@ -101,8 +101,8 @@ export default function ReportedProductsPage() {
           <CardTitle>Reported Product Listings</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
-            columns={makeColumns(
+<DataTable loading={rowsLoading}
+columns={makeColumns(
               (r) => actOnProduct(r, "hide"),
               (r) => actOnProduct(r, "delete"),
               dismiss

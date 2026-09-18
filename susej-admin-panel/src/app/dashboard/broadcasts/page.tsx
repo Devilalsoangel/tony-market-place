@@ -77,7 +77,7 @@ const makeColumns = (onEnd: (b: MockBroadcast) => void, onStart: (b: MockBroadca
 ];
 
 export default function BroadcastsPage() {
-  const { data: rows, refresh } = useDbResource<MockBroadcast>("broadcasts");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockBroadcast>("broadcasts");
   const [items, setItems] = useState<MockBroadcast[] | null>(rows);
 
   useEffect(() => {
@@ -154,7 +154,7 @@ export default function BroadcastsPage() {
           <CardTitle>Broadcast History</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(endNow, startNow, cancel)}
             data={items ?? []}
             searchable

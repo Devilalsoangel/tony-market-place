@@ -39,7 +39,7 @@ const columns = [
 ];
 
 export default function FoodHubPage() {
-  const { data: rows } = useDbResource<MockFoodItem>("food-hub");
+  const { data: rows, loading: rowsLoading } = useDbResource<MockFoodItem>("food-hub");
   const [items, setItems] = useState<MockFoodItem[] | null>(rows);
 
   useEffect(() => {
@@ -67,7 +67,7 @@ export default function FoodHubPage() {
           <CardTitle>Food Hub Items</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={columns}
             data={items ?? []}
             searchable

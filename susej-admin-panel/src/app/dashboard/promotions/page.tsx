@@ -118,7 +118,7 @@ const makeColumns = (
 ];
 
 export default function PromotionsPage() {
-  const { data: rows, total: promosTotal, refresh } = useDbResource<PromotionPurchase>("promotions", { take: 100 });
+  const { data: rows, loading: rowsLoading, total: promosTotal, refresh } = useDbResource<PromotionPurchase>("promotions", { take: 100 });
   const [items, setItems] = useState<PromotionPurchase[] | null>(rows);
   const [kindFilter, setKindFilter] = useState<PromotionKind | "all">("all");
   const [refundTarget, setRefundTarget] = useState<PromotionPurchase | null>(null);
@@ -230,7 +230,7 @@ export default function PromotionsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(setRefundTarget)}
             data={list}
             totalCount={kindFilter === "all" ? (promosTotal ?? list.length) : null}

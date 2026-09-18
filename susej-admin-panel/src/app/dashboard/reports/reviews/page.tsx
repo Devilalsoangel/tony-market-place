@@ -57,7 +57,7 @@ const makeColumns = (onDelete: (r: Review) => void, onApprove: (r: Review) => vo
 ];
 
 export default function ReportedReviewsPage() {
-  const { data: reviews, refresh } = useDbResource<Review>("reviews");
+  const { data: reviews, loading: reviewsLoading, refresh } = useDbResource<Review>("reviews");
   const [items, setItems] = useState<Review[] | null>(reviews);
 
   useEffect(() => {
@@ -112,7 +112,7 @@ export default function ReportedReviewsPage() {
           <CardTitle>Reported Reviews</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={reviewsLoading}
             columns={makeColumns(
               deleteReview,
               (r) => resolveReview(r, "approved"),

@@ -56,7 +56,7 @@ const makeColumns = (onToggle: (h: MockHashtag) => void) => [
 ];
 
 export default function HashtagsPage() {
-  const { data: rows, refresh } = useDbResource<MockHashtag>("hashtags");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockHashtag>("hashtags");
   const [items, setItems] = useState<MockHashtag[] | null>(rows);
 
   useEffect(() => {
@@ -99,7 +99,7 @@ export default function HashtagsPage() {
           <CardTitle>Hashtag Registry</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(toggle)}
             data={items ?? []}
             searchable

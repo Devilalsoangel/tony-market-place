@@ -46,7 +46,7 @@ const makeColumns = (onAction: (r: MockReel, action: "hide" | "resolve") => void
 ];
 
 export default function ReelsPage() {
-  const { data: rows, refresh } = useDbResource<MockReel>("reels");
+  const { data: rows, loading: rowsLoading, refresh } = useDbResource<MockReel>("reels");
   const [items, setItems] = useState<MockReel[] | null>(rows);
 
   useEffect(() => {
@@ -87,7 +87,7 @@ export default function ReelsPage() {
           <CardTitle>Reels Library</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(act)}
             data={items ?? []}
             searchable

@@ -135,7 +135,7 @@ const columns = [
 
 export default function OrdersPage() {
   const router = useRouter();
-  const { data: orders, total: ordersTotal, refresh } = useDbResource<Order>("orders", { take: 100 });
+  const { data: orders, loading: ordersLoading, total: ordersTotal, refresh } = useDbResource<Order>("orders", { take: 100 });
   const [filter, setFilter] = useState<string>("all");
 
   const filtered = useMemo(() => {
@@ -185,7 +185,7 @@ export default function OrdersPage() {
           <CardTitle>All Orders</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={ordersLoading}
             columns={columns}
             data={filtered}
             totalCount={filter === "all" ? (ordersTotal ?? filtered.length) : null}

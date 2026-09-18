@@ -5,6 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { createColumnHelper } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table/data-table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -55,8 +56,19 @@ const baseColumns = [
   }),
 ];
 
-function PendingQueue({ sellers, total }: { sellers: Seller[]; total: number | null }) {
+function PendingQueue({ sellers, total, loading }: { sellers: Seller[]; total: number | null; loading?: boolean }) {
   const pending = sellers.filter((s) => s.kycStatus === "pending");
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-10 w-full" />
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-20 w-full" />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -111,11 +123,11 @@ const tabs = [
 
 export default function SellersPage() {
   const router = useRouter();
-  const { data: sellers, total: sellersTotal, refresh } = useDbResource<Seller>("sellers", { take: 100 });
+  const { data: sellers, loading: sellersLoading, total: sellersTotal, refresh } = useDbResource<Seller>("sellers", { take: 100 });
   // Pending queue pages the SERVER (?status=pending → kycStatus): the
   // in-memory filter over the first 100 hid pendings at row 101+.
   const [pendingSkip, setPendingSkip] = useState(0);
-  const { data: pendingRows, total: pendingTotal } = useDbResource<Seller>("sellers", {
+  const { data: pendingRows, loading: pendingRowsLoading, total: pendingTotal } = useDbResource<Seller>("sellers", {
     take: 100,
     status: "pending",
     ...(pendingSkip > 0 ? { skip: pendingSkip } : {}),
@@ -144,9 +156,7 @@ export default function SellersPage() {
                   <CardTitle>All Sellers ({allSellers.length}{win})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <DataTable
-                    columns={baseColumns}
-                    data={allSellers}
+                  <DataTable loading={sellersLoading} columns={baseColumns} data={allSellers}
                     totalCount={sellersTotal ?? allSellers.length}
                     searchable
                     searchKey="businessName"
@@ -188,7 +198,7 @@ export default function SellersPage() {
                   <CardTitle>Pending Queue ({pendingCount})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <PendingQueue sellers={pendingRows ?? []} total={pendingTotal} />
+                  <PendingQueue sellers={pendingRows ?? []} total={pendingTotal} loading={pendingRowsLoading} />
                   {typeof pendingTotal === "number" && pendingTotal > (pendingRows ?? []).length && (
                     <div className="mt-3 flex items-center gap-2">
                       <Button
@@ -221,7 +231,7 @@ export default function SellersPage() {
                   <CardTitle>Verified Sellers ({verifiedCount}{win})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <DataTable
+                  <DataTable loading={sellersLoading}
                     columns={baseColumns}
                     data={allSellers.filter((s) => s.kycStatus === "approved")}
                     searchable
@@ -237,7 +247,7 @@ export default function SellersPage() {
                   <CardTitle>Rejected Sellers ({rejectedCount}{win})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <DataTable
+                  <DataTable loading={sellersLoading}
                     columns={baseColumns}
                     data={allSellers.filter((s) => s.kycStatus === "rejected")}
                     searchable

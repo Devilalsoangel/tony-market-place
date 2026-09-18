@@ -26,7 +26,7 @@ const columns = [
 ];
 
 export default function AddressBookPage() {
-  const { data: rows } = useDbResource<MockAddressBookEntry>("address-book");
+  const { data: rows, loading: rowsLoading } = useDbResource<MockAddressBookEntry>("address-book");
   const [items, setItems] = useState<MockAddressBookEntry[] | null>(rows);
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export default function AddressBookPage() {
           <CardTitle>All Addresses</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={columns}
             data={items ?? []}
             searchable

@@ -52,7 +52,7 @@ const makeColumns = (onAction: (r: ReportedMessageRow, action: "mute" | "block" 
 ];
 
 export default function MessagesPage() {
-  const { data: rows, total: messagesTotal, refresh } = useDbResource<ReportedMessageRow>("reported-messages", { take: 100 });
+  const { data: rows, loading: rowsLoading, total: messagesTotal, refresh } = useDbResource<ReportedMessageRow>("reported-messages", { take: 100 });
   const [items, setItems] = useState<ReportedMessageRow[] | null>(rows);
 
   useEffect(() => {
@@ -107,7 +107,7 @@ export default function MessagesPage() {
           <CardTitle>Reported Chat Threads</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
+          <DataTable loading={rowsLoading}
             columns={makeColumns(act)}
             data={items ?? []}
             totalCount={messagesTotal ?? (items ?? []).length}

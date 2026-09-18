@@ -81,7 +81,7 @@ const initialPermissions: Record<string, { [module: string]: { [action: string]:
 };
 
 export default function AdminsPage() {
-  const { data: auditLogs } = useDbResource<AuditLog>("audit-logs");
+  const { data: auditLogs, loading: auditLogsLoading } = useDbResource<AuditLog>("audit-logs");
   const { data: dbAdmins, refresh } = useDbResource<AdminUser>("admins");
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   useEffect(() => {
@@ -441,7 +441,7 @@ export default function AdminsPage() {
                       </div>
                     </div>
                   )}
-                  <DataTable columns={auditColumns} data={filteredLogs} searchable searchKey="adminName" />
+                  <DataTable loading={auditLogsLoading} columns={auditColumns} data={filteredLogs} searchable searchKey="adminName" />
                 </CardContent>
               </Card>
             )}

@@ -86,7 +86,7 @@ export default function RefundsPage() {
   // searchable and reachable, not window-only.
   const [q, setQ] = useState("");
   const [skip, setSkip] = useState(0);
-  const { data: refunds, total: refundsTotal, refresh } = useDbResource<RefundRequest>("refunds", {
+  const { data: refunds, loading: refundsLoading, total: refundsTotal, refresh } = useDbResource<RefundRequest>("refunds", {
     take: 100,
     ...(q.trim() ? { q: q.trim() } : {}),
     ...(skip > 0 ? { skip } : {}),
@@ -189,7 +189,7 @@ export default function RefundsPage() {
             loaded={(rows ?? []).length}
             searchPlaceholder="Search order, buyer, seller, reason…"
           />
-          <DataTable
+          <DataTable loading={refundsLoading}
             columns={makeColumns(
               (r) => setConfirm({ r, decision: "approve" }),
               (r) => setConfirm({ r, decision: "reject" }),

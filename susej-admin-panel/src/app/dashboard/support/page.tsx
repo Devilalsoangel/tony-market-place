@@ -51,7 +51,7 @@ const columns = [
 ];
 
 export default function SupportPage() {
-  const { data: tickets } = useDbResource<SupportTicket>("tickets");
+  const { data: tickets, loading: ticketsLoading } = useDbResource<SupportTicket>("tickets");
 
   return (
     <div className="space-y-6">
@@ -64,7 +64,7 @@ export default function SupportPage() {
           <CardTitle>Support Tickets</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable columns={columns} data={tickets ?? []} searchable searchKey="subject" />
+          <DataTable columns={columns} loading={ticketsLoading} data={tickets ?? []} searchable searchKey="subject" />
         </CardContent>
       </Card>
     </div>
