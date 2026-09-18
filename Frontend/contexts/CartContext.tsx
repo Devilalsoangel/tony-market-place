@@ -39,7 +39,7 @@ interface CartContextType {
   subtotal: number;
   /** Returns false when rejected by the single-seller guard so callers can
    *  explain (industry-standard: never silently ignore an add-to-cart tap). */
-  addToCart: (item: Omit<CartItem, 'quantity'>) => boolean;
+  addToCart: (item: Omit<CartItem, 'quantity'>, quantity?: number) => boolean;
   /** Reprice items to server truth at checkout (industry-standard: never
    *  charge a stale cart price). Keys are line keys (listing+variant+bundle);
    *  returns the line keys whose price changed. */
@@ -101,7 +101,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const subtotal = Math.round(cart.reduce((sum, item) => sum + item.price * item.quantity, 0));
 
   const addToCart = useCallback(
-    (item: Omit<CartItem, 'quantity'>) => {
+    (item: Omit<CartItem, 'quantity'>, quantity?: number) => {
       // Single-seller guard reads the ref mirror (this render's cart), so the
       // boolean is exact for every UI-reachable call sequence. The in-updater
       // re-check stays as the STATE backstop for same-tick double-taps (cart
@@ -118,13 +118,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         if (prev.length > 0 && prev[0].sellerUsername !== item.sellerUsername) {
           return prev;
         }
+        // PDP quantity stepper: add the chosen qty (existing lines grow,
+        // new lines start there) instead of always +1.
+        const qty = Number.isFinite(quantity) ? Math.max(1, Math.min(99, Math.floor(quantity as number))) : 1;
         const key = cartLineKey(item);
         const existing = prev.find((i) => cartLineKey(i) === key);
         const next = existing
           ? prev.map((i) =>
-              cartLineKey(i) === key ? { ...i, quantity: i.quantity + 1 } : i
+              cartLineKey(i) === key ? { ...i, quantity: i.quantity + qty } : i
             )
-          : [...prev, { ...item, quantity: 1 }];
+          : [...prev, { ...item, quantity: qty }];
         persist(next);
         return next;
       });

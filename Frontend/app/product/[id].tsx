@@ -63,6 +63,9 @@ export default function ProductDetailsScreen() {
   // once the user scrolls past the gallery.
   const [showCompactHeader, setShowCompactHeader] = useState(false);
   const [variantSelections, setVariantSelections] = useState<Record<string, string>>({});
+  // Amazon/OLX PDP quantity stepper: chosen qty travels into addToCart
+  // (existing lines grow by it, new lines start at it). Resets per listing.
+  const [qty, setQty] = useState(1);
   const [alertDrop, setAlertDrop] = useState<{ previous: number } | null>(null);
   const alertChecked = useRef<string>('');
   const getBlockedKey = () => {
@@ -91,6 +94,7 @@ export default function ProductDetailsScreen() {
   useEffect(() => {
     setServerPost(null);
     setServerMiss(false);
+    setQty(1);
   }, [postId]);
   useEffect(() => {
     if (localPost || !postId || serverPost || serverMiss) return;
@@ -406,7 +410,7 @@ export default function ProductDetailsScreen() {
           seller: post.sellerName,
           sellerUsername: post.sellerUsername,
           ...(variantLabel ? { variantLabel } : {}),
-        });
+        }, qty);
         if (!added) {
           Alert.alert(
             'Cart belongs to another seller',
@@ -1042,6 +1046,45 @@ export default function ProductDetailsScreen() {
           borderTopColor: colors.surfaceContainer,
         }}
       >
+        {/* Qty stepper + Make Offer (goods/food only — Amazon/OLX PDP parity).
+            Stepper caps at live stockLeft; offer entry shows only when the
+            seller allows negotiation and deep-links the chat offer panel. */}
+        {(flow.archetype === 'goods' || flow.archetype === 'food') && (
+          <View className="flex-row items-center gap-3 pb-3">
+            <View className="flex-row items-center rounded-figma-12 border" style={{ borderColor: colors.outlineVariant }}>
+              <TouchableOpacity
+                className="h-11 w-11 items-center justify-center"
+                accessibilityLabel="Decrease quantity"
+                onPress={() => setQty((q) => Math.max(1, q - 1))}
+              >
+                <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 18 }}>−</Text>
+              </TouchableOpacity>
+              <Text className="font-inter-700 text-textPrimary w-8 text-center" style={{ fontSize: 16 }}>{qty}</Text>
+              <TouchableOpacity
+                className="h-11 w-11 items-center justify-center"
+                accessibilityLabel="Increase quantity"
+                onPress={() => setQty((q) => Math.min(typeof post?.stockLeft === 'number' && post.stockLeft > 0 ? post.stockLeft : 99, q + 1))}
+              >
+                <Text className="font-inter-700 text-textPrimary" style={{ fontSize: 18 }}>+</Text>
+              </TouchableOpacity>
+            </View>
+            {post?.negotiable === true && (
+              <TouchableOpacity
+                className="flex-1 h-11 items-center justify-center rounded-figma-12 border"
+                style={{ borderColor: colors.primary }}
+                onPress={() =>
+                  router.push(
+                    `/(tabs)/chat?seller=${encodeURIComponent(sellerUsername)}&product=${encodeURIComponent(title)}&listing=${encodeURIComponent(String(id))}`
+                  )
+                }
+              >
+                <Text className="font-inter-400" style={{ fontSize: 15, color: colors.primary }}>
+                  Make Offer
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
         <View className="flex-row gap-3">
           <TouchableOpacity className="flex-1 h-14 items-center justify-center rounded-figma-12" style={{ backgroundColor: colors.primaryContainer }} onPress={handlePrimaryAction}>
             <Text className="font-inter-400 text-white" style={{ fontSize: 16, lineHeight: 24 }}>

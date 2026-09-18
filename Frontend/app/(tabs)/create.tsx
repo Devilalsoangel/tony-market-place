@@ -163,6 +163,61 @@ export default function CreateScreen() {
   const [posting, setPosting] = useState(false);
   const [posted, setPosted] = useState(false);
   const [publishNote, setPublishNote] = useState<string | null>(null);
+  // OLX-style sell-draft persistence: a back-swipe, tab switch, or app
+  // restart must never wipe the 6-step wizard. Drafts are per-seller, saved
+  // debounced on every change, restored on mount, cleared on publish.
+  // Images persist as remote URIs only (bundled require() ids and stale
+  // file:// picks can't revive); camera hand-off seeds win for images.
+  const draftKey = user?.username ? `@susej_listing_draft:${user.username}` : null;
+  const [draftRestored, setDraftRestored] = useState(false);
+  useEffect(() => {
+    if (!draftKey || draftRestored) return;
+    let alive = true;
+    AsyncStorage.getItem(draftKey)
+      .then((raw) => {
+        if (!alive || !raw) return;
+        try {
+          const d = JSON.parse(raw);
+          if (!d || typeof d !== 'object') return;
+          if (typeof d.title === 'string') setTitle(d.title);
+          if (typeof d.description === 'string') setDescription(d.description);
+          if (typeof d.category === 'string') setCategory(d.category);
+          if (Array.isArray(d.subCategories)) setSubCategories(d.subCategories.filter((x: unknown) => typeof x === 'string'));
+          if (typeof d.condition === 'string') setCondition(d.condition);
+          if (typeof d.price === 'string') setPrice(d.price);
+          if (typeof d.mrp === 'string') setMrp(d.mrp);
+          if (typeof d.quantity === 'string') setQuantity(d.quantity);
+          if (typeof d.negotiable === 'boolean') setNegotiable(d.negotiable);
+          if (typeof d.delivery === 'string') setDelivery(d.delivery);
+          if (typeof d.city === 'string') setCity(d.city);
+          if (Array.isArray(d.variants)) setVariants(d.variants);
+          if (d.showVariants === true) setShowVariants(true);
+          if (d && typeof d.extra === 'object') setExtra(d.extra);
+          if (d && typeof d.sellLoc === 'object' && typeof d.sellLoc.lat === 'number') setSellLoc(d.sellLoc);
+          if (Array.isArray(d.selectedImages) && seededFromCamera.length === 0) {
+            const uris = d.selectedImages.filter((x: unknown) => typeof x === 'string' && /^https?:\/\//.test(x));
+            if (uris.length > 0) setSelectedImages(uris);
+          }
+          if (typeof d.step === 'number' && d.step >= 1 && d.step <= 6) setStep(d.step);
+        } catch {}
+        if (alive) setDraftRestored(true);
+      })
+      .catch(() => { if (alive) setDraftRestored(true); });
+    return () => { alive = false; };
+  }, [draftKey]);
+  useEffect(() => {
+    if (!draftKey || !draftRestored) return;
+    const t = setTimeout(() => {
+      const draft = {
+        step, title, description, category, subCategories, condition, price, mrp,
+        quantity, negotiable, delivery, city, variants, showVariants, extra, sellLoc,
+        selectedImages: selectedImages.filter((x) => typeof x === 'string' && /^https?:\/\//.test(x)),
+        updatedAt: Date.now(),
+      };
+      AsyncStorage.setItem(draftKey, JSON.stringify(draft)).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [draftKey, draftRestored, step, title, description, category, subCategories, condition, price, mrp, quantity, negotiable, delivery, city, variants, showVariants, extra, sellLoc, selectedImages]);
 
   const flow = getFlow(category);
 
@@ -441,6 +496,9 @@ export default function CreateScreen() {
     // say exactly that instead of "live in the feed".
     setPublishNote(outcome === 'acked' ? null : 'Saved on this device — it goes live in the feed when you reconnect.');
     setPosted(true);
+    // Published: the draft served its purpose — clear it so the next
+    // listing starts fresh instead of resurrecting this one.
+    if (draftKey) AsyncStorage.removeItem(draftKey).catch(() => {});
     setTimeout(() => router.replace('/(tabs)/feed'), 1200);
   };
 
