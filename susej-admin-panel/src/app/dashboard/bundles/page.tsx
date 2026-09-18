@@ -97,6 +97,8 @@ export default function BundlesPage() {
             searchable
             searchKey="title"
             filename="bundles"
+            emptyTitle="No bundles yet"
+            emptyDescription="Sellers create multi-item deal bundles from their dashboard — bundles appear here for approval and monitoring."
             exportColumns={[
               { key: "title", label: "Bundle" },
               { key: "sellerName", label: "Seller" },

@@ -39,6 +39,13 @@ interface DataTableProps<TData> {
   onRowClick?: (row: TData) => void;
   onBulkDelete?: (selectedRows: TData[]) => Promise<void> | void;
   /**
+   * Guidance shown when the table is genuinely empty (Shopify-style setup
+   * hint instead of the generic "There is nothing here yet."). Desks pass
+   * their own copy explaining where rows come from.
+   */
+  emptyTitle?: string;
+  emptyDescription?: string;
+  /**
    * Server-side total for this resource (useDbResource `total`). The API caps
    * `take` at 100 — when total exceeds the loaded window the caption says so
    * instead of silently truncating money queues past row 100.
@@ -61,6 +68,8 @@ export function DataTable<TData>({
   onRowClick,
   onBulkDelete,
   totalCount,
+  emptyTitle,
+  emptyDescription,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -236,7 +245,7 @@ export function DataTable<TData>({
             {table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td colSpan={allColumns.length} className="px-4 py-12">
-                  <EmptyState />
+                  <EmptyState title={emptyTitle} description={emptyDescription} />
                 </td>
               </tr>
             ) : (

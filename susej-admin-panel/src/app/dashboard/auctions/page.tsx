@@ -162,6 +162,8 @@ export default function AuctionsPage() {
             searchable
             searchKey="title"
             filename="auctions"
+            emptyTitle="No auctions running"
+            emptyDescription="Sellers start live-bidding listings from the app's Create flow — auctions appear here to monitor, close early, extend, or remove."
             exportColumns={[
               { key: "title", label: "Listing" },
               { key: "sellerName", label: "Seller" },
