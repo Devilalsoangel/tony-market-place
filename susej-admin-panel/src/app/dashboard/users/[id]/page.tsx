@@ -67,7 +67,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
   // Single-row user + capped relations: the old code pulled 5 FULL tables
   // (users/products/orders/reported-users/sessions unbounded) to render ONE
   // profile — a scale DoS at 100k rows.
-  const { data: users, refresh } = useDbResource<User>("users", { id });
+  const { data: users, loading: usersLoading, refresh } = useDbResource<User>("users", { id });
 const { data: products, loading: productsLoading } = useDbResource<Product>("products", { take: 100 });
 const { data: orders, loading: ordersLoading } = useDbResource<Order>("orders", { take: 100 });
   const { data: reportedRows } = useDbResource<ReportedUserRow>("reported-users", { take: 100 });
@@ -115,6 +115,14 @@ const { data: orders, loading: ordersLoading } = useDbResource<Order>("orders", 
   );
 
   if (!user) {
+if (users === null || usersLoading) {
+return (
+<div className="space-y-6">
+<Breadcrumb items={[{ label: "Users", href: "/dashboard/users" }, { label: "User" }]} />
+<div className="py-16 text-center text-sm text-[#A1A1AA]">Loading user…</div>
+</div>
+);
+}
     return (
       <div className="space-y-6">
         <Breadcrumb items={[{ label: "Users", href: "/dashboard/users" }, { label: "User" }]} />

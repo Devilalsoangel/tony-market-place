@@ -163,7 +163,7 @@ function IdentityCard({ seller, onView }: { seller: Seller; onView: (d: SellerDo
 export default function SellerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   // Single-row mode: exact seller, never the whole table (false-negative past 100 rows).
-  const { data: sellers, refresh } = useDbResource<Seller>("sellers", { id });
+  const { data: sellers, loading: sellersLoading, refresh } = useDbResource<Seller>("sellers", { id });
   const { data: categoryRows } = useDbResource<{ id: string; name: string }>("categories");
   const adminUser = useAuthStore((s) => s.user);
   // KYC internals (PAN/DOB/ID photos) are manager+ only. Finance keeps
@@ -189,6 +189,16 @@ export default function SellerDetailPage({ params }: { params: Promise<{ id: str
   }, [id]);
 
   if (!seller) {
+    // Null = still fetching (cold serverless takes seconds): skeleton, never
+    // a false "not found". Only a LOADED empty result means missing.
+    if (sellers === null || sellersLoading) {
+      return (
+        <div className="space-y-6">
+          <Breadcrumb items={[{ label: "Sellers", href: "/dashboard/sellers" }, { label: "Seller" }]} />
+          <div className="py-16 text-center text-sm text-[#A1A1AA]">Loading seller…</div>
+        </div>
+      );
+    }
     return (
       <div className="space-y-6">
         <Breadcrumb items={[{ label: "Sellers", href: "/dashboard/sellers" }, { label: "Seller" }]} />
