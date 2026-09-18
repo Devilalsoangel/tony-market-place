@@ -129,6 +129,11 @@ function FeedContent() {
   // renders while its rail is ON, none renders while OFF.
   const [homeFeaturedPinned, setHomeFeaturedPinned] = useState<string[]>([]);
   const [homeFeaturedBoosted, setHomeFeaturedBoosted] = useState<string[]>([]);
+  // Server rails (single truth with the admin desks): /api/v1/home serves
+  // admin-curated + live-resolved top sellers and paid hot deals. The app
+  // renders THESE first; organic suggestions fill leftover slots only.
+  const [homeTopSellers, setHomeTopSellers] = useState<Array<{ sellerId: string; sellerUsername?: string | null; sellerName: string; sellerLogo?: string | null; totalSales?: number; rating?: number; reviewCount?: number; position?: number; isPinned?: boolean | null }>>([]);
+  const [homeHotDeals, setHomeHotDeals] = useState<Array<{ productId: string; postId?: string | null; productName: string; productImage?: string | null; originalPrice?: number; discountedPrice?: number; discountPercentage?: number; priority?: number }>>([]);
 
   // Reload the user's own uploaded story whenever the feed regains focus
   // (so a story posted from /create-story shows up in the tray immediately)
@@ -162,6 +167,19 @@ function FeedContent() {
         } else if (active) {
           setHomeFeaturedPinned([]);
           setHomeFeaturedBoosted([]);
+        }
+        // Server rails: curated top sellers (username-resolved) + paid hot
+        // deals (postId-resolved). Rows without a resolvable key are dropped —
+        // a dead chip is worse than a shorter rail; organic fills the gap.
+        if (res.ok && secOn('top-sellers') && res.data?.topSellers?.length) {
+          if (active) setHomeTopSellers(res.data.topSellers.filter((t) => t?.sellerUsername));
+        } else if (active) {
+          setHomeTopSellers([]);
+        }
+        if (res.ok && secOn('hot-deals') && res.data?.hotDeals?.length) {
+          if (active) setHomeHotDeals(res.data.hotDeals.filter((d) => d?.postId));
+        } else if (active) {
+          setHomeHotDeals([]);
         }
         const list = res.ok && secOn('storefront-banners') && res.data?.marketingBanners?.length ? res.data.marketingBanners : [];
         // Only banners with a REAL uploaded image can be a hero — a text-only
@@ -234,6 +252,36 @@ function FeedContent() {
     }
     return Array.from(seen.values()).slice(0, 8);
   }, [posts, isFollowing, authUser?.username, mutedSellers, hiddenPostIds]);
+
+  // TOP SELLERS rail (single truth with the admin desk): server-curated rows
+  // (live sales-resolved, username-keyed) lead in admin rank order; organic
+  // suggestions backfill leftover slots so the rail never goes dead when the
+  // desk is empty. Paid pill + follow + kill-switch behave as before.
+  const topSellerChips = useMemo(() => {
+    if (!sectionOn('top-sellers')) return [];
+    const byUser = new Map(suggestions.map((s) => [s.username, s]));
+    const out: Array<{ username: string; name: string; location: string; verified: boolean; avatar: any }> = [];
+    const seen = new Set<string>();
+    for (const t of homeTopSellers) {
+      const u = t.sellerUsername as string | undefined;
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      const s = byUser.get(u);
+      out.push({
+        username: u,
+        name: t.sellerName || s?.name || u,
+        location: s?.location ?? '',
+        verified: s?.verified ?? false,
+        avatar: s?.avatar ?? resolveAvatar(u),
+      });
+    }
+    for (const s of suggestions) {
+      if (seen.has(s.username) || out.length >= 6) continue;
+      seen.add(s.username);
+      out.push(s);
+    }
+    return out.slice(0, 6);
+  }, [homeTopSellers, suggestions, homeSections]);
 
   const toggleCompare = (postId: string) => {
     setCompareIds((prev) => {
@@ -310,20 +358,41 @@ function FeedContent() {
 
   // PAID Hot Deal campaigns ONLY (kind=hotDeal with a real post). Organic MRP
   // discounts are NOT deals-rail material — they stay as badges on normal cards.
-  const hotDealCards = useMemo(
-    () =>
-      sortedPosts
-        .filter((p) => hotDealIds.has(p.id))
-        .map((p) => ({
-          id: p.id,
-          name: p.description,
-          price: p.price,
-          oldPrice: typeof p.mrp === 'number' && p.mrp > p.price ? p.mrp : undefined as number | undefined,
+  // Server hot deals (admin-curated paid placements, postId-resolved) lead;
+  // live-campaign matches append behind them, deduped by post id.
+  const hotDealCards = useMemo(() => {
+    const seen = new Set<string>();
+    const cards: Array<{ id: string; name: string; price: number; oldPrice?: number; badge: string; image?: string }> = [];
+    if (sectionOn('hot-deals')) {
+      for (const d of homeHotDeals) {
+        const pid = d.postId as string;
+        if (!pid || seen.has(pid)) continue;
+        seen.add(pid);
+        const price = typeof d.discountedPrice === 'number' ? d.discountedPrice : (typeof d.originalPrice === 'number' ? d.originalPrice : 0);
+        cards.push({
+          id: pid,
+          name: d.productName,
+          price,
+          oldPrice: typeof d.originalPrice === 'number' && d.originalPrice > price ? d.originalPrice : undefined,
           badge: 'URGENT',
-          image: p.image ?? p.images?.[0],
-        })),
-    [sortedPosts, hotDealIds]
-  );
+          image: d.productImage ?? undefined,
+        });
+      }
+    }
+    for (const p of sortedPosts) {
+      if (!hotDealIds.has(p.id) || seen.has(p.id)) continue;
+      seen.add(p.id);
+      cards.push({
+        id: p.id,
+        name: p.description,
+        price: p.price,
+        oldPrice: typeof p.mrp === 'number' && p.mrp > p.price ? p.mrp : undefined as number | undefined,
+        badge: 'URGENT',
+        image: p.image ?? p.images?.[0],
+      });
+    }
+    return cards;
+  }, [sortedPosts, hotDealIds, homeHotDeals, homeSections]);
 
   // Deals rail = paid campaigns only. Hides entirely when nothing is paid.
   const dealsRail = useMemo(() => hotDealCards, [hotDealCards]);
@@ -702,7 +771,7 @@ function FeedContent() {
             })()}
 
             {/* Top sellers — more breathing room */}
-            {!authLoading && suggestions.length > 0 && (
+            {!authLoading && topSellerChips.length > 0 && (
               <View className="mt-6">
                 <View className="flex-row items-center justify-between px-5">
                   <Text className="text-figma-12 font-inter-600 text-secondary" style={{ letterSpacing: 0.12 }}>
@@ -719,7 +788,7 @@ function FeedContent() {
                   contentContainerClassName="px-5"
                   contentContainerStyle={{ gap: 16 }}
                 >
-                  {suggestions.slice(0, 6).map((s) => {
+                  {topSellerChips.map((s) => {
                     // REAL data only: name/avatar/verified from the seller's posts,
                     // follower count from the server Follow table (0 when nobody follows yet).
                     const realFollowers = followerCounts[s.username] ?? 0;

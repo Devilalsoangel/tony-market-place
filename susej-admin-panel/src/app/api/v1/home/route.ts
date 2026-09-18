@@ -132,6 +132,29 @@ export async function GET(request: NextRequest) {
   );
   const serveHotDeals = liveHotDeals.filter((d) => !postBlocked((d as { productId?: unknown }).productId));
 
+  // Seller identity for the app: TopSeller.sellerId is the Seller cuid, but
+  // the app navigates/follows by USERNAME (/seller/:u). Resolve cuid→email→
+  // username once (≤3 rows). Missing mapping serves null — the app falls back
+  // to its organic suggestions instead of a dead chip.
+  const sellerIdToUsername = new Map<string, string>();
+  try {
+    const ids = Array.from(new Set(topSellers.map((t) => t.sellerId).filter(Boolean)));
+    if (ids.length > 0) {
+      const sellers = await prisma.seller.findMany({ where: { id: { in: ids } }, select: { id: true, email: true } });
+      const emails = Array.from(new Set(sellers.map((s) => s.email).filter(Boolean)));
+      const users = emails.length > 0
+        ? await prisma.user.findMany({ where: { email: { in: emails } }, select: { email: true, username: true } })
+        : [];
+      const byEmail = new Map(users.filter((u) => u.username).map((u) => [u.email, u.username as string]));
+      for (const s of sellers) {
+        const u = byEmail.get(s.email);
+        if (u) sellerIdToUsername.set(s.id, u);
+      }
+    }
+  } catch {
+    // Mapping failure serves username-less rows (snapshot fallback below).
+  }
+
   // Live sales truth: TopSeller snapshots go stale the moment the next
   // order delivers, so re-resolve delivered-order units + review aggregates
   // per row at serve time (max 3 rows — cheap). Snapshot stays as fallback.
@@ -139,7 +162,9 @@ export async function GET(request: NextRequest) {
   // serve a fabricated name with real stats (intelligence guard).
   const liveStats = new Map<string, { totalSales: number; rating: number; reviewCount: number; sellerName: string }>();
   try {
-    const usernames = Array.from(new Set(topSellers.map((t) => t.sellerId).filter(Boolean)));
+    // Orders/reviews key by USERNAME — resolve through the cuid→username map
+    // first (looking them up by Seller cuid silently matched nothing).
+    const usernames = Array.from(new Set(topSellers.map((t) => sellerIdToUsername.get(t.sellerId)).filter(Boolean) as string[]));
     await Promise.all(
       usernames.map(async (u) => {
         try {
@@ -187,9 +212,11 @@ export async function GET(request: NextRequest) {
       "spotlight": !sectionOff.has("spotlight"),
     },
     topSellers: (sectionOff.has("top-sellers") ? [] : topSellers).map((t) => {
-      const live = liveStats.get(t.sellerId);
+      const username = sellerIdToUsername.get(t.sellerId) ?? null;
+      const live = username ? liveStats.get(username) : undefined;
       return {
         sellerId: t.sellerId,
+        sellerUsername: username,
         sellerName: live?.sellerName || t.sellerName,
         sellerLogo: t.sellerLogo,
         totalSales: live?.totalSales ?? t.totalSales,
@@ -201,6 +228,9 @@ export async function GET(request: NextRequest) {
     }),
     hotDeals: (sectionOff.has("hot-deals") ? [] : serveHotDeals).map((d) => ({
       productId: d.productId,
+      // HotDeal.productId is the lst_<postId> mirror id; the app matches bare
+      // post ids — serve the stripped key so clients never string-surgery.
+      postId: d.productId.replace(/^lst_/, ""),
       productName: d.productName,
       productImage: d.productImage,
       originalPrice: d.originalPrice,

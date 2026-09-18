@@ -485,6 +485,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // so the seller/admin queues see it. Previously the app only wrote local
     // state + an admin mirror — the server row stayed unaware (sync lie).
     if (isBuyer && typeof body.refundReason === "string" && body.refundReason.trim()) {
+// Return-window parity with the app (receipt/track enforce delivered + 7d
+// from actualDelivery, unknown stamp stays OPEN): the server previously
+// accepted refundReason on ANY status/age — a fail-open for year-old orders.
+// Mirror the app rule exactly: delivered only; when actualDelivery is known
+// the request must land within 7 days, otherwise 400 with a support path.
+if (order.status !== "delivered") {
+  throw new OrderError(400, "Refunds open after delivery — this order is not delivered yet");
+}
+const deliveredStamp = Date.parse(String((order as { actualDelivery?: unknown }).actualDelivery ?? ""));
+if (Number.isFinite(deliveredStamp) && Date.now() - deliveredStamp > 7 * 24 * 60 * 60 * 1000) {
+  throw new OrderError(400, "Return window closed (7 days after delivery) — contact Support for exceptions");
+}
       // Serialized open-or-return (twin-row race): the order-row lock makes
       // the existence re-read below observe committed rows. No fail-open
       // catch — a lock failure aborts (503, no row), never twins.

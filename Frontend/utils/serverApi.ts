@@ -373,8 +373,8 @@ export const serverApi = {
   // ─── Platform-curated home content (admin home-management) ─────────────
   getHome: () =>
     requestWithAppKey<{
-      topSellers: Array<{ sellerId: string; sellerName: string; sellerLogo?: string | null; totalSales?: number; rating?: number; reviewCount?: number; position?: number }>;
-      hotDeals: Array<{ productId: string; productName: string; productImage?: string | null; originalPrice?: number; discountedPrice?: number; discountPercentage?: number; priority?: number }>;
+      topSellers: Array<{ sellerId: string; sellerUsername?: string | null; sellerName: string; sellerLogo?: string | null; totalSales?: number; rating?: number; reviewCount?: number; position?: number; isPinned?: boolean | null }>;
+      hotDeals: Array<{ productId: string; postId?: string | null; productName: string; productImage?: string | null; originalPrice?: number; discountedPrice?: number; discountPercentage?: number; priority?: number }>;
       marketingBanners: Array<{
         id: string;
         sellerUsername: string;
