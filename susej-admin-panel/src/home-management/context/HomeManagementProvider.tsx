@@ -16,6 +16,9 @@ export interface HomeManagementState {
   featuredPosts: FeaturedPost[];
   storefrontBanners: StorefrontBanner[];
   layout: HomeSection[];
+  // Resources whose initial load FAILED (vs genuinely empty). A failed
+  // section must show Retry — never a lying "No items yet".
+  loadFailed: string[];
 }
 
 export type HomeManagementAction =
@@ -35,6 +38,7 @@ export type HomeManagementAction =
   | { type: 'UPDATE_STOREFRONT_BANNER'; payload: { id: string; changes: Partial<StorefrontBanner> } }
   | { type: 'DELETE_STOREFRONT_BANNER'; payload: string }
   | { type: 'SET_LAYOUT'; payload: HomeSection[] }
+  | { type: 'SET_SECTION_FAILED'; payload: { resource: string; failed: boolean } }
   | { type: 'ADD_LAYOUT_ITEM'; payload: HomeSection }
   | { type: 'UPDATE_LAYOUT_ITEM'; payload: { id: string; changes: Partial<HomeSection> } }
   | { type: 'REORDER_LAYOUT'; payload: HomeSection[] };
@@ -47,6 +51,7 @@ const initialState: HomeManagementState = {
   featuredPosts: [],
   storefrontBanners: [],
   layout: [],
+  loadFailed: [],
 };
 
 function homeManagementReducer(state: HomeManagementState, action: HomeManagementAction): HomeManagementState {
@@ -121,6 +126,13 @@ function homeManagementReducer(state: HomeManagementState, action: HomeManagemen
       };
     case 'SET_LAYOUT':
       return { ...state, layout: action.payload };
+    case 'SET_SECTION_FAILED':
+      return {
+        ...state,
+        loadFailed: action.payload.failed
+          ? (state.loadFailed.includes(action.payload.resource) ? state.loadFailed : [...state.loadFailed, action.payload.resource])
+          : state.loadFailed.filter((r) => r !== action.payload.resource),
+      };
     case 'ADD_LAYOUT_ITEM':
       // Upsert by name: the first-toggle create and the adopt-winner path
       // re-dispatch the row with a new isEnabled — replacing keeps the toggle
@@ -165,12 +177,19 @@ async function api(resource: string, method: "GET" | "POST" | "PATCH" | "DELETE"
 }
 
 async function loadRows<T>(resource: string): Promise<T[] | null> {
-  try {
-    const body = await api(resource);
-    return Array.isArray(body?.rows) ? (body.rows as T[]) : null;
-  } catch {
-    return null;
+  // Cold serverless often drops one of the 5 parallel section fetches.
+  // One retry separates a blip from a real outage; a persistent failure
+  // returns null so the desk shows Retry instead of a lying empty state.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const body = await api(resource);
+      if (Array.isArray(body?.rows)) return body.rows as T[];
+      return null;
+    } catch {
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
+    }
   }
+  return null;
 }
 
 function createHomeManagementActions(dispatch: React.Dispatch<HomeManagementAction>) {
@@ -182,6 +201,22 @@ function createHomeManagementActions(dispatch: React.Dispatch<HomeManagementActi
   return {
     setTopSellers: async (sellers: TopSeller[]) => {
       dispatch({ type: "SET_TOP_SELLERS", payload: sellers });
+    },
+    // Manual reload for sections whose initial fetch failed (see loadFailed).
+    // Clears the flag on success so the tab renders rows; keeps it on
+    // persistent failure so Retry stays available instead of a lying empty.
+    retrySection: async (resource: "top-sellers" | "hot-deals" | "featured-posts" | "storefront-banners" | "home-sections") => {
+      const rows = await loadRows<TopSeller | HotDeal | FeaturedPost | StorefrontBanner | HomeSection>(resource);
+      if (rows) {
+        dispatch({ type: "SET_SECTION_FAILED", payload: { resource, failed: false } });
+        if (resource === "top-sellers") dispatch({ type: "SET_TOP_SELLERS", payload: rows as TopSeller[] });
+        else if (resource === "hot-deals") dispatch({ type: "SET_HOT_DEALS", payload: rows as HotDeal[] });
+        else if (resource === "featured-posts") dispatch({ type: "SET_FEATURED_POSTS", payload: rows as FeaturedPost[] });
+        else if (resource === "storefront-banners") dispatch({ type: "SET_STOREFRONT_BANNERS", payload: rows as StorefrontBanner[] });
+        else dispatch({ type: "SET_LAYOUT", payload: rows as HomeSection[] });
+      } else {
+        dispatch({ type: "SET_SECTION_FAILED", payload: { resource, failed: true } });
+      }
     },
     addTopSeller: async (seller: TopSeller) => {
       try {
@@ -375,11 +410,16 @@ export const HomeManagementProvider: React.FC<{ children: React.ReactNode }> = (
         loadRows<HomeSection>("home-sections"),
       ]);
       if (cancelled) return;
-      if (topSellers) dispatch({ type: "SET_TOP_SELLERS", payload: topSellers });
-      if (hotDeals) dispatch({ type: "SET_HOT_DEALS", payload: hotDeals });
-      if (featuredPosts) dispatch({ type: "SET_FEATURED_POSTS", payload: featuredPosts });
-      if (storefrontBanners) dispatch({ type: "SET_STOREFRONT_BANNERS", payload: storefrontBanners });
-      if (layout) dispatch({ type: "SET_LAYOUT", payload: layout });
+      if (topSellers) { dispatch({ type: "SET_TOP_SELLERS", payload: topSellers }); dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "top-sellers", failed: false } }); }
+      else dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "top-sellers", failed: true } });
+      if (hotDeals) { dispatch({ type: "SET_HOT_DEALS", payload: hotDeals }); dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "hot-deals", failed: false } }); }
+      else dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "hot-deals", failed: true } });
+      if (featuredPosts) { dispatch({ type: "SET_FEATURED_POSTS", payload: featuredPosts }); dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "featured-posts", failed: false } }); }
+      else dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "featured-posts", failed: true } });
+      if (storefrontBanners) { dispatch({ type: "SET_STOREFRONT_BANNERS", payload: storefrontBanners }); dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "storefront-banners", failed: false } }); }
+      else dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "storefront-banners", failed: true } });
+      if (layout) { dispatch({ type: "SET_LAYOUT", payload: layout }); dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "home-sections", failed: false } }); }
+      else dispatch({ type: "SET_SECTION_FAILED", payload: { resource: "home-sections", failed: true } });
       setHydrated(true);
     })();
     return () => {

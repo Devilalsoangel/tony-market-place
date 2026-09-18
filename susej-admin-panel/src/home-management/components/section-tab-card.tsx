@@ -86,6 +86,11 @@ export function SectionTabCard({
   // works: flipping a missing section CREATES the row in the chosen state.
   const sectionEnabled = section?.isEnabled ?? true;
   const sectionMissing = !section;
+  // A failed initial fetch is NOT an empty section: show Retry, never a
+  // lying "No items yet" (cold serverless drops parallel fetches).
+  // Spotlight is layout-driven (no item resource) — its load flag is home-sections.
+  const failedResource = kind === "spotlight" ? "home-sections" : kind;
+  const loadFailed = state.loadFailed.includes(failedResource);
 
   // Paid rails (promo-engine items): visibility kill-switch only. Item
   // management lives in Promotions — this desk hides/shows the rail.
@@ -247,7 +252,15 @@ export function SectionTabCard({
         </div>
       </CardHeader>
       <CardContent>
-        {items.length === 0 ? (
+        {loadFailed ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <p className="text-sm font-medium text-[#18181B]">Couldn&apos;t load {config.title.toLowerCase()}</p>
+            <p className="mt-1 text-sm text-gray-500">The server didn&apos;t answer. Your items are safe — try again.</p>
+            <Button variant="outline" className="mt-3" onClick={() => void actions.retrySection(failedResource as "top-sellers" | "hot-deals" | "featured-posts" | "storefront-banners" | "home-sections")}>
+              Retry
+            </Button>
+          </div>
+        ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
             <p className="text-sm text-gray-500">
               {isAutoComputed
