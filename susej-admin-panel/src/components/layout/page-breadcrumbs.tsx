@@ -5,6 +5,10 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { findNavItem } from "@/lib/nav-data";
 
 function prettify(segment: string): string {
+  // Detail routes carry raw cuids (…/orders/cmtw7hbzm00b30plfug7wffr0):
+  // unreadable in a crumb and unquotable on support calls. Collapse any
+  // long id-like segment to a short #REF like the tables show.
+  if (/^[A-Za-z0-9]{13,}$/.test(segment)) return `#${segment.slice(-6).toUpperCase()}`;
   if (segment.includes("_")) return segment;
   return segment
     .split("-")

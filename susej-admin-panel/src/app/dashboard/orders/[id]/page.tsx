@@ -168,18 +168,28 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const refundAction = order.refundStatus ? REFUND_ACTIONS[order.refundStatus] : undefined;
 
+  // Human SJ- tracking ref primary (what buyers quote on support calls);
+  // raw cuid secondary for copy-paste. Same rule as the orders table.
+  const orderRef = order.trackingNumber || order.id;
+  const sellerDisplay = (() => {
+    const raw = String(order.sellerName ?? "").trim();
+    if (raw && raw.toLowerCase() !== "seller") return raw;
+    return order.sellerUsername ? `@${order.sellerUsername}` : raw || "—";
+  })();
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="font-mono text-2xl font-bold text-[#18181B] ">{order.id}</h1>
+            <h1 className="font-mono text-2xl font-bold text-[#18181B] ">{orderRef}</h1>
             <StatusBadge status={order.status} />
             {order.deliveryStatus && order.deliveryStatus !== order.status && (
               <StatusBadge status={order.deliveryStatus} />
             )}
           </div>
+          <p className="mt-1 font-mono text-xs text-[#A1A1AA]" title="Internal order ID">{order.id}</p>
           <p className="mt-1 text-sm text-gray-500">
             Placed {formatDate(order.createdAt, "long")} &middot; {order.items} item{order.items > 1 ? "s" : ""}
           </p>
@@ -358,7 +368,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                   <div className="flex-1">
                     <p className="text-xs text-gray-500">Seller</p>
-                    <p className="text-sm font-medium text-[#18181B] ">{order.sellerName}</p>
+                    <p className="text-sm font-medium text-[#18181B] ">{sellerDisplay}</p>
                     {order.sellerUsername ? (
                       <p className="mt-0.5 font-mono text-xs text-gray-500">@{order.sellerUsername}</p>
                     ) : (
@@ -439,17 +449,23 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                 </div>
                 <div className="rounded-xl bg-[#FAFAFA] px-4 py-3 text-sm">
-                  <p className="text-gray-500">
-                    Estimated delivery:{' '}
-                    <span className="font-medium text-[#18181B] ">
-                      {order.estimatedDelivery && !Number.isNaN(new Date(order.estimatedDelivery).getTime())
-                        ? formatDate(order.estimatedDelivery, "long")
-                        : "Not scheduled yet"}
-                    </span>
-                  </p>
-                  {order.actualDelivery && (
-                    <p className="mt-1 text-gray-500">
-                      Actual delivery: <span className="font-medium text-[#18181B] ">{formatDate(order.actualDelivery, "long")}</span>
+                  {order.status === "delivered" ? (
+                    <p className="text-gray-500">
+                      Delivered{order.actualDelivery ? `: ` : ""}
+                      {order.actualDelivery ? (
+                        <span className="font-medium text-[#18181B] ">{formatDate(order.actualDelivery, "long")}</span>
+                      ) : (
+                        <span className="font-medium text-[#18181B] ">date not recorded</span>
+                      )}
+                    </p>
+                  ) : (
+                    <p className="text-gray-500">
+                      Estimated delivery:{' '}
+                      <span className="font-medium text-[#18181B] ">
+                        {order.estimatedDelivery && !Number.isNaN(new Date(order.estimatedDelivery).getTime())
+                          ? formatDate(order.estimatedDelivery, "long")
+                          : "Not scheduled yet"}
+                      </span>
                     </p>
                   )}
                 </div>
@@ -500,7 +516,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <Dialog open={cancelOpen} onClose={() => setCancelOpen(false)}>
         <div className="p-6 text-center">
           <AlertTriangle className="mx-auto h-10 w-10 text-[#EF4444]" />
-          <h3 className="mt-3 text-lg font-semibold text-[#18181B] ">Cancel Order {order.id}</h3>
+          <h3 className="mt-3 text-lg font-semibold text-[#18181B] ">Cancel Order {orderRef}</h3>
           <p className="mt-2 text-sm text-gray-500">
             {isCod
               ? "Paid on delivery - no payment was collected, so there is nothing to refund. This cannot be undone."

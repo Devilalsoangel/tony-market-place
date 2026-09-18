@@ -56,7 +56,7 @@ const columns = [
     cell: (info) => {
       const tracking = (info.row.original as { trackingNumber?: string }).trackingNumber;
       return (
-        <span className="font-mono text-sm font-medium text-[#18181B] ">
+        <span className="whitespace-nowrap font-mono text-sm font-medium text-[#18181B] ">
           {tracking || info.getValue()}
         </span>
       );
@@ -70,9 +70,13 @@ const columns = [
     header: "Seller",
     cell: (info) => {
       const attributed = String((info.row.original as { sellerUsername?: string }).sellerUsername ?? "").trim();
+      // Legacy rows store sellerName "Seller" even when attributed: show the
+      // handle we actually know instead of a placeholder name.
+      const rawName = String(info.getValue() ?? "").trim();
+      const display = rawName && rawName.toLowerCase() !== "seller" ? rawName : attributed ? `@${attributed}` : rawName || "—";
       return (
         <span className="flex items-center gap-1.5">
-          {info.getValue()}
+          {display}
           {!attributed && (
             <Badge variant="warning">unattributed</Badge>
           )}
